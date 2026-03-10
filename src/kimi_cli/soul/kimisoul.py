@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import kosong
 import tenacity
@@ -22,7 +23,7 @@ from kosong.message import Message, ToolCall
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from kimi_cli.llm import ModelCapability
-from kimi_cli.skill import Skill, read_skill_text
+from kimi_cli.skill import Skill, normalize_skill_name, read_skill_text
 from kimi_cli.skill.flow import Flow, FlowEdge, FlowNode, parse_choice
 from kimi_cli.soul import (
     LLMNotSet,
@@ -71,6 +72,21 @@ if TYPE_CHECKING:
 SKILL_COMMAND_PREFIX = "skill:"
 FLOW_COMMAND_PREFIX = "flow:"
 DEFAULT_MAX_FLOW_MOVES = 1000
+MAX_SKILL_RECOMMENDATIONS = 3
+SKILL_RECOMMENDER_PROMPT = (
+    "You are a background skill recommender for Kimi Code CLI.\n"
+    "Given the ongoing conversation and the available skills below, decide whether "
+    "the main agent should be reminded about any skill right now.\n"
+    "Only recommend skills that are clearly relevant to the current task. "
+    "Prefer precision over recall.\n"
+    "Return strict JSON with this exact shape:\n"
+    '{"skills":[{"name":"exact skill name","reason":"short reason"}]}\n'
+    "- Use exact skill names from the catalog.\n"
+    "- Return at most 3 skills.\n"
+    '- If none are useful, return {"skills":[]}.\n'
+    "- Do not include markdown or any extra text.\n\n"
+    "Available skills:\n"
+)
 
 
 type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
@@ -90,6 +106,23 @@ class TurnOutcome:
     stop_reason: TurnStopReason
     final_message: Message | None
     step_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class SkillRecommendationItem:
+    name: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class SkillRecommendation:
+    skills: tuple[SkillRecommendationItem, ...]
+
+
+@dataclass(slots=True)
+class SkillReminderState:
+    task: asyncio.Task[SkillRecommendation | None]
+    consumed: bool = False
 
 
 class KimiSoul:
@@ -393,13 +426,18 @@ class KimiSoul:
                 user_message,
                 self._loop_control.max_ralph_iterations,
             )
-            await runner.run(self, "")
+            await runner.run(self, "", enable_skill_reminder=True)
         else:
-            await self._turn(user_message)
+            await self._turn(user_message, enable_skill_reminder=True)
 
         wire_send(TurnEnd())
 
-    async def _turn(self, user_message: Message) -> TurnOutcome:
+    async def _turn(
+        self,
+        user_message: Message,
+        *,
+        enable_skill_reminder: bool = False,
+    ) -> TurnOutcome:
         if self._runtime.llm is None:
             raise LLMNotSet()
 
@@ -409,7 +447,12 @@ class KimiSoul:
         await self._checkpoint()  # this creates the checkpoint 0 on first run
         await self._context.append_message(user_message)
         logger.debug("Appended user message to context")
-        return await self._agent_loop()
+
+        skill_reminder = self._start_skill_reminder_task() if enable_skill_reminder else None
+        try:
+            return await self._agent_loop(skill_reminder)
+        finally:
+            await self._finalize_skill_reminder_task(skill_reminder)
 
     def _build_slash_commands(self) -> list[SlashCommand[Any]]:
         commands: list[SlashCommand[Any]] = list(soul_slash_registry.list_commands())
@@ -491,7 +534,148 @@ class KimiSoul:
         _run_skill.__doc__ = skill.description
         return _run_skill
 
-    async def _agent_loop(self) -> TurnOutcome:
+    def _start_skill_reminder_task(self) -> SkillReminderState | None:
+        if self._runtime.llm is None or not self._runtime.skills:
+            return None
+        history = list(self._context.history)
+        task = asyncio.create_task(self._request_skill_recommendation(history))
+        return SkillReminderState(task=task)
+
+    async def _finalize_skill_reminder_task(self, state: SkillReminderState | None) -> None:
+        if state is None:
+            return
+        if not state.task.done():
+            state.task.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await state.task
+
+    async def _request_skill_recommendation(
+        self,
+        history: Sequence[Message],
+    ) -> SkillRecommendation | None:
+        assert self._runtime.llm is not None
+        chat_provider = self._runtime.llm.chat_provider.with_thinking("off")
+
+        async def _run_once():
+            return await kosong.generate(
+                chat_provider=chat_provider,
+                system_prompt=(
+                    f"{SKILL_RECOMMENDER_PROMPT}{self._format_available_skills_for_recommender()}\n"
+                ),
+                tools=[],
+                history=history,
+            )
+
+        try:
+            result = await self._run_with_connection_recovery(
+                "skill recommendation",
+                _run_once,
+                chat_provider=chat_provider,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Skill recommendation request failed: {error}", error=exc)
+            return None
+
+        recommendation = self._parse_skill_recommendation_payload(result.message.extract_text(" "))
+        if recommendation is None:
+            logger.warning(
+                "Failed to parse skill recommendation response: {text}", text=result.message
+            )
+        return recommendation
+
+    def _format_available_skills_for_recommender(self) -> str:
+        return "\n".join(
+            (
+                f"- {skill.name} (type: {skill.type})\n"
+                f"  - Path: {skill.skill_md_file}\n"
+                f"  - Description: {skill.description}"
+            )
+            for skill in sorted(
+                self._runtime.skills.values(), key=lambda item: item.name.casefold()
+            )
+        )
+
+    def _parse_skill_recommendation_payload(self, text: str) -> SkillRecommendation | None:
+        payload_text = self._extract_json_payload(text)
+        try:
+            payload_obj: object = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload_obj, dict):
+            return None
+        payload = cast(dict[str, object], payload_obj)
+        raw_skills_obj = payload.get("skills", [])
+        if not isinstance(raw_skills_obj, list):
+            return None
+        raw_skills = cast(list[object], raw_skills_obj)
+
+        recommendations: list[SkillRecommendationItem] = []
+        seen: set[str] = set()
+        for raw_item in raw_skills[:MAX_SKILL_RECOMMENDATIONS]:
+            if not isinstance(raw_item, dict):
+                continue
+            item = cast(dict[str, object], raw_item)
+            raw_name = item.get("name")
+            if not isinstance(raw_name, str) or not raw_name.strip():
+                continue
+            skill_key = normalize_skill_name(raw_name.strip())
+            skill = self._runtime.skills.get(skill_key)
+            if skill is None or skill_key in seen:
+                continue
+            raw_reason = item.get("reason", "")
+            reason = raw_reason.strip() if isinstance(raw_reason, str) else ""
+            recommendations.append(SkillRecommendationItem(name=skill.name, reason=reason))
+            seen.add(skill_key)
+        return SkillRecommendation(skills=tuple(recommendations))
+
+    @staticmethod
+    def _extract_json_payload(text: str) -> str:
+        payload = text.strip()
+        if payload.startswith("```"):
+            lines = payload.splitlines()
+            if len(lines) >= 3 and lines[-1].strip().startswith("```"):
+                payload = "\n".join(lines[1:-1]).strip()
+        start = payload.find("{")
+        end = payload.rfind("}")
+        if start >= 0 and end > start:
+            return payload[start : end + 1]
+        return payload
+
+    async def _consume_ready_skill_reminder(self, state: SkillReminderState | None) -> bool:
+        if state is None or state.consumed or not state.task.done():
+            return False
+
+        state.consumed = True
+        try:
+            recommendation = await state.task
+        except asyncio.CancelledError:
+            return False
+        except Exception as exc:
+            logger.warning("Skill reminder task failed: {error}", error=exc)
+            return False
+        if recommendation is None or not recommendation.skills:
+            return False
+
+        await self._context.append_message(self._build_skill_reminder_message(recommendation))
+        logger.debug("Injected skill reminder into context")
+        return True
+
+    def _build_skill_reminder_message(self, recommendation: SkillRecommendation) -> Message:
+        lines = ["Reminder: the following skill suggestions may be helpful in the current context."]
+        for item in recommendation.skills:
+            skill = self._runtime.skills[normalize_skill_name(item.name)]
+            lines.append(f"- {skill.name} ({skill.type} skill): {skill.description}")
+            if item.reason:
+                lines.append(f"  Reason: {item.reason}")
+            lines.append(f"  Path: {skill.skill_md_file}")
+            lines.append(
+                "  Consider reading this skill's SKILL.md before continuing if it seems useful."
+            )
+        return Message(role="user", content=[system("\n".join(lines))])
+
+    async def _agent_loop(self, skill_reminder: SkillReminderState | None = None) -> TurnOutcome:
         """The main agent loop for one run."""
         assert self._runtime.llm is not None
 
@@ -541,6 +725,8 @@ class KimiSoul:
             back_to_the_future: BackToTheFuture | None = None
             step_outcome: StepOutcome | None = None
             try:
+                if await self._consume_ready_skill_reminder(skill_reminder):
+                    logger.debug("Skill reminder was ready before step {step_no}", step_no=step_no)
                 # compact the context if needed
                 if should_auto_compact(
                     self._context.token_count,
@@ -572,8 +758,11 @@ class KimiSoul:
 
             if step_outcome is not None:
                 has_steers = await self._consume_pending_steers()
-                if step_outcome.stop_reason == "no_tool_calls" and has_steers:
-                    continue  # steers injected, force another LLM step
+                has_skill_reminder = await self._consume_ready_skill_reminder(skill_reminder)
+                if step_outcome.stop_reason == "no_tool_calls" and (
+                    has_steers or has_skill_reminder
+                ):
+                    continue  # extra context injected, force another LLM step
                 final_message = (
                     step_outcome.assistant_message
                     if step_outcome.stop_reason == "no_tool_calls"
@@ -879,7 +1068,13 @@ class FlowRunner:
         max_moves = total_runs
         return FlowRunner(flow, max_moves=max_moves)
 
-    async def run(self, soul: KimiSoul, args: str) -> None:
+    async def run(
+        self,
+        soul: KimiSoul,
+        args: str,
+        *,
+        enable_skill_reminder: bool = False,
+    ) -> None:
         if args.strip():
             command = f"/{FLOW_COMMAND_PREFIX}{self._name}" if self._name else "/flow"
             logger.warning("Agent flow {command} ignores args: {args}", command=command, args=args)
@@ -888,6 +1083,7 @@ class FlowRunner:
         current_id = self._flow.begin_id
         moves = 0
         total_steps = 0
+        reminder_enabled = enable_skill_reminder
         while True:
             node = self._flow.nodes[current_id]
             edges = self._flow.outgoing.get(current_id, [])
@@ -908,7 +1104,13 @@ class FlowRunner:
 
             if moves >= self._max_moves:
                 raise MaxStepsReached(total_steps)
-            next_id, steps_used = await self._execute_flow_node(soul, node, edges)
+            next_id, steps_used = await self._execute_flow_node(
+                soul,
+                node,
+                edges,
+                enable_skill_reminder=reminder_enabled,
+            )
+            reminder_enabled = False
             total_steps += steps_used
             if next_id is None:
                 return
@@ -920,6 +1122,8 @@ class FlowRunner:
         soul: KimiSoul,
         node: FlowNode,
         edges: list[FlowEdge],
+        *,
+        enable_skill_reminder: bool = False,
     ) -> tuple[str | None, int]:
         if not edges:
             logger.error(
@@ -932,7 +1136,12 @@ class FlowRunner:
         prompt = base_prompt
         steps_used = 0
         while True:
-            result = await self._flow_turn(soul, prompt)
+            result = await self._flow_turn(
+                soul,
+                prompt,
+                enable_skill_reminder=enable_skill_reminder,
+            )
+            enable_skill_reminder = False
             steps_used += result.step_count
             if result.stop_reason == "tool_rejected":
                 logger.error("Agent flow stopped after tool rejection.")
@@ -995,8 +1204,13 @@ class FlowRunner:
     async def _flow_turn(
         soul: KimiSoul,
         prompt: str | list[ContentPart],
+        *,
+        enable_skill_reminder: bool = False,
     ) -> TurnOutcome:
         wire_send(TurnBegin(user_input=prompt))
-        res = await soul._turn(Message(role="user", content=prompt))  # type: ignore[reportPrivateUsage]
+        res = await soul._turn(  # type: ignore[reportPrivateUsage]
+            Message(role="user", content=prompt),
+            enable_skill_reminder=enable_skill_reminder,
+        )
         wire_send(TurnEnd())
         return res
