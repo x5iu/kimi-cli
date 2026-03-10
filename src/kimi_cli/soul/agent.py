@@ -198,6 +198,18 @@ class Runtime:
             on_change=_on_approval_change,
         )
 
+        # For openai_responses provider, pass KIMI_AGENTS_MD via the `instructions`
+        # parameter instead of embedding it in the system prompt.
+        agents_md_in_prompt = agents_md or ""
+        if llm and llm.provider_config and llm.provider_config.type == "openai_responses" and agents_md:
+            from kosong.contrib.chat_provider.openai_responses import OpenAIResponses
+
+            if isinstance(llm.chat_provider, OpenAIResponses):
+                llm.chat_provider = llm.chat_provider.with_generation_kwargs(
+                    instructions=agents_md,
+                )
+                agents_md_in_prompt = ""
+
         return Runtime(
             config=config,
             oauth=oauth,
@@ -207,7 +219,7 @@ class Runtime:
                 KIMI_NOW=datetime.now().astimezone().isoformat(),
                 KIMI_WORK_DIR=session.work_dir,
                 KIMI_WORK_DIR_LS=ls_output,
-                KIMI_AGENTS_MD=agents_md or "",
+                KIMI_AGENTS_MD=agents_md_in_prompt,
                 KIMI_SKILLS=skills_formatted or "No skills found.",
                 KIMI_ADDITIONAL_DIRS_INFO=additional_dirs_info,
             ),
