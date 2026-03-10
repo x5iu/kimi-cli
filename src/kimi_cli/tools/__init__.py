@@ -26,6 +26,7 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
     if not curr_args:
         return None
     key_argument: str = ""
+    should_truncate = True
     match tool_name:
         case "Task":
             if not isinstance(curr_args, dict) or not curr_args.get("description"):
@@ -47,6 +48,7 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("command"):
                 return None
             key_argument = str(curr_args["command"])
+            should_truncate = False
         case "ReadFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
@@ -86,7 +88,8 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
                 key_argument = "".join(content)
             else:
                 key_argument = json_content
-    key_argument = shorten_middle(key_argument, width=50)
+    if should_truncate:
+        key_argument = shorten_middle(key_argument, width=50)
     return key_argument
 
 

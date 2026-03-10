@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 from typing import Any, NamedTuple, cast
 
@@ -59,6 +59,8 @@ from kimi_cli.wire.types import (
 )
 
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
+MAX_TOOL_ERROR_OUTPUT_LINES = 12
+MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
 
 # Truncation limits for approval request display
 MAX_PREVIEW_LINES = 4
@@ -220,11 +222,21 @@ class _ToolCallBlock:
             )
 
         if self._result is not None:
+            if self._result.is_error:
+                error_message = self._extract_error_message(self._result)
+                if error_message:
+                    lines.append(Text(error_message, style="red", overflow="fold"))
+
+                error_output = self._extract_error_output(self._result)
+                if error_output:
+                    lines.append(Text(error_output, style="red", overflow="fold"))
+
             for block in self._result.display:
                 if isinstance(block, BriefDisplayBlock):
-                    style = "grey50" if not self._result.is_error else "red"
+                    if self._result.is_error:
+                        continue
                     if block.text:
-                        lines.append(Markdown(block.text, style=style))
+                        lines.append(Markdown(block.text, style="grey50"))
                 elif isinstance(block, TodoDisplayBlock):
                     markdown = self._render_todo_markdown(block)
                     if markdown:
@@ -267,6 +279,47 @@ class _ToolCallBlock:
             text.append(self._argument, style=arg_style)
             text.append(")", style="grey50")
         return text
+
+    @staticmethod
+    def _extract_error_message(result: ToolReturnValue) -> str:
+        if result.message:
+            return result.message.strip()
+
+        for block in result.display:
+            if isinstance(block, BriefDisplayBlock) and block.text:
+                return block.text.strip()
+
+        return ""
+
+    @classmethod
+    def _extract_error_output(cls, result: ToolReturnValue) -> str:
+        text = cls._stringify_output(result.output).strip("\n")
+        if not text.strip():
+            return ""
+
+        truncated = False
+        if len(text) > MAX_TOOL_ERROR_OUTPUT_CHARS:
+            text = text[:MAX_TOOL_ERROR_OUTPUT_CHARS].rstrip()
+            truncated = True
+
+        lines = text.splitlines()
+        if len(lines) > MAX_TOOL_ERROR_OUTPUT_LINES:
+            text = "\n".join(lines[:MAX_TOOL_ERROR_OUTPUT_LINES]).rstrip()
+            truncated = True
+
+        if truncated:
+            text += "\n[...truncated]"
+        return text
+
+    @staticmethod
+    def _stringify_output(output: str | ContentPart | Sequence[ContentPart]) -> str:
+        if isinstance(output, str):
+            return output
+        if isinstance(output, TextPart):
+            return output.text
+        if isinstance(output, Sequence):
+            return "".join(part.text for part in output if isinstance(part, TextPart))
+        return ""
 
     def _render_todo_markdown(self, block: TodoDisplayBlock) -> str:
         lines: list[str] = []
