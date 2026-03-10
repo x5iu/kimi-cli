@@ -14,7 +14,7 @@ from kimi_cli.tools.utils import ToolRejectedError, ToolResultBuilder, load_desc
 from kimi_cli.utils.environment import Environment
 from kimi_cli.utils.subprocess_env import get_clean_env
 
-MAX_TIMEOUT = 5 * 60
+MAX_TIMEOUT = 60 * 60
 
 
 class Params(BaseModel):

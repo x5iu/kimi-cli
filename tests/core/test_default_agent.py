@@ -371,7 +371,7 @@ The stdout and stderr will be combined and returned as a string. The output may 
                         "timeout": {
                             "default": 60,
                             "description": "The timeout in seconds for the command to execute. If the command takes longer than this, it will be killed.",
-                            "maximum": 300,
+                            "maximum": 3600,
                             "minimum": 1,
                             "type": "integer",
                         },

@@ -204,7 +204,7 @@ The following are all built-in tools in Kimi Code CLI.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `command` | string | Command to execute |
-| `timeout` | int | Timeout in seconds, default 60, max 300 |
+| `timeout` | int | Timeout in seconds, default 60, max 3600 |
 
 ### `ReadFile`
 
