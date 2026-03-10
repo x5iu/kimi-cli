@@ -78,9 +78,11 @@ The system prompt file is a Markdown template that can use `${VAR}` syntax to re
 | `${KIMI_NOW}` | Current time (ISO format) |
 | `${KIMI_WORK_DIR}` | Working directory path |
 | `${KIMI_WORK_DIR_LS}` | Working directory file list |
-| `${KIMI_AGENTS_MD}` | AGENTS.md file content (if exists) |
+| `${KIMI_AGENTS_MD}` | Combined AGENTS.md content loaded from the global share directory and the working directory (if present) |
 | `${KIMI_SKILLS}` | Loaded skills list |
 | `${KIMI_ADDITIONAL_DIRS_INFO}` | Information about additional directories added via `--add-dir` or `/add-dir` |
+
+`KIMI_AGENTS_MD` is layered. Kimi Code CLI first loads the global `AGENTS.md` from the share directory (default: `~/.kimi/AGENTS.md`, or `${KIMI_SHARE_DIR}/AGENTS.md` when overridden), then loads the project `AGENTS.md`/`agents.md` from the working directory. When both exist, both are injected into the system prompt, with the project content after the global content.
 
 You can also define custom parameters via `system_prompt_args`:
 

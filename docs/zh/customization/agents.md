@@ -78,9 +78,11 @@ agent:
 | `${KIMI_NOW}` | 当前时间（ISO 格式） |
 | `${KIMI_WORK_DIR}` | 工作目录路径 |
 | `${KIMI_WORK_DIR_LS}` | 工作目录文件列表 |
-| `${KIMI_AGENTS_MD}` | AGENTS.md 文件内容（如果存在） |
+| `${KIMI_AGENTS_MD}` | 从全局共享目录和工作目录加载的组合 AGENTS.md 内容（如果存在） |
 | `${KIMI_SKILLS}` | 加载的 Skills 列表 |
 | `${KIMI_ADDITIONAL_DIRS_INFO}` | 通过 `--add-dir` 或 `/add-dir` 添加的额外目录信息 |
+
+`KIMI_AGENTS_MD` 采用分层加载。Kimi Code CLI 会先读取共享目录中的全局 `AGENTS.md`（默认是 `~/.kimi/AGENTS.md`，如果设置了 `KIMI_SHARE_DIR`，则改为 `${KIMI_SHARE_DIR}/AGENTS.md`），再读取工作目录中的项目级 `AGENTS.md`/`agents.md`。如果两者都存在，则会一起注入系统提示词，并让项目内容排在全局内容之后。
 
 你也可以通过 `system_prompt_args` 定义自定义参数：
 

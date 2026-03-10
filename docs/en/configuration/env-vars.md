@@ -117,7 +117,7 @@ export OPENAI_API_KEY="sk-xxx"
 
 ### `KIMI_SHARE_DIR`
 
-Customize the share directory path for Kimi Code CLI. The default path is `~/.kimi`, where configuration, sessions, logs, and other runtime data are stored.
+Customize the share directory path for Kimi Code CLI. The default path is `~/.kimi`, where configuration, sessions, logs, global `AGENTS.md`, and other runtime data are stored.
 
 ```sh
 export KIMI_SHARE_DIR="/path/to/custom/kimi"

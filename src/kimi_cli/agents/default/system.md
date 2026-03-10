@@ -95,7 +95,7 @@ Markdown files named `AGENTS.md` usually contain the background, structure, codi
 > - Keep `README`s concise and focused on human contributors.
 > - Provide precise, agent-focused guidance that complements existing `README` and docs.
 
-The project level `${KIMI_WORK_DIR}/AGENTS.md`:
+The AGENTS.md instructions loaded for this run (from the global share dir and `${KIMI_WORK_DIR}`, if present):
 
 `````````
 ${KIMI_AGENTS_MD}

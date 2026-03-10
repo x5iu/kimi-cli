@@ -12,6 +12,7 @@ Note: `KIMI_SHARE_DIR` only affects the storage location of the runtime data lis
 
 ```
 ~/.kimi/
+├── AGENTS.md             # Optional global instructions injected into every session
 ├── config.toml           # Main configuration file
 ├── kimi.json             # Metadata
 ├── mcp.json              # MCP server configuration
@@ -65,6 +66,10 @@ Example structure:
   }
 }
 ```
+
+### `AGENTS.md`
+
+Optional global instruction file. If present, Kimi Code CLI loads this file at startup and injects its content into the system prompt for every session. The project-level `AGENTS.md`/`agents.md` in the working directory is loaded as well and appended after the global content.
 
 ## Credentials
 

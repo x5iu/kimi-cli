@@ -19,6 +19,7 @@ from kimi_cli.config import Config
 from kimi_cli.exception import MCPConfigError, SystemPromptTemplateError
 from kimi_cli.llm import LLM
 from kimi_cli.session import Session
+from kimi_cli.share import get_share_dir
 from kimi_cli.skill import Skill, discover_skills_from_roots, index_skills, resolve_skills_roots
 from kimi_cli.soul.approval import Approval, ApprovalState
 from kimi_cli.soul.denwarenji import DenwaRenji
@@ -29,6 +30,9 @@ from kimi_cli.utils.path import list_directory
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
+
+
+AGENTS_MD_FILENAMES = ("AGENTS.md", "agents.md")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -42,24 +46,62 @@ class BuiltinSystemPromptArgs:
     KIMI_WORK_DIR_LS: str
     """The directory listing of current working directory."""
     KIMI_AGENTS_MD: str  # TODO: move to first message from system prompt
-    """The content of AGENTS.md."""
+    """Combined content of the discovered global/project AGENTS.md files."""
     KIMI_SKILLS: str
     """Formatted information about available skills."""
     KIMI_ADDITIONAL_DIRS_INFO: str
     """Formatted information about additional directories in the workspace."""
 
 
-async def load_agents_md(work_dir: KaosPath) -> str | None:
-    paths = [
-        work_dir / "AGENTS.md",
-        work_dir / "agents.md",
-    ]
-    for path in paths:
+async def _load_agents_md_from_dir(directory: KaosPath, *, source: str) -> str | None:
+    for filename in AGENTS_MD_FILENAMES:
+        path = directory / filename
         if await path.is_file():
-            logger.info("Loaded agents.md: {path}", path=path)
+            logger.info("Loaded {source} AGENTS.md: {path}", source=source, path=path)
             return (await path.read_text()).strip()
-    logger.info("No AGENTS.md found in {work_dir}", work_dir=work_dir)
     return None
+
+
+async def load_global_agents_md() -> str | None:
+    share_dir = KaosPath.unsafe_from_local_path(get_share_dir()).canonical()
+    return await _load_agents_md_from_dir(share_dir, source="global")
+
+
+async def load_project_agents_md(work_dir: KaosPath) -> str | None:
+    return await _load_agents_md_from_dir(work_dir.canonical(), source="project")
+
+
+def combine_agents_md(global_agents_md: str | None, project_agents_md: str | None) -> str | None:
+    sections: list[str] = []
+    if global_agents_md:
+        sections.append(f"[Global AGENTS.md]\n{global_agents_md}")
+    if project_agents_md:
+        sections.append(f"[Project AGENTS.md]\n{project_agents_md}")
+    if not sections:
+        return None
+    if len(sections) == 1:
+        return global_agents_md or project_agents_md
+    return "\n\n".join(sections)
+
+
+async def load_agents_md(work_dir: KaosPath) -> str | None:
+    work_dir = work_dir.canonical()
+    share_dir = KaosPath.unsafe_from_local_path(get_share_dir()).canonical()
+    if share_dir == work_dir:
+        return await load_project_agents_md(work_dir)
+
+    global_agents_md, project_agents_md = await asyncio.gather(
+        load_global_agents_md(),
+        load_project_agents_md(work_dir),
+    )
+    agents_md = combine_agents_md(global_agents_md, project_agents_md)
+    if agents_md is None:
+        logger.info(
+            "No AGENTS.md found in share dir {share_dir} or work dir {work_dir}",
+            share_dir=share_dir,
+            work_dir=work_dir,
+        )
+    return agents_md
 
 
 @dataclass(slots=True, kw_only=True)

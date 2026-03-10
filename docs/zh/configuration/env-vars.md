@@ -117,7 +117,7 @@ export OPENAI_API_KEY="sk-xxx"
 
 ### `KIMI_SHARE_DIR`
 
-自定义 Kimi Code CLI 的共享目录路径。默认路径为 `~/.kimi`，配置、会话、日志等运行时数据存储在此目录下。
+自定义 Kimi Code CLI 的共享目录路径。默认路径为 `~/.kimi`，配置、会话、全局 `AGENTS.md`、日志等运行时数据都存储在此目录下。
 
 ```sh
 export KIMI_SHARE_DIR="/path/to/custom/kimi"

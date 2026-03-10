@@ -12,6 +12,7 @@ Kimi Code CLI 将所有数据存储在用户主目录下的 `~/.kimi/` 目录中
 
 ```
 ~/.kimi/
+├── AGENTS.md             # 可选的全局指令，会注入到每个会话中
 ├── config.toml           # 主配置文件
 ├── kimi.json             # 元数据
 ├── mcp.json              # MCP 服务器配置
@@ -65,6 +66,10 @@ MCP 服务器配置文件，存储通过 `kimi mcp add` 命令添加的 MCP 服�
   }
 }
 ```
+
+### `AGENTS.md`
+
+可选的全局指令文件。如果存在，Kimi Code CLI 会在启动时读取它，并将内容注入到每个会话的系统提示词中。工作目录中的项目级 `AGENTS.md`/`agents.md` 也会被读取，并追加在全局内容之后。
 
 ## 凭据
 

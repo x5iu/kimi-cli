@@ -11,7 +11,7 @@ from loguru import logger
 
 import kimi_cli.prompts as prompts
 from kimi_cli.soul import wire_send
-from kimi_cli.soul.agent import load_agents_md
+from kimi_cli.soul.agent import load_project_agents_md
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.message import system
 from kimi_cli.utils.export import is_sensitive_file
@@ -43,7 +43,7 @@ async def init(soul: KimiSoul, args: str):
         tmp_soul = KimiSoul(soul.agent, context=tmp_context)
         await tmp_soul.run(prompts.INIT)
 
-    agents_md = await load_agents_md(soul.runtime.builtin_args.KIMI_WORK_DIR)
+    agents_md = await load_project_agents_md(soul.runtime.builtin_args.KIMI_WORK_DIR)
     system_message = system(
         "The user just ran `/init` slash command. "
         "The system has analyzed the codebase and generated an `AGENTS.md` file. "

@@ -37,8 +37,9 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
 - **Agent specs**: YAML under `src/kimi_cli/agents/` loaded by `src/kimi_cli/agentspec.py`.
   Specs can `extend` base agents, select tools by import path, and define fixed subagents.
   System prompts live alongside specs; builtin args include `KIMI_NOW`, `KIMI_WORK_DIR`,
-  `KIMI_WORK_DIR_LS`, `KIMI_AGENTS_MD`, `KIMI_SKILLS` (this file is injected via
-  `KIMI_AGENTS_MD`).
+  `KIMI_WORK_DIR_LS`, `KIMI_AGENTS_MD`, `KIMI_SKILLS`. `KIMI_AGENTS_MD` contains the
+  layered AGENTS instructions loaded from the share dir (default `~/.kimi/AGENTS.md`) and
+  the project root AGENTS file.
 - **Tooling**: `src/kimi_cli/soul/toolset.py` loads tools by import path, injects dependencies,
   and runs tool calls. Built-in tools live in `src/kimi_cli/tools/` (shell, file, web, todo,
   multiagent, dmail, think). MCP tools are loaded via `fastmcp`; CLI management is in
@@ -99,7 +100,8 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
 - Ruff handles lint + format (rules: E, F, UP, B, SIM, I); pyright + ty for type checks.
 - Tests use pytest + pytest-asyncio; files are `tests/test_*.py`.
 - CLI entry points: `kimi` / `kimi-cli` -> `src/kimi_cli/cli.py`.
-- User config: `~/.kimi/config.toml`; logs, sessions, and MCP config live in `~/.kimi/`.
+- User config: `~/.kimi/config.toml`; logs, sessions, MCP config, and optional global
+  `AGENTS.md` live in `~/.kimi/`.
 
 ## Git commit messages
 
