@@ -199,6 +199,8 @@ class OpenAIResponses:
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
         reasoning_effort = thinking_effort_to_reasoning_effort(effort)
+        if reasoning_effort == "high":
+            reasoning_effort = "xhigh"
         return self.with_generation_kwargs(reasoning_effort=reasoning_effort)
 
     def with_generation_kwargs(self, **kwargs: Unpack[GenerationKwargs]) -> Self:

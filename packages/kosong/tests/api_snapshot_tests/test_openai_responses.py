@@ -51,8 +51,13 @@ TEST_CASES: dict[str, Case] = {
 
 async def test_openai_responses_message_conversion():
     with respx.mock(base_url="https://api.openai.com") as mock:
-        mock.post("/v1/responses").mock(return_value=Response(200, json=make_response()))
-        provider = OpenAIResponses(model="gpt-4.1", api_key="test-key", stream=False)
+        mock.post("/responses").mock(return_value=Response(200, json=make_response()))
+        provider = OpenAIResponses(
+            model="gpt-4.1",
+            api_key="test-key",
+            base_url="https://api.openai.com",
+            stream=False,
+        )
         results = await run_test_cases(mock, provider, TEST_CASES, ("input", "tools"))
 
         assert results == snapshot(
@@ -368,9 +373,12 @@ async def test_openai_responses_message_conversion():
 
 async def test_openai_responses_generation_kwargs():
     with respx.mock(base_url="https://api.openai.com") as mock:
-        mock.post("/v1/responses").mock(return_value=Response(200, json=make_response()))
+        mock.post("/responses").mock(return_value=Response(200, json=make_response()))
         provider = OpenAIResponses(
-            model="gpt-4.1", api_key="test-key", stream=False
+            model="gpt-4.1",
+            api_key="test-key",
+            base_url="https://api.openai.com",
+            stream=False,
         ).with_generation_kwargs(temperature=0.7, max_output_tokens=2048)
         stream = await provider.generate("", [], [Message(role="user", content="Hi")])
         async for _ in stream:
@@ -381,12 +389,15 @@ async def test_openai_responses_generation_kwargs():
 
 async def test_openai_responses_with_thinking():
     with respx.mock(base_url="https://api.openai.com") as mock:
-        mock.post("/v1/responses").mock(return_value=Response(200, json=make_response()))
-        provider = OpenAIResponses(model="gpt-4.1", api_key="test-key", stream=False).with_thinking(
-            "high"
-        )
+        mock.post("/responses").mock(return_value=Response(200, json=make_response()))
+        provider = OpenAIResponses(
+            model="gpt-4.1",
+            api_key="test-key",
+            base_url="https://api.openai.com",
+            stream=False,
+        ).with_thinking("high")
         stream = await provider.generate("", [], [Message(role="user", content="Think")])
         async for _ in stream:
             pass
         body = json.loads(mock.calls.last.request.content.decode())
-        assert body["reasoning"] == snapshot({"effort": "high", "summary": "auto"})
+        assert body["reasoning"] == snapshot({"effort": "xhigh", "summary": "auto"})
