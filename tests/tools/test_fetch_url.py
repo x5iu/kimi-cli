@@ -265,3 +265,68 @@ async def test_fetch_url_with_service(runtime) -> None:
 
     finally:
         await runner.cleanup()
+
+
+async def test_fetch_url_service_includes_http_error_body(runtime) -> None:
+    """Test service-mode fetch shows the HTTP error body on non-200 responses."""
+    from kimi_cli.config import Config, MoonshotFetchConfig, Services
+    from pydantic import SecretStr
+
+    async def service_handler(request: web.Request) -> web.Response:
+        assert request.method == "POST"
+        data = await request.json()
+        assert data["url"] == "not-a-valid-url"
+        return web.json_response(
+            {
+                "error": {
+                    "message": "fetch quota exceeded",
+                    "type": "rate_limit",
+                }
+            },
+            status=429,
+        )
+
+    app = web.Application()
+    app.router.add_post("/fetch", service_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="127.0.0.1", port=0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]  # type: ignore
+    service_url = f"http://127.0.0.1:{port}/fetch"
+
+    try:
+        config = Config(
+            services=Services(
+                moonshot_fetch=MoonshotFetchConfig(
+                    base_url=service_url,
+                    api_key=SecretStr("test-key"),
+                )
+            )
+        )
+        fetch_tool = FetchURL(config=config, runtime=runtime)
+
+        from kimi_cli.wire.types import ToolCall
+        from kimi_cli.soul.toolset import current_tool_call
+
+        token = current_tool_call.set(
+            ToolCall(
+                id="test-call-id",
+                function=ToolCall.FunctionBody(name="FetchURL", arguments=None),
+            )
+        )
+        try:
+            result = await fetch_tool(Params(url="not-a-valid-url"))
+        finally:
+            current_tool_call.reset(token)
+
+        assert result.is_error
+        assert result.message == snapshot(
+            "Failed to fetch URL via service. Status: 429. The HTTP response body is included below."
+        )
+        assert result.output == snapshot(
+            '{\n  "error": {\n    "message": "fetch quota exceeded",\n    "type": "rate_limit"\n  }\n}'
+        )
+
+    finally:
+        await runner.cleanup()

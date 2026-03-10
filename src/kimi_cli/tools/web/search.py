@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import override
 
@@ -85,10 +86,13 @@ class SearchWeb(CallableTool2[Params]):
             ) as response,
         ):
             if response.status != 200:
+                error_body = _format_error_response_body(await response.text())
+                if error_body:
+                    builder.write(error_body)
                 return builder.error(
                     (
-                        f"Failed to search. Status: {response.status}. "
-                        "This may indicates that the search service is currently unavailable."
+                        f"Failed to search. Status: {response.status}."
+                        + (" The HTTP response body is included below." if error_body else "")
                     ),
                     brief="Failed to search",
                 )
@@ -115,6 +119,18 @@ class SearchWeb(CallableTool2[Params]):
                 builder.write(f"{result.content}\n\n")
 
         return builder.ok()
+
+
+def _format_error_response_body(body: str) -> str:
+    body = body.strip()
+    if not body:
+        return ""
+
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return body
+    return json.dumps(parsed, ensure_ascii=False, indent=2)
 
 
 class SearchResult(BaseModel):

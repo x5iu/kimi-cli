@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import override
 
@@ -37,6 +38,10 @@ class FetchURL(CallableTool2[Params]):
                 return ret
             logger.warning("Failed to fetch URL via service: {error}", error=ret.message)
             # fallback to local fetch if service fetch fails
+            fallback_ret = await self.fetch_with_http_get(params)
+            if fallback_ret.is_error and ret.output:
+                return ret
+            return fallback_ret
         return await self.fetch_with_http_get(params)
 
     @staticmethod
@@ -141,8 +146,14 @@ class FetchURL(CallableTool2[Params]):
                 ) as response,
             ):
                 if response.status != 200:
+                    error_body = _format_error_response_body(await response.text())
+                    if error_body:
+                        builder.write(error_body)
                     return builder.error(
-                        f"Failed to fetch URL via service. Status: {response.status}.",
+                        (
+                            f"Failed to fetch URL via service. Status: {response.status}."
+                            + (" The HTTP response body is included below." if error_body else "")
+                        ),
                         brief="Failed to fetch URL via fetch service",
                     )
 
@@ -159,3 +170,15 @@ class FetchURL(CallableTool2[Params]):
                 ),
                 brief="Network error when calling fetch service",
             )
+
+
+def _format_error_response_body(body: str) -> str:
+    body = body.strip()
+    if not body:
+        return ""
+
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return body
+    return json.dumps(parsed, ensure_ascii=False, indent=2)
