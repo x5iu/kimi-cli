@@ -125,6 +125,12 @@ class SkillReminderState:
     consumed: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class _QueuedSteer:
+    turn_id: int
+    content: str | list[ContentPart]
+
+
 class KimiSoul:
     """The soul of Kimi Code CLI."""
 
@@ -156,7 +162,9 @@ class KimiSoul:
         else:
             self._checkpoint_with_user_message = False
 
-        self._steer_queue: asyncio.Queue[str | list[ContentPart]] = asyncio.Queue()
+        self._steer_queue: asyncio.Queue[_QueuedSteer] = asyncio.Queue()
+        self._active_turn_id: int | None = None
+        self._next_turn_id = 0
         self._plan_mode: bool = False
         self._plan_session_id: str | None = None
         self._pending_plan_activation_attachment: bool = False
@@ -354,9 +362,22 @@ class KimiSoul:
     async def _checkpoint(self):
         await self._context.checkpoint(self._checkpoint_with_user_message)
 
+    def _begin_turn(self) -> int:
+        self._next_turn_id += 1
+        self._active_turn_id = self._next_turn_id
+        return self._next_turn_id
+
+    def _end_turn(self, turn_id: int) -> None:
+        if self._active_turn_id == turn_id:
+            self._active_turn_id = None
+
     def steer(self, content: str | list[ContentPart]) -> None:
         """Queue a steer message for injection into the current turn."""
-        self._steer_queue.put_nowait(content)
+        turn_id = self._active_turn_id
+        if turn_id is None:
+            logger.debug("Ignoring steer because there is no active turn")
+            return
+        self._steer_queue.put_nowait(_QueuedSteer(turn_id=turn_id, content=content))
 
     async def _consume_pending_steers(self) -> bool:
         """Drain the steer queue and inject as synthetic tool results.
@@ -364,9 +385,18 @@ class KimiSoul:
         Returns True if any steers were consumed.
         """
         consumed = False
+        active_turn_id = self._active_turn_id
         while not self._steer_queue.empty():
-            content = self._steer_queue.get_nowait()
-            await self._inject_steer(content)
+            steer = self._steer_queue.get_nowait()
+            if steer.turn_id != active_turn_id:
+                logger.debug(
+                    "Dropping stale steer from turn {steer_turn_id}; "
+                    "active turn is {active_turn_id}",
+                    steer_turn_id=steer.turn_id,
+                    active_turn_id=active_turn_id,
+                )
+                continue
+            await self._inject_steer(steer.content)
             consumed = True
         return consumed
 
@@ -379,7 +409,14 @@ class KimiSoul:
         ).strip()
         reminder = (
             "The user sent a new reminder during the current turn. "
-            "Treat it as the latest user instruction for this task.\n\n"
+            "Treat it as an additional user instruction for this task. "
+            "Incorporate it into the ongoing turn, but do not stop, summarize, or conclude "
+            "the turn only because of this reminder. "
+            "Use the reminder as hidden steering: do not explicitly acknowledge, answer, or "
+            "quote the reminder by itself in the final response unless the original turn prompt "
+            "directly asks for that. Do not use meta phrasing such as 'based on your reminder', "
+            "'you just added', or 'you mentioned later'. Keep the final response centered on the "
+            "user's original turn-opening request.\n\n"
             f"Reminder:\n{text}"
         )
         await self._context.append_message(
@@ -394,32 +431,36 @@ class KimiSoul:
         return self._slash_commands
 
     async def run(self, user_input: str | list[ContentPart]):
-        # Refresh OAuth tokens on each turn to avoid idle-time expirations.
-        await self._runtime.oauth.ensure_fresh(self._runtime)
+        turn_id = self._begin_turn()
+        try:
+            # Refresh OAuth tokens on each turn to avoid idle-time expirations.
+            await self._runtime.oauth.ensure_fresh(self._runtime)
 
-        wire_send(TurnBegin(user_input=user_input))
-        user_message = Message(role="user", content=user_input)
-        text_input = user_message.extract_text(" ").strip()
+            wire_send(TurnBegin(user_input=user_input))
+            user_message = Message(role="user", content=user_input)
+            text_input = user_message.extract_text(" ").strip()
 
-        if command_call := parse_slash_command_call(text_input):
-            command = self._find_slash_command(command_call.name)
-            if command is None:
-                # this should not happen actually, the shell should have filtered it out
-                wire_send(TextPart(text=f'Unknown slash command "/{command_call.name}".'))
+            if command_call := parse_slash_command_call(text_input):
+                command = self._find_slash_command(command_call.name)
+                if command is None:
+                    # this should not happen actually, the shell should have filtered it out
+                    wire_send(TextPart(text=f'Unknown slash command "/{command_call.name}".'))
+                else:
+                    ret = command.func(self, command_call.args)
+                    if isinstance(ret, Awaitable):
+                        await ret
+            elif self._loop_control.max_ralph_iterations != 0:
+                runner = FlowRunner.ralph_loop(
+                    user_message,
+                    self._loop_control.max_ralph_iterations,
+                )
+                await runner.run(self, "", enable_skill_reminder=True)
             else:
-                ret = command.func(self, command_call.args)
-                if isinstance(ret, Awaitable):
-                    await ret
-        elif self._loop_control.max_ralph_iterations != 0:
-            runner = FlowRunner.ralph_loop(
-                user_message,
-                self._loop_control.max_ralph_iterations,
-            )
-            await runner.run(self, "", enable_skill_reminder=True)
-        else:
-            await self._turn(user_message, enable_skill_reminder=True)
+                await self._turn(user_message, enable_skill_reminder=True)
 
-        wire_send(TurnEnd())
+            wire_send(TurnEnd())
+        finally:
+            self._end_turn(turn_id)
 
     async def _turn(
         self,
@@ -667,10 +708,6 @@ class KimiSoul:
     async def _agent_loop(self, skill_reminder: SkillReminderState | None = None) -> TurnOutcome:
         """The main agent loop for one run."""
         assert self._runtime.llm is not None
-
-        # Discard any stale steers from a previous turn.
-        while not self._steer_queue.empty():
-            self._steer_queue.get_nowait()
 
         if isinstance(self._agent.toolset, KimiToolset):
             loading = self._agent.toolset.has_pending_mcp_tools()

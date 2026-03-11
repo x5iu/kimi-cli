@@ -190,13 +190,14 @@ class Shell:
                 return False
             if live_view.has_pending_input_request:
                 return live_view.try_submit_line(text)
-            if text in {"exit", "quit", "/exit", "/quit"} or parse_slash_command_call(text):
+            if text in {"exit", "quit"}:
                 queued_input = turn_input
                 cancel_event.set()
                 return True
             if not isinstance(self.soul, KimiSoul):
                 return False
             self.soul.steer(turn_input.content)
+            live_view.echo_reminder(text)
             return True
 
         def _cancel_handler() -> None:

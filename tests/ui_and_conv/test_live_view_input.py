@@ -9,6 +9,10 @@ from kimi_cli.wire.types import (
     QuestionOption,
     QuestionRequest,
     StatusUpdate,
+    StepBegin,
+    TextPart,
+    TurnBegin,
+    TurnEnd,
 )
 
 
@@ -104,3 +108,39 @@ async def test_live_view_accepts_multi_select_answer_with_custom_text() -> None:
 
     assert view.try_submit_line("1, 3, smoke") is True
     assert await request.wait() == {"Which checks should I run?": "format, tests, smoke"}
+
+
+def test_live_view_echoes_reminder_in_output() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.echo_reminder("please keep the answer short")
+    rendered = view.render_ansi(80)
+
+    assert "Reminder:" in rendered
+    assert "please keep the answer short" in rendered
+
+    view.dispatch_wire_message(StepBegin(n=2))
+    rendered = view.render_ansi(80)
+
+    assert "Reminder:" in rendered
+    assert "please keep the answer short" in rendered
+
+
+def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.dispatch_wire_message(TurnBegin(user_input="hello"))
+    assert view.needs_periodic_refresh is True
+    assert "Running..." in view.render_ansi(80)
+
+    view.dispatch_wire_message(TextPart(text="working"))
+    assert "Running..." not in view.render_ansi(80)
+
+    view.flush_content()
+    assert "Running..." in view.render_ansi(80)
+
+    view.dispatch_wire_message(StepBegin(n=1))
+    assert "Running..." not in view.render_ansi(80)
+
+    view.dispatch_wire_message(TurnEnd())
+    assert "Running..." not in view.render_ansi(80)

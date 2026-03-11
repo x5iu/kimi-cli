@@ -736,14 +736,21 @@ class CustomPromptSession:
             self._last_history_content = history_entries[-1].content
 
         # Build completers
+        # Slash commands are only available at the top-level prompt. During an active
+        # turn, the input box is reserved for reminders / approval answers, so keep
+        # slash commands out of that UI entirely.
+        self._file_mention_completer = LocalFileMentionCompleter(
+            KaosPath.cwd().unsafe_to_local_path()
+        )
         self._agent_mode_completer = merge_completers(
             [
                 SlashCommandCompleter(agent_mode_slash_commands),
                 # TODO(kaos): we need an async KaosFileMentionCompleter
-                LocalFileMentionCompleter(KaosPath.cwd().unsafe_to_local_path()),
+                self._file_mention_completer,
             ],
             deduplicate=True,
         )
+        self._turn_mode_completer = self._file_mention_completer
         self._shell_mode_completer = SlashCommandCompleter(shell_mode_slash_commands)
 
         # Build key bindings
@@ -1275,7 +1282,7 @@ class CustomPromptSession:
         text_area = TextArea(
             text="",
             multiline=True,
-            completer=self._agent_mode_completer,
+            completer=self._turn_mode_completer,
             complete_while_typing=True,
             history=self._history,
             wrap_lines=True,
@@ -1472,12 +1479,14 @@ class CustomPromptSession:
                     msg = await wire.receive()
                 except QueueShutDown:
                     live_view.cleanup(is_interrupt=False)
+                    live_view.finish_turn()
                     app.invalidate()
                     app.exit()
                     return
 
                 if isinstance(msg, StepInterrupted):
                     live_view.cleanup(is_interrupt=True)
+                    live_view.finish_turn()
                     app.invalidate()
                     app.exit()
                     return

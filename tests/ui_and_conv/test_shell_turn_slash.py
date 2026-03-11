@@ -7,16 +7,16 @@ from types import SimpleNamespace
 import pytest
 from kosong.tooling.empty import EmptyToolset
 
-from kimi_cli.soul import RunCancelled
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
 from kimi_cli.ui.shell.prompt import PromptMode, UserInput
+from kimi_cli.wire.types import TextPart
 
 
 @pytest.mark.asyncio
-async def test_slash_command_submitted_during_turn_runs_after_interrupt(
+async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
     runtime: Runtime,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -33,8 +33,20 @@ async def test_slash_command_submitted_during_turn_runs_after_interrupt(
     shell = Shell(soul)
     monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
 
-    async def fake_run_turn_ui(*, submit_handler, **kwargs) -> None:
-        assert submit_handler(UserInput(mode=PromptMode.AGENT, command="/help", content=[])) is True
+    async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
+        assert (
+            submit_handler(
+                UserInput(
+                    mode=PromptMode.AGENT,
+                    command="/help",
+                    content=[TextPart(text="/help")],
+                )
+            )
+            is True
+        )
+        rendered = live_view.render_ansi(80)
+        assert "Reminder:" in rendered
+        assert "/help" in rendered
 
     async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
         class _FakeWire:
@@ -43,19 +55,18 @@ async def test_slash_command_submitted_during_turn_runs_after_interrupt(
                 return None
 
         await ui_loop_fn(_FakeWire())
-        raise RunCancelled()
 
-    recorded: dict[str, str] = {}
+    recorded: list[object] = []
 
-    async def fake_run_slash_command(command_call) -> None:
-        recorded["name"] = command_call.name
+    def fake_steer(content) -> None:
+        recorded.append(content)
 
     shell_module = importlib.import_module("kimi_cli.ui.shell")
     monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
-    monkeypatch.setattr(shell, "_run_slash_command", fake_run_slash_command)
+    monkeypatch.setattr(soul, "steer", fake_steer)
 
     prompt_session = SimpleNamespace(run_turn_ui=fake_run_turn_ui)
     keep_running = await shell._run_interactive_turn(prompt_session, "hello")
 
     assert keep_running is True
-    assert recorded == {"name": "help"}
+    assert recorded == [[TextPart(text="/help")]]

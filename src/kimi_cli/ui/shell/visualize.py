@@ -86,6 +86,13 @@ async def visualize(
     await view.visualize_loop(wire)
 
 
+def _render_reminder_block(text: str) -> RenderableType:
+    content = Text()
+    content.append("Reminder: ", style="cyan bold")
+    content.append(text, style="grey50")
+    return BulletColumns(content, bullet_style="cyan")
+
+
 class _ContentBlock:
     def __init__(self, is_think: bool):
         self.is_think = is_think
@@ -825,6 +832,7 @@ class LiveView:
     ):
         self._cancel_event = cancel_event
 
+        self._turn_spinner: Spinner | None = None
         self._mooning_spinner: Spinner | None = None
         self._compacting_spinner: Spinner | None = None
         self._mcp_loading_spinner: Spinner | None = None
@@ -847,6 +855,7 @@ class LiveView:
         self._flush_to_console = flush_to_console
         self._allow_expand = allow_expand
         self._flushed_blocks: list[RenderableType] = []
+        self._pending_local_blocks: list[RenderableType] = []
 
         self._need_recompose = False
 
@@ -879,11 +888,13 @@ class LiveView:
                         msg = await wire.receive()
                     except QueueShutDown:
                         self.cleanup(is_interrupt=False)
+                        self.finish_turn()
                         live.update(self.compose(), refresh=True)
                         break
 
                     if isinstance(msg, StepInterrupted):
                         self.cleanup(is_interrupt=True)
+                        self.finish_turn()
                         live.update(self.compose(), refresh=True)
                         break
 
@@ -900,8 +911,30 @@ class LiveView:
     def refresh_soon(self) -> None:
         self._need_recompose = True
 
+    def echo_reminder(self, text: str) -> None:
+        stripped = text.strip()
+        if not stripped:
+            return
+        self._pending_local_blocks.append(_render_reminder_block(stripped))
+        self.refresh_soon()
+
+    def _flush_pending_local_blocks(self) -> None:
+        if not self._pending_local_blocks:
+            return
+        self._flushed_blocks.extend(self._pending_local_blocks)
+        self._pending_local_blocks.clear()
+        self.refresh_soon()
+
+    def finish_turn(self) -> None:
+        if self._turn_spinner is None:
+            return
+        self._turn_spinner = None
+        self.refresh_soon()
+
     @property
     def needs_periodic_refresh(self) -> bool:
+        if self._turn_spinner is not None:
+            return True
         if self._mcp_loading_spinner is not None:
             return True
         if self._mooning_spinner is not None:
@@ -1132,17 +1165,27 @@ class LiveView:
     def compose(self, *, include_status: bool = True) -> RenderableType:
         """Compose the live view display content."""
         blocks: list[RenderableType] = list(self._flushed_blocks)
+        has_specific_running_indicator = False
         if self._mcp_loading_spinner is not None:
             blocks.append(self._mcp_loading_spinner)
+            has_specific_running_indicator = True
         elif self._mooning_spinner is not None:
             blocks.append(self._mooning_spinner)
+            has_specific_running_indicator = True
         elif self._compacting_spinner is not None:
             blocks.append(self._compacting_spinner)
+            has_specific_running_indicator = True
         else:
             if self._current_content_block is not None:
                 blocks.append(self._current_content_block.compose())
+                has_specific_running_indicator = True
             for tool_call in self._tool_call_blocks.values():
                 blocks.append(tool_call.compose())
+                if not tool_call.finished:
+                    has_specific_running_indicator = True
+        blocks.extend(self._pending_local_blocks)
+        if self._turn_spinner is not None and not has_specific_running_indicator:
+            blocks.append(self._turn_spinner)
         if self._current_approval_request_panel:
             blocks.append(self._current_approval_request_panel.render())
         if self._current_question_panel:
@@ -1158,6 +1201,7 @@ class LiveView:
 
         if isinstance(msg, StepBegin):
             self.cleanup(is_interrupt=False)
+            self._flush_pending_local_blocks()
             self._mcp_loading_spinner = None
             self._mooning_spinner = Spinner("moon", "")
             self.refresh_soon()
@@ -1171,8 +1215,10 @@ class LiveView:
         match msg:
             case TurnBegin():
                 self.flush_content()
+                self._turn_spinner = Spinner("dots", "Running...")
+                self.refresh_soon()
             case TurnEnd():
-                pass
+                self.finish_turn()
             case CompactionBegin():
                 self._compacting_spinner = Spinner("balloon", "Compacting...")
                 self.refresh_soon()

@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterable
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
 
-from kimi_cli.ui.shell.prompt import SlashCommandCompleter
+from kimi_cli.soul import StatusSnapshot
+from kimi_cli.ui.shell.prompt import CustomPromptSession, SlashCommandCompleter
 from kimi_cli.utils.slashcmd import SlashCommand
 
 
@@ -57,5 +58,20 @@ def test_exact_alias_match_hides_completions():
     )
 
     texts = _completion_texts(completer, "/h")
+
+    assert not texts
+
+
+def test_turn_input_completer_disables_slash_commands():
+    session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[_make_command("help", aliases=["h"])],
+        shell_mode_slash_commands=[_make_command("exit")],
+    )
+
+    texts = _completion_texts(session._turn_mode_completer, "/h")
 
     assert not texts
