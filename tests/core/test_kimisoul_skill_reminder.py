@@ -19,6 +19,7 @@ from kimi_cli.soul.kimisoul import (
     SkillRecommendationItem,
     StepOutcome,
 )
+from kimi_cli.wire.types import SkillReminderNotice
 
 
 def _make_skill(tmp_path: Path, *, name: str, description: str) -> Skill:
@@ -127,9 +128,11 @@ async def test_turn_injects_skill_reminder_on_next_step(
             assistant_message=Message(role="assistant", content=f"step {step_calls}"),
         )
 
+    sent_messages: list[object] = []
+
     monkeypatch.setattr(KimiSoul, "_request_skill_recommendation", fake_request)
     monkeypatch.setattr(KimiSoul, "_step", fake_step)
-    monkeypatch.setattr(kimisoul_module, "wire_send", lambda _: None)
+    monkeypatch.setattr(kimisoul_module, "wire_send", sent_messages.append)
 
     result = await soul._turn(
         Message(role="user", content="Please update the docs."),
@@ -155,3 +158,4 @@ async def test_turn_injects_skill_reminder_on_next_step(
             "  Consider reading this skill's SKILL.md before continuing if it seems useful.</system>"
         )
     ]
+    assert SkillReminderNotice(skills=["/skill:gen-docs"]) in sent_messages

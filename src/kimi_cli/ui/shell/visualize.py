@@ -42,6 +42,7 @@ from kimi_cli.wire.types import (
     MCPLoadingEnd,
     QuestionRequest,
     ShellDisplayBlock,
+    SkillReminderNotice,
     StatusUpdate,
     StepBegin,
     StepInterrupted,
@@ -90,6 +91,15 @@ def _render_reminder_block(text: str) -> RenderableType:
     content = Text()
     content.append("Reminder: ", style="cyan bold")
     content.append(text, style="grey50")
+    return BulletColumns(content, bullet_style="cyan")
+
+
+def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
+    content = Text()
+    content.append("Reminder: ", style="cyan bold")
+    content.append("recommended ", style="grey50")
+    content.append(", ".join(skills), style="cyan")
+    content.append(" to the main flow", style="grey50")
     return BulletColumns(content, bullet_style="cyan")
 
 
@@ -931,6 +941,12 @@ class LiveView:
         self._turn_spinner = None
         self.refresh_soon()
 
+    def append_skill_reminder(self, skills: Sequence[str]) -> None:
+        if not skills:
+            return
+        self._flushed_blocks.append(_render_skill_reminder_block(skills))
+        self.refresh_soon()
+
     @property
     def needs_periodic_refresh(self) -> bool:
         if self._turn_spinner is not None:
@@ -1231,6 +1247,8 @@ class LiveView:
             case MCPLoadingEnd():
                 self._mcp_loading_spinner = None
                 self.refresh_soon()
+            case SkillReminderNotice(skills=skills):
+                self.append_skill_reminder(skills)
             case StatusUpdate():
                 self._status_block.update(msg)
             case ContentPart():

@@ -20,6 +20,7 @@ from kimi_cli.wire.types import (
     QuestionOption,
     QuestionRequest,
     QuestionResponse,
+    SkillReminderNotice,
     StatusUpdate,
     StepBegin,
     StepInterrupted,
@@ -95,6 +96,12 @@ async def test_wire_message_serde():
 
     msg = MCPLoadingEnd()
     assert serialize_wire_message(msg) == snapshot({"type": "MCPLoadingEnd", "payload": {}})
+    _test_serde(msg)
+
+    msg = SkillReminderNotice(skills=["/skill:gen-docs"])
+    assert serialize_wire_message(msg) == snapshot(
+        {"type": "SkillReminderNotice", "payload": {"skills": ["/skill:gen-docs"]}}
+    )
     _test_serde(msg)
 
     msg = StatusUpdate(context_usage=0.5)

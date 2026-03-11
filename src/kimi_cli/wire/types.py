@@ -100,6 +100,12 @@ class MCPLoadingEnd(BaseModel):
     pass
 
 
+class SkillReminderNotice(BaseModel):
+    """Indicates that a background skill recommendation was injected into the main flow."""
+
+    skills: list[str]
+
+
 class StatusUpdate(BaseModel):
     """
     An update on the current status of the soul.
@@ -373,6 +379,7 @@ type Event = (
     | CompactionEnd
     | MCPLoadingBegin
     | MCPLoadingEnd
+    | SkillReminderNotice
     | StatusUpdate
     | ContentPart
     | ToolCall
@@ -457,6 +464,7 @@ __all__ = [
     "CompactionEnd",
     "MCPLoadingBegin",
     "MCPLoadingEnd",
+    "SkillReminderNotice",
     "StatusUpdate",
     "ContentPart",
     "ToolCall",

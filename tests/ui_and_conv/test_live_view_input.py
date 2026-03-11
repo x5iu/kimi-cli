@@ -8,6 +8,7 @@ from kimi_cli.wire.types import (
     QuestionItem,
     QuestionOption,
     QuestionRequest,
+    SkillReminderNotice,
     StatusUpdate,
     StepBegin,
     TextPart,
@@ -144,3 +145,14 @@ def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
 
     view.dispatch_wire_message(TurnEnd())
     assert "Running..." not in view.render_ansi(80)
+
+
+def test_live_view_renders_skill_reminder_notice() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.dispatch_wire_message(SkillReminderNotice(skills=["/skill:gen-docs"]))
+    rendered = view.render_ansi(80)
+
+    assert "Reminder:" in rendered
+    assert "/skill:gen-docs" in rendered
+    assert "main flow" in rendered

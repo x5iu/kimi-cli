@@ -54,6 +54,7 @@ from kimi_cli.wire.types import (
     ContentPart,
     MCPLoadingBegin,
     MCPLoadingEnd,
+    SkillReminderNotice,
     StatusUpdate,
     StepBegin,
     StepInterrupted,
@@ -689,6 +690,11 @@ class KimiSoul:
             return False
 
         await self._context.append_message(self._build_skill_reminder_message(recommendation))
+        wire_send(
+            SkillReminderNotice(
+                skills=[f"/skill:{item.name}" for item in recommendation.skills],
+            )
+        )
         logger.debug("Injected skill reminder into context")
         return True
 
