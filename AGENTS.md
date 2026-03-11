@@ -56,7 +56,11 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
   (`src/kimi_cli/wire/`) so UI loops can stream events. UIs live in `src/kimi_cli/ui/`
   (shell/print/acp/wire).
 - **Shell UI**: `src/kimi_cli/ui/shell/` handles interactive TUI input, shell command mode,
-  and slash command autocomplete; it is the default interactive experience.
+  slash command autocomplete, and the persistent bottom input box. During an active turn,
+  the shell now switches into a single prompt_toolkit Application that owns both the
+  dynamic middle output area and the fixed bottom input/status area, so users can send
+  reminders or answer approval/question prompts without fighting a second renderer; it is
+  the default interactive experience.
 - **Slash commands**: Soul-level commands live in `src/kimi_cli/soul/slash.py`; shell-level
   commands live in `src/kimi_cli/ui/shell/slash.py`. The shell UI exposes both and dispatches
   based on the registry. Standard skills register `/skill:<skill-name>` and load `SKILL.md`

@@ -17,12 +17,18 @@ from rich.text import Text
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
-from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, toast
+from kimi_cli.ui.shell.prompt import (
+    PROMPT_SYMBOL,
+    CustomPromptSession,
+    PromptMode,
+    UserInput,
+    toast,
+)
 from kimi_cli.ui.shell.replay import replay_recent_history
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.ui.shell.slash import shell_mode_registry
 from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_update, semver_tuple
-from kimi_cli.ui.shell.visualize import visualize
+from kimi_cli.ui.shell.visualize import LiveView, visualize
 from kimi_cli.utils.envvar import get_env_bool
 from kimi_cli.utils.logging import open_original_stderr
 from kimi_cli.utils.signals import install_sigint_handler
@@ -105,25 +111,204 @@ class Shell:
                         continue
                     logger.debug("Got user input: {user_input}", user_input=user_input)
 
-                    if user_input.command in ["exit", "quit", "/exit", "/quit"]:
-                        logger.debug("Exiting by slash command")
-                        console.print("Bye!")
+                    if not await self._handle_agent_input(prompt_session, user_input):
                         break
-
-                    if user_input.mode == PromptMode.SHELL:
-                        await self._run_shell_command(user_input.command)
-                        continue
-
-                    if slash_cmd_call := parse_slash_command_call(user_input.command):
-                        await self._run_slash_command(slash_cmd_call)
-                        continue
-
-                    await self.run_soul_command(user_input.content)
-                    console.print()
             finally:
                 ensure_tty_sane()
 
         return True
+
+    def _echo_agent_input(self, user_input: UserInput) -> None:
+        if user_input.mode != PromptMode.AGENT:
+            return
+        console.print(f"{PROMPT_SYMBOL} {user_input.command}")
+
+    async def _handle_agent_input(
+        self,
+        prompt_session: CustomPromptSession,
+        user_input: UserInput,
+        *,
+        echo: bool = True,
+    ) -> bool:
+        if echo:
+            self._echo_agent_input(user_input)
+
+        if user_input.command in ["exit", "quit", "/exit", "/quit"]:
+            logger.debug("Exiting by slash command")
+            console.print("Bye!")
+            return False
+
+        if user_input.mode == PromptMode.SHELL:
+            await self._run_shell_command(user_input.command)
+            return True
+
+        slash_cmd_call = parse_slash_command_call(user_input.command)
+        if (
+            slash_cmd_call is not None
+            and shell_slash_registry.find_command(slash_cmd_call.name) is not None
+        ):
+            await self._run_slash_command(slash_cmd_call)
+            return True
+
+        soul_input: str | list[ContentPart] = (
+            user_input.command if slash_cmd_call is not None else user_input.content
+        )
+        keep_running = await self._run_interactive_turn(prompt_session, soul_input)
+        console.print()
+        return keep_running
+
+    def _initial_status_update(self) -> StatusUpdate:
+        snap = self.soul.status
+        return StatusUpdate(
+            context_usage=snap.context_usage,
+            context_tokens=snap.context_tokens,
+            max_context_tokens=snap.max_context_tokens,
+        )
+
+    async def _run_interactive_turn(
+        self,
+        prompt_session: CustomPromptSession,
+        user_input: str | list[ContentPart],
+    ) -> bool:
+        logger.info(
+            "Running interactive soul turn with user input: {user_input}",
+            user_input=user_input,
+        )
+        cancel_event = asyncio.Event()
+        live_view = LiveView(
+            self._initial_status_update(),
+            cancel_event=cancel_event,
+            flush_to_console=False,
+            allow_expand=False,
+        )
+        queued_input: UserInput | None = None
+
+        def _submit_handler(turn_input: UserInput) -> bool:
+            nonlocal queued_input
+            text = turn_input.command.strip()
+            if not text:
+                return False
+            if live_view.has_pending_input_request:
+                return live_view.try_submit_line(text)
+            if text in {"exit", "quit", "/exit", "/quit"} or parse_slash_command_call(text):
+                queued_input = turn_input
+                cancel_event.set()
+                return True
+            if not isinstance(self.soul, KimiSoul):
+                return False
+            self.soul.steer(turn_input.content)
+            return True
+
+        def _cancel_handler() -> None:
+            cancel_event.set()
+
+        keep_running = True
+        try:
+            await run_soul(
+                self.soul,
+                user_input,
+                lambda wire: prompt_session.run_turn_ui(
+                    wire=wire.ui_side(merge=False),
+                    live_view=live_view,
+                    submit_handler=_submit_handler,
+                    cancel_handler=_cancel_handler,
+                ),
+                cancel_event,
+                self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,
+            )
+        except LLMNotSet:
+            logger.exception("LLM not set:")
+            console.print('[red]LLM not set, send "/login" to login[/red]')
+            keep_running = False
+        except LLMNotSupported as e:
+            logger.exception("LLM not supported:")
+            console.print(f"[red]{e}[/red]")
+            keep_running = False
+        except ChatProviderError as e:
+            logger.exception("LLM provider error:")
+            if isinstance(e, APIStatusError) and e.status_code == 401:
+                console.print("[red]Authorization failed, please check your login status[/red]")
+            elif isinstance(e, APIStatusError) and e.status_code == 402:
+                console.print("[red]Membership expired, please renew your plan[/red]")
+            elif isinstance(e, APIStatusError) and e.status_code == 403:
+                console.print(
+                    f"[red]Quota exceeded, please upgrade your plan or retry later: {e}[/red]"
+                )
+            else:
+                console.print(f"[red]LLM provider error: {e}[/red]")
+            keep_running = False
+        except MaxStepsReached as e:
+            logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
+            console.print(f"[yellow]{e}[/yellow]")
+            keep_running = False
+        except RunCancelled:
+            logger.info("Cancelled by user")
+            if queued_input is None:
+                console.print("[red]Interrupted by user[/red]")
+        except Exception as e:
+            logger.exception("Unexpected error:")
+            console.print(f"[red]Unexpected error: {e}[/red]")
+            raise
+
+        if queued_input is not None:
+            return await self._handle_agent_input(prompt_session, queued_input)
+        return keep_running
+
+    def _build_live_view(self, cancel_event: asyncio.Event) -> LiveView:
+        return LiveView(self._initial_status_update(), cancel_event=cancel_event)
+
+    async def _run_soul_command_with_ui(
+        self,
+        user_input: str | list[ContentPart],
+        *,
+        cancel_event: asyncio.Event,
+        live_view: LiveView,
+    ) -> bool:
+        logger.info("Running soul with user input: {user_input}", user_input=user_input)
+
+        try:
+            await run_soul(
+                self.soul,
+                user_input,
+                lambda wire: visualize(
+                    wire.ui_side(merge=False),
+                    initial_status=self._initial_status_update(),
+                    cancel_event=cancel_event,
+                    live_view=live_view,
+                ),
+                cancel_event,
+                self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,
+            )
+            return True
+        except LLMNotSet:
+            logger.exception("LLM not set:")
+            console.print('[red]LLM not set, send "/login" to login[/red]')
+        except LLMNotSupported as e:
+            logger.exception("LLM not supported:")
+            console.print(f"[red]{e}[/red]")
+        except ChatProviderError as e:
+            logger.exception("LLM provider error:")
+            if isinstance(e, APIStatusError) and e.status_code == 401:
+                console.print("[red]Authorization failed, please check your login status[/red]")
+            elif isinstance(e, APIStatusError) and e.status_code == 402:
+                console.print("[red]Membership expired, please renew your plan[/red]")
+            elif isinstance(e, APIStatusError) and e.status_code == 403:
+                console.print(
+                    f"[red]Quota exceeded, please upgrade your plan or retry later: {e}[/red]"
+                )
+            else:
+                console.print(f"[red]LLM provider error: {e}[/red]")
+        except MaxStepsReached as e:
+            logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
+            console.print(f"[yellow]{e}[/yellow]")
+        except RunCancelled:
+            logger.info("Cancelled by user")
+            console.print("[red]Interrupted by user[/red]")
+        except Exception as e:
+            logger.exception("Unexpected error:")
+            console.print(f"[red]Unexpected error: {e}[/red]")
+            raise
+        return False
 
     async def _run_shell_command(self, command: str) -> None:
         """Run a shell command in foreground."""
@@ -228,9 +413,8 @@ class Shell:
         Returns:
             bool: Whether the run is successful.
         """
-        logger.info("Running soul with user input: {user_input}", user_input=user_input)
-
         cancel_event = asyncio.Event()
+        live_view = self._build_live_view(cancel_event)
 
         def _handler():
             logger.debug("SIGINT received.")
@@ -238,55 +422,14 @@ class Shell:
 
         loop = asyncio.get_running_loop()
         remove_sigint = install_sigint_handler(loop, _handler)
-
         try:
-            snap = self.soul.status
-            await run_soul(
-                self.soul,
+            return await self._run_soul_command_with_ui(
                 user_input,
-                lambda wire: visualize(
-                    wire.ui_side(merge=False),  # shell UI maintain its own merge buffer
-                    initial_status=StatusUpdate(
-                        context_usage=snap.context_usage,
-                        context_tokens=snap.context_tokens,
-                        max_context_tokens=snap.max_context_tokens,
-                    ),
-                    cancel_event=cancel_event,
-                ),
-                cancel_event,
-                self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,
+                cancel_event=cancel_event,
+                live_view=live_view,
             )
-            return True
-        except LLMNotSet:
-            logger.exception("LLM not set:")
-            console.print('[red]LLM not set, send "/login" to login[/red]')
-        except LLMNotSupported as e:
-            # actually unsupported input/mode should already be blocked by prompt session
-            logger.exception("LLM not supported:")
-            console.print(f"[red]{e}[/red]")
-        except ChatProviderError as e:
-            logger.exception("LLM provider error:")
-            if isinstance(e, APIStatusError) and e.status_code == 401:
-                console.print("[red]Authorization failed, please check your login status[/red]")
-            elif isinstance(e, APIStatusError) and e.status_code == 402:
-                console.print("[red]Membership expired, please renew your plan[/red]")
-            elif isinstance(e, APIStatusError) and e.status_code == 403:
-                console.print(f"[red]Quota exceeded, please upgrade your plan or retry later: {e}[/red]")
-            else:
-                console.print(f"[red]LLM provider error: {e}[/red]")
-        except MaxStepsReached as e:
-            logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
-            console.print(f"[yellow]{e}[/yellow]")
-        except RunCancelled:
-            logger.info("Cancelled by user")
-            console.print("[red]Interrupted by user[/red]")
-        except Exception as e:
-            logger.exception("Unexpected error:")
-            console.print(f"[red]Unexpected error: {e}[/red]")
-            raise  # re-raise unknown error
         finally:
             remove_sigint()
-        return False
 
     async def _auto_update(self) -> None:
         toast("checking for updates...", topic="update", duration=2.0)
