@@ -19,7 +19,7 @@ from kosong.chat_provider import (
     APITimeoutError,
     RetryableChatProvider,
 )
-from kosong.message import Message, ToolCall
+from kosong.message import Message
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from kimi_cli.llm import ModelCapability
@@ -371,33 +371,22 @@ class KimiSoul:
         return consumed
 
     async def _inject_steer(self, content: str | list[ContentPart]) -> None:
-        """Inject a single steer as a synthetic ``_steer`` tool_call + tool result pair."""
-        from uuid import uuid4
-
-        steer_id = f"steer_{uuid4().hex[:8]}"
+        """Inject a single steer as a real-time reminder appended to user messages."""
         text = (
             content
             if isinstance(content, str)
             else Message(role="user", content=content).extract_text(" ")
+        ).strip()
+        reminder = (
+            "The user sent a new reminder during the current turn. "
+            "Treat it as the latest user instruction for this task.\n\n"
+            f"Reminder:\n{text}"
         )
         await self._context.append_message(
-            [
-                Message(
-                    role="assistant",
-                    content=[],
-                    tool_calls=[
-                        ToolCall(
-                            id=steer_id,
-                            function=ToolCall.FunctionBody(name="_steer", arguments=None),
-                        )
-                    ],
-                ),
-                Message(
-                    role="tool",
-                    content=[system(f"The user has sent a real-time instruction:\n\n{text}")],
-                    tool_call_id=steer_id,
-                ),
-            ]
+            Message(
+                role="user",
+                content=[TextPart(text=f"<system-reminder>\n{reminder}\n</system-reminder>")],
+            )
         )
 
     @property
