@@ -106,8 +106,12 @@ def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
 class _ContentBlock:
     def __init__(self, is_think: bool):
         self.is_think = is_think
-        self._spinner = Spinner("dots", "Thinking..." if is_think else "Composing...")
+        self._spinner = Spinner("dots", self.status_text)
         self.raw_text = ""
+
+    @property
+    def status_text(self) -> str:
+        return "Thinking..." if self.is_think else "Composing..."
 
     def compose(self) -> RenderableType:
         return self._spinner
@@ -287,6 +291,16 @@ class _ToolCallBlock:
             if url:
                 return str(url)
         return None
+
+    @property
+    def status_text(self) -> str:
+        return self._headline_plain(finished=False)
+
+    def _headline_plain(self, *, finished: bool) -> str:
+        text = f"{'Used' if finished else 'Using'} {self._tool_name}"
+        if self._argument:
+            text += f" ({self._argument})"
+        return text
 
     def _build_headline_text(self) -> Text:
         text = Text()
@@ -961,7 +975,13 @@ class LiveView:
             return True
         return any(not block.finished for block in self._tool_call_blocks.values())
 
-    def render_ansi(self, width: int, *, include_status: bool = False) -> str:
+    def render_ansi(
+        self,
+        width: int,
+        *,
+        include_status: bool = False,
+        include_running_indicators: bool = True,
+    ) -> str:
         width = max(20, width)
         sio = StringIO()
         render_console = Console(
@@ -971,7 +991,13 @@ class LiveView:
             color_system="truecolor",
             highlight=False,
         )
-        render_console.print(self.compose(include_status=include_status), end="")
+        render_console.print(
+            self.compose(
+                include_status=include_status,
+                include_running_indicators=include_running_indicators,
+            ),
+            end="",
+        )
         return sio.getvalue()
 
     @property
@@ -1001,6 +1027,30 @@ class LiveView:
                 return "Type option numbers and press Enter. You can also type a custom answer."
             case _:
                 return "Turn is running. Type a message and press Enter to send a reminder."
+
+    @property
+    def footer_indicator(self) -> tuple[str, str] | None:
+        if self._current_approval_request_panel is not None:
+            return ("approval", "Awaiting approval...")
+        if self._current_question_panel is not None:
+            return ("question", "Awaiting answer...")
+        if self._mcp_loading_spinner is not None:
+            return ("mcp", "Connecting to MCP servers...")
+        if self._mooning_spinner is not None:
+            return ("moon", "Running...")
+        if self._compacting_spinner is not None:
+            return ("compacting", "Compacting...")
+        if self._current_content_block is not None:
+            return (
+                "thinking" if self._current_content_block.is_think else "composing",
+                self._current_content_block.status_text,
+            )
+        for tool_call in reversed(tuple(self._tool_call_blocks.values())):
+            if not tool_call.finished:
+                return ("tool", tool_call.status_text)
+        if self._turn_spinner is not None:
+            return ("running", "Running...")
+        return None
 
     def show_more(self) -> bool:
         if not self._allow_expand:
@@ -1178,30 +1228,40 @@ class LiveView:
         self._resolve_question_submission(panel, all_done=all_done)
         return True
 
-    def compose(self, *, include_status: bool = True) -> RenderableType:
+    def compose(
+        self,
+        *,
+        include_status: bool = True,
+        include_running_indicators: bool = True,
+    ) -> RenderableType:
         """Compose the live view display content."""
         blocks: list[RenderableType] = list(self._flushed_blocks)
         has_specific_running_indicator = False
-        if self._mcp_loading_spinner is not None:
-            blocks.append(self._mcp_loading_spinner)
-            has_specific_running_indicator = True
-        elif self._mooning_spinner is not None:
-            blocks.append(self._mooning_spinner)
-            has_specific_running_indicator = True
-        elif self._compacting_spinner is not None:
-            blocks.append(self._compacting_spinner)
-            has_specific_running_indicator = True
-        else:
-            if self._current_content_block is not None:
-                blocks.append(self._current_content_block.compose())
+        if include_running_indicators:
+            if self._mcp_loading_spinner is not None:
+                blocks.append(self._mcp_loading_spinner)
                 has_specific_running_indicator = True
-            for tool_call in self._tool_call_blocks.values():
-                blocks.append(tool_call.compose())
-                if not tool_call.finished:
+            elif self._mooning_spinner is not None:
+                blocks.append(self._mooning_spinner)
+                has_specific_running_indicator = True
+            elif self._compacting_spinner is not None:
+                blocks.append(self._compacting_spinner)
+                has_specific_running_indicator = True
+            else:
+                if self._current_content_block is not None:
+                    blocks.append(self._current_content_block.compose())
                     has_specific_running_indicator = True
+                for tool_call in self._tool_call_blocks.values():
+                    blocks.append(tool_call.compose())
+                    if not tool_call.finished:
+                        has_specific_running_indicator = True
+            if self._turn_spinner is not None and not has_specific_running_indicator:
+                blocks.append(self._turn_spinner)
+        else:
+            for tool_call in self._tool_call_blocks.values():
+                if tool_call.finished:
+                    blocks.append(tool_call.compose())
         blocks.extend(self._pending_local_blocks)
-        if self._turn_spinner is not None and not has_specific_running_indicator:
-            blocks.append(self._turn_spinner)
         if self._current_approval_request_panel:
             blocks.append(self._current_approval_request_panel.render())
         if self._current_question_panel:

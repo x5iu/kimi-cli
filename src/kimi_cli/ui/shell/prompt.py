@@ -78,6 +78,32 @@ PROMPT_SYMBOL_THINKING = "💫"
 PROMPT_SYMBOL_PLAN = "📋"
 STEADY_INPUT_CURSOR = SimpleCursorShapeConfig(CursorShape.BEAM)
 
+_DOTS_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+_MOON_FRAMES = ("🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘")
+_PAUSE_FRAMES = ("…",)
+_INDICATOR_FRAMES: dict[str, tuple[str, ...]] = {
+    "running": _DOTS_FRAMES,
+    "thinking": _DOTS_FRAMES,
+    "composing": _DOTS_FRAMES,
+    "tool": _DOTS_FRAMES,
+    "mcp": _DOTS_FRAMES,
+    "compacting": _DOTS_FRAMES,
+    "moon": _MOON_FRAMES,
+    "approval": _PAUSE_FRAMES,
+    "question": _PAUSE_FRAMES,
+}
+_INDICATOR_STYLES = {
+    "running": "fg:#22c55e",
+    "thinking": "fg:#22c55e",
+    "composing": "fg:#22c55e",
+    "tool": "fg:#22c55e",
+    "mcp": "fg:#38bdf8",
+    "compacting": "fg:#c084fc",
+    "moon": "fg:#facc15",
+    "approval": "fg:#f59e0b",
+    "question": "fg:#22d3ee",
+}
+
 
 def _rich_from_ansi(text: str) -> RichText:
     return RichText.from_ansi(text)
@@ -930,9 +956,7 @@ class CustomPromptSession:
     def _render_prompt_title() -> FormattedText:
         border_style = "fg:#38bdf8 bold"
         badge_style = "bg:#2563eb #ffffff bold"
-        return FormattedText(
-            [(border_style, "─"), (badge_style, " PROMPT "), (border_style, "─")]
-        )
+        return FormattedText([(border_style, "─"), (badge_style, " PROMPT "), (border_style, "─")])
 
     def _render_frame_title(self) -> FormattedText:
         return self._render_prompt_title()
@@ -1149,6 +1173,46 @@ class CustomPromptSession:
             right_toast.message if right_toast is not None else None,
         )
 
+    @staticmethod
+    def _live_indicator_frame(kind: str, *, now: float | None = None) -> str:
+        frames = _INDICATOR_FRAMES.get(kind, _PAUSE_FRAMES)
+        current = time.monotonic() if now is None else now
+        return frames[int(current * 10) % len(frames)]
+
+    def _format_live_footer_status(self, live_view: Any) -> tuple[str, str] | None:
+        indicator = getattr(live_view, "footer_indicator", None)
+        if indicator is None:
+            return None
+        kind, text = indicator
+        if not text:
+            return None
+        frame = self._live_indicator_frame(kind)
+        return f"{frame} {text}", _INDICATOR_STYLES.get(kind, "fg:#22c55e")
+
+    def _render_turn_footer(
+        self,
+        columns: int,
+        *,
+        status: StatusSnapshot,
+        live_view: Any,
+    ) -> FormattedText:
+        mode_text = self._mode_text(status)
+        right_text = self._render_right_span(status)
+        fragments: list[tuple[str, str]] = [("fg:#38bdf8 bold", mode_text)]
+        live_status = self._format_live_footer_status(live_view)
+        remaining = columns - len(mode_text) - len(right_text)
+        if live_status is not None:
+            status_text, status_style = live_status
+            available = max(0, remaining - 2)
+            if available > 0:
+                status_text = self._truncate_text(status_text, available)
+                fragments.append(("", " "))
+                fragments.append((status_style, status_text))
+                remaining = columns - len(mode_text) - len(status_text) - len(right_text) - 1
+        fragments.append(("", " " * max(1, remaining)))
+        fragments.append(("fg:#9ca3af", right_text))
+        return FormattedText(fragments)
+
     def __enter__(self) -> CustomPromptSession:
         if self._status_refresh_task is not None and not self._status_refresh_task.done():
             return self
@@ -1314,23 +1378,20 @@ class CustomPromptSession:
 
         def _render_footer() -> FormattedText:
             status = self._status_provider()
-            mode_text = self._mode_text(status)
-            right_text = self._render_right_span(status)
             app = get_app_or_none()
             columns = app.output.get_size().columns if app is not None else 80
-            padding = max(1, columns - len(mode_text) - len(right_text))
-            return FormattedText(
-                [
-                    ("fg:#38bdf8 bold", mode_text),
-                    ("", " " * padding),
-                    ("fg:#9ca3af", right_text),
-                ]
-            )
+            return self._render_turn_footer(columns, status=status, live_view=live_view)
 
         def _render_body() -> ANSI:
             app = get_app_or_none()
             width = app.output.get_size().columns if app is not None else 80
-            return ANSI(live_view.render_ansi(width, include_status=False))
+            return ANSI(
+                live_view.render_ansi(
+                    width,
+                    include_status=False,
+                    include_running_indicators=False,
+                )
+            )
 
         key_bindings = KeyBindings()
         route_live_navigation = Condition(
@@ -1517,6 +1578,7 @@ class CustomPromptSession:
         final_output = live_view.render_ansi(
             app.output.get_size().columns,
             include_status=False,
+            include_running_indicators=False,
         ).strip()
         if final_output:
             console.print(_rich_from_ansi(final_output), end="")

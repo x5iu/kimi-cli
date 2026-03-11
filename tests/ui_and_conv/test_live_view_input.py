@@ -12,6 +12,7 @@ from kimi_cli.wire.types import (
     StatusUpdate,
     StepBegin,
     TextPart,
+    ThinkPart,
     TurnBegin,
     TurnEnd,
 )
@@ -145,6 +146,35 @@ def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
 
     view.dispatch_wire_message(TurnEnd())
     assert "Running..." not in view.render_ansi(80)
+
+
+def test_live_view_reports_fixed_footer_indicator_for_running_states() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.dispatch_wire_message(TurnBegin(user_input="hello"))
+    assert view.footer_indicator == ("running", "Running...")
+
+    view.dispatch_wire_message(ThinkPart(think="analyzing"))
+    assert view.footer_indicator == ("thinking", "Thinking...")
+
+    view.dispatch_wire_message(StepBegin(n=1))
+    assert view.footer_indicator == ("moon", "Running...")
+
+    view.dispatch_wire_message(TurnEnd())
+    assert view.footer_indicator is None
+
+
+def test_live_view_can_hide_running_indicators_in_body() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.dispatch_wire_message(TurnBegin(user_input="hello"))
+    assert "Running..." not in view.render_ansi(80, include_running_indicators=False)
+
+    view.dispatch_wire_message(ThinkPart(think="analyzing"))
+    assert "Thinking..." not in view.render_ansi(80, include_running_indicators=False)
+
+    view.dispatch_wire_message(StepBegin(n=1))
+    assert "Running..." not in view.render_ansi(80, include_running_indicators=False)
 
 
 def test_live_view_renders_skill_reminder_notice() -> None:

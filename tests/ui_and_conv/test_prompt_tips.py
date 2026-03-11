@@ -226,6 +226,24 @@ def test_active_turn_input_box_renders_static_hint(monkeypatch) -> None:
     assert rprompt == "│"
 
 
+def test_active_turn_footer_includes_fixed_running_indicator() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._mode = PromptMode.AGENT
+    prompt_session._model_name = "kimi"
+    prompt_session._thinking = False
+    prompt_session._status_provider = lambda: StatusSnapshot(context_usage=0.0)
+
+    rendered = prompt_session._render_turn_footer(
+        80,
+        status=StatusSnapshot(context_usage=0.0),
+        live_view=SimpleNamespace(footer_indicator=("tool", "Using Shell (make test)")),
+    )
+    plain = "".join(fragment[1] for fragment in rendered)
+
+    assert "agent (kimi)" in plain
+    assert "Using Shell (make test)" in plain
+
+
 def test_bottom_toolbar_no_overflow_when_tip_would_exactly_fill_old_available(monkeypatch) -> None:
     width = 60
     mode_text = "agent"
