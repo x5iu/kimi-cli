@@ -47,11 +47,25 @@ class Shell:
         self.soul = soul
         self._welcome_info = list(welcome_info or [])
         self._background_tasks: set[asyncio.Task[Any]] = set()
+        commands = [*soul.available_slash_commands, *shell_slash_registry.list_commands()]
         self._available_slash_commands: dict[str, SlashCommand[Any]] = {
-            **{cmd.name: cmd for cmd in soul.available_slash_commands},
-            **{cmd.name: cmd for cmd in shell_slash_registry.list_commands()},
+            cmd.name: cmd for cmd in commands
         }
+        self._slash_command_lookup: dict[str, SlashCommand[Any]] = self._index_slash_commands(
+            commands
+        )
         """Shell-level slash commands + soul-level slash commands. Name to command mapping."""
+
+    @staticmethod
+    def _index_slash_commands(
+        commands: list[SlashCommand[Any]],
+    ) -> dict[str, SlashCommand[Any]]:
+        indexed: dict[str, SlashCommand[Any]] = {}
+        for command in commands:
+            indexed[command.name] = command
+            for alias in command.aliases:
+                indexed[alias] = command
+        return indexed
 
     @property
     def available_slash_commands(self) -> dict[str, SlashCommand[Any]]:
@@ -129,7 +143,7 @@ class Shell:
     def _echo_agent_input(self, user_input: UserInput) -> None:
         if user_input.mode != PromptMode.AGENT:
             return
-        console.print(f"{PROMPT_SYMBOL} {self._display_user_input(user_input)}")
+        console.print(f"{PROMPT_SYMBOL} {self._display_user_input(user_input)}", markup=False)
 
     async def _handle_agent_input(
         self,
@@ -138,9 +152,6 @@ class Shell:
         *,
         echo: bool = True,
     ) -> bool:
-        if echo:
-            self._echo_agent_input(user_input)
-
         if user_input.command in ["exit", "quit", "/exit", "/quit"]:
             logger.debug("Exiting by slash command")
             console.print("Bye!")
@@ -157,6 +168,9 @@ class Shell:
         ):
             await self._run_slash_command(slash_cmd_call)
             return True
+
+        if echo:
+            self._echo_agent_input(user_input)
 
         soul_input: str | list[ContentPart] = (
             user_input.command if slash_cmd_call is not None else user_input.content
@@ -387,7 +401,7 @@ class Shell:
     async def _run_slash_command(self, command_call: SlashCommandCall) -> None:
         from kimi_cli.cli import Reload, SwitchToWeb
 
-        if command_call.name not in self._available_slash_commands:
+        if command_call.name not in self._slash_command_lookup:
             logger.info("Unknown slash command /{command}", command=command_call.name)
             console.print(
                 f'[red]Unknown slash command "/{command_call.name}", '

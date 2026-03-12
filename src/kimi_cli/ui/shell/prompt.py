@@ -36,10 +36,10 @@ from prompt_toolkit.completion import (
 from prompt_toolkit.cursor_shapes import CursorShape, SimpleCursorShapeConfig
 from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition, has_completions
-from prompt_toolkit.formatted_text import ANSI, FormattedText
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent, merge_key_bindings
-from prompt_toolkit.layout import HSplit, Layout, ScrollablePane
+from prompt_toolkit.layout import HSplit, Layout
 from prompt_toolkit.layout.containers import (
     ConditionalContainer,
     DynamicContainer,
@@ -47,13 +47,17 @@ from prompt_toolkit.layout.containers import (
     FloatContainer,
     Window,
 )
-from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.controls import FormattedTextControl, UIContent, UIControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
 from pydantic import BaseModel, ValidationError
+from rich.console import Console as RichConsole
+from rich.console import RenderableType
+from rich.segment import Segment
+from rich.style import Style as RichStyle
 from rich.text import Text as RichText
 
 from kimi_cli.llm import ModelCapability
@@ -104,11 +108,88 @@ _INDICATOR_STYLES = {
     "question": "fg:#22d3ee",
 }
 _TURN_UI_REFRESH_INTERVAL = 0.1
-_TURN_UI_FULL_REDRAW_INTERVAL = 1.0
 
 
 def _rich_from_ansi(text: str) -> RichText:
     return RichText.from_ansi(text)
+
+
+def _rich_style_to_prompt_toolkit(style: RichStyle | None) -> str:
+    if style is None:
+        return ""
+    parts: list[str] = []
+    if style.color is not None:
+        fg = style.color.get_truecolor()
+        parts.append(f"fg:#{fg.red:02x}{fg.green:02x}{fg.blue:02x}")
+    if style.bgcolor is not None:
+        bg = style.bgcolor.get_truecolor()
+        parts.append(f"bg:#{bg.red:02x}{bg.green:02x}{bg.blue:02x}")
+    if style.bold:
+        parts.append("bold")
+    if style.italic:
+        parts.append("italic")
+    if style.underline:
+        parts.append("underline")
+    if style.strike:
+        parts.append("strike")
+    if style.reverse:
+        parts.append("reverse")
+    if style.blink:
+        parts.append("blink")
+    return " ".join(parts)
+
+
+class _RichRenderableControl(UIControl):
+    """Render Rich renderables directly with the actual width assigned by prompt_toolkit."""
+
+    def __init__(self, get_renderable: Callable[[], RenderableType]) -> None:
+        self._get_renderable = get_renderable
+        self._console = RichConsole(force_terminal=True, color_system="truecolor", highlight=False)
+        self._cache: dict[tuple[int, tuple[tuple[tuple[str, str], ...], ...]], UIContent] = {}
+
+    def _render_lines(self, width: int) -> list[list[tuple[str, str]]]:
+        renderable = self._get_renderable()
+        options = self._console.options.update_width(max(20, width))
+        lines = self._console.render_lines(renderable, options=options, pad=False, new_lines=False)
+        rendered_lines: list[list[tuple[str, str]]] = []
+        for line in lines or [[]]:
+            fragments: list[tuple[str, str]] = []
+            for segment in Segment.simplify(line):
+                if segment.control or not segment.text:
+                    continue
+                fragments.append((_rich_style_to_prompt_toolkit(segment.style), segment.text))
+            rendered_lines.append(fragments)
+        return rendered_lines or [[]]
+
+    def line_count(self, width: int) -> int:
+        return len(self._render_lines(width))
+
+    def preferred_height(
+        self,
+        width: int,
+        max_available_height: int,
+        wrap_lines: bool,
+        get_line_prefix: Any,
+    ) -> int | None:
+        return min(self.line_count(width), max_available_height)
+
+    def create_content(self, width: int, height: int | None) -> UIContent:
+        lines = self._render_lines(width)
+        key_lines = tuple(tuple(line) for line in lines)
+        key = (max(20, width), key_lines)
+
+        def get_content() -> UIContent:
+            return UIContent(
+                get_line=lambda i: list(key_lines[i]),
+                line_count=len(key_lines),
+                show_cursor=False,
+            )
+
+        cached = self._cache.get(key)
+        if cached is None:
+            cached = get_content()
+            self._cache = {key: cached}
+        return cached
 
 
 class SlashCommandCompleter(Completer):
@@ -1157,6 +1238,16 @@ class CustomPromptSession:
 
         event.app.create_background_task(_run_editor())
 
+    def _open_live_view_expansion(self, event: KeyPressEvent, live_view: Any) -> None:
+        """Open the current approval/question body pager without fighting the PTK app."""
+        from prompt_toolkit.application.run_in_terminal import run_in_terminal
+
+        async def _run_pager() -> None:
+            await run_in_terminal(live_view.show_more)
+            event.app.invalidate()
+
+        event.app.create_background_task(_run_pager())
+
     def _apply_mode(self, event: KeyPressEvent | None = None) -> None:
         # Apply mode to the active buffer (not the PromptSession itself)
         try:
@@ -1198,11 +1289,24 @@ class CustomPromptSession:
 
     @staticmethod
     def _force_turn_full_repaint(app: Application[Any]) -> None:
-        # Force prompt_toolkit to forget the previous frame so the next invalidate
-        # redraws the whole active-turn view in one render pass. This avoids the
-        # visible clear-and-repaint flicker caused by renderer.erase()/reset().
         app.renderer._last_screen = None  # type: ignore[reportPrivateUsage]
         app.invalidate()
+
+    @staticmethod
+    def _target_turn_body_bottom_scroll(
+        body_window: Window,
+        *,
+        line_count: int,
+        current_scroll: int,
+    ) -> int | None:
+        render_info = body_window.render_info
+        if render_info is None:
+            return None
+        visible_height = max(1, render_info.window_height)
+        target_scroll = max(0, line_count - visible_height)
+        if current_scroll == target_scroll:
+            return None
+        return target_scroll
 
     @classmethod
     def _refresh_turn_application(
@@ -1215,21 +1319,12 @@ class CustomPromptSession:
     ) -> float | None:
         if not getattr(live_view, "needs_periodic_refresh", False):
             return None
-
         current = time.monotonic() if now is None else now
-        if last_full_repaint_at is None:
-            app.invalidate()
-            return current
-
-        if current - last_full_repaint_at >= _TURN_UI_FULL_REDRAW_INTERVAL:
-            cls._force_turn_full_repaint(app)
-            return current
-
         app.invalidate()
-        return last_full_repaint_at
+        return current
 
-    def _format_live_footer_status(self, live_view: Any) -> tuple[str, str] | None:
-        indicator = getattr(live_view, "footer_indicator", None)
+    def _format_live_activity_status(self, live_view: Any) -> tuple[str, str] | None:
+        indicator = getattr(live_view, "activity_indicator", None)
         if indicator is None:
             return None
         kind, text = indicator
@@ -1238,26 +1333,28 @@ class CustomPromptSession:
         frame = self._live_indicator_frame(kind)
         return f"{frame} {text}", _INDICATOR_STYLES.get(kind, "fg:#22c55e")
 
+    def _render_turn_activity(self, live_view: Any) -> FormattedText | str:
+        live_status = self._format_live_activity_status(live_view)
+        if live_status is None:
+            return ""
+        status_text, status_style = live_status
+        return FormattedText(
+            [
+                ("fg:#6b7280", "│ "),
+                (status_style, status_text),
+            ]
+        )
+
     def _render_turn_footer(
         self,
         columns: int,
         *,
         status: StatusSnapshot,
-        live_view: Any,
     ) -> FormattedText:
         mode_text = self._mode_text(status)
         right_text = self._render_right_span(status)
         fragments: list[tuple[str, str]] = [("fg:#38bdf8 bold", mode_text)]
-        live_status = self._format_live_footer_status(live_view)
         remaining = columns - len(mode_text) - len(right_text)
-        if live_status is not None:
-            status_text, status_style = live_status
-            available = max(0, remaining - 2)
-            if available > 0:
-                status_text = self._truncate_text(status_text, available)
-                fragments.append(("", " "))
-                fragments.append((status_style, status_text))
-                remaining = columns - len(mode_text) - len(status_text) - len(right_text) - 1
         fragments.append(("", " " * max(1, remaining)))
         fragments.append(("fg:#9ca3af", right_text))
         return FormattedText(fragments)
@@ -1391,6 +1488,14 @@ class CustomPromptSession:
     ) -> None:
         self._mode = PromptMode.AGENT
         feedback_message = ""
+        body_vertical_scroll = 0
+        body_window: Window | None = None
+        reminder_window: Window | None = None
+        last_layout_signature: tuple[object, ...] | None = None
+
+        def _app_columns(app: Application[Any] | None = None) -> int:
+            current_app = get_app_or_none() if app is None else app
+            return current_app.output.get_size().columns if current_app is not None else 80
 
         text_area = TextArea(
             text="",
@@ -1403,13 +1508,17 @@ class CustomPromptSession:
             dont_extend_height=True,
         )
 
+        def _input_box_height() -> int:
+            columns = max(1, _app_columns() - 4)
+            return text_area.window.preferred_height(columns, 6).preferred
+
         @text_area.buffer.on_text_changed.add_handler
         def _(buffer: Buffer) -> None:
             if buffer.complete_while_typing():
                 buffer.start_completion()
             app = get_app_or_none()
             if app is not None:
-                app.invalidate()
+                _redraw_turn_view(app)
 
         def _render_title() -> FormattedText:
             return self._render_prompt_title()
@@ -1427,20 +1536,61 @@ class CustomPromptSession:
 
         def _render_footer() -> FormattedText:
             status = self._status_provider()
-            app = get_app_or_none()
-            columns = app.output.get_size().columns if app is not None else 80
-            return self._render_turn_footer(columns, status=status, live_view=live_view)
+            return self._render_turn_footer(_app_columns(), status=status)
 
-        def _render_body() -> ANSI:
-            app = get_app_or_none()
-            width = app.output.get_size().columns if app is not None else 80
-            return ANSI(
-                live_view.render_ansi(
-                    width,
-                    include_status=False,
-                    include_running_indicators=False,
-                )
+        body_control = _RichRenderableControl(
+            lambda: live_view.compose_body(
+                include_running_indicators=False,
+                include_sticky_reminders=False,
             )
+        )
+        reminder_control = _RichRenderableControl(live_view.compose_sticky_reminders)
+
+        def _turn_layout_signature() -> tuple[object, ...]:
+            body_width = (
+                body_window.render_info.window_width
+                if body_window is not None and body_window.render_info is not None
+                else _app_columns()
+            )
+            reminder_width = (
+                reminder_window.render_info.window_width
+                if reminder_window is not None and reminder_window.render_info is not None
+                else _app_columns()
+            )
+            input_height = (
+                text_area.window.render_info.window_height
+                if text_area.window.render_info is not None
+                else _input_box_height()
+            )
+            return (
+                body_width,
+                body_control.line_count(body_width),
+                reminder_width,
+                reminder_control.line_count(reminder_width),
+                live_view.has_sticky_reminders,
+                bool(self._render_turn_activity(live_view)),
+                bool(_render_hint()),
+                input_height,
+            )
+
+        def _redraw_turn_view(app: Application[Any]) -> None:
+            nonlocal last_layout_signature
+            signature = _turn_layout_signature()
+            if last_layout_signature is None:
+                last_layout_signature = signature
+                app.invalidate()
+                return
+            if signature != last_layout_signature:
+                last_layout_signature = signature
+                self._force_turn_full_repaint(app)
+                return
+            app.invalidate()
+
+        def _refresh_turn_view(app: Application[Any]) -> None:
+            _redraw_turn_view(app)
+
+        def _render_activity() -> FormattedText | str:
+            return self._render_turn_activity(live_view)
 
         key_bindings = KeyBindings()
         route_live_navigation = Condition(
@@ -1459,48 +1609,57 @@ class CustomPromptSession:
         @key_bindings.add("enter", filter=route_live_navigation & ~has_completions, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.ENTER)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("up", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.UP)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("down", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.DOWN)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("left", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.LEFT)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("right", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.RIGHT)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("tab", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.TAB)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("space", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.SPACE)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("escape", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
             live_view.dispatch_keyboard_event(KeyEvent.ESCAPE)
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("enter", filter=~route_live_navigation & ~has_completions, eager=True)
         def _(event: KeyPressEvent) -> None:
             nonlocal feedback_message
             command = event.current_buffer.text.strip()
             if not command:
+                return
+            if live_view.has_pending_input_request and live_view.is_expand_command(command):
+                if live_view.can_expand_current_panel:
+                    feedback_message = ""
+                    event.current_buffer.document = Document(text="", cursor_position=0)
+                    self._open_live_view_expansion(event, live_view)
+                else:
+                    feedback_message = live_view.input_hint
+                    _refresh_turn_view(event.app)
                 return
             user_input = self.parse_user_input(command)
             submit_result = submit_handler(user_input)
@@ -1512,7 +1671,7 @@ class CustomPromptSession:
                 event.current_buffer.document = Document(text="", cursor_position=0)
             else:
                 feedback_message = submit_result.feedback or live_view.input_hint
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
         @key_bindings.add("escape", "enter", eager=True)
         @key_bindings.add("c-j", eager=True)
@@ -1537,10 +1696,19 @@ class CustomPromptSession:
         @key_bindings.add("c-c", eager=True)
         def _(event: KeyPressEvent) -> None:
             cancel_handler()
-            event.app.invalidate()
+            _refresh_turn_view(event.app)
 
-        body_window = Window(FormattedTextControl(_render_body), always_hide_cursor=True)
-        body = ScrollablePane(body_window, show_scrollbar=False, display_arrows=False)
+        body_window = Window(
+            body_control,
+            always_hide_cursor=True,
+            get_vertical_scroll=lambda _: body_vertical_scroll,
+        )
+        reminder_window = Window(reminder_control, dont_extend_height=True)
+        activity_window = Window(
+            FormattedTextControl(_render_activity),
+            height=1,
+            dont_extend_height=True,
+        )
         hint_window = Window(
             FormattedTextControl(_render_hint),
             height=1,
@@ -1554,7 +1722,15 @@ class CustomPromptSession:
         container = self._with_completion_menu(
             HSplit(
                 [
-                    body,
+                    body_window,
+                    ConditionalContainer(
+                        reminder_window,
+                        filter=Condition(lambda: live_view.has_sticky_reminders),
+                    ),
+                    ConditionalContainer(
+                        activity_window,
+                        filter=Condition(lambda: bool(self._render_turn_activity(live_view))),
+                    ),
                     Frame(
                         HSplit(
                             [
@@ -1583,6 +1759,26 @@ class CustomPromptSession:
             refresh_interval=None,
             terminal_size_polling_interval=None,
         )
+        last_layout_signature = _turn_layout_signature()
+
+        def _follow_turn_output(_: Application[None]) -> None:
+            nonlocal body_vertical_scroll, last_layout_signature
+            signature = _turn_layout_signature()
+            target_scroll = self._target_turn_body_bottom_scroll(
+                body_window,
+                line_count=body_control.line_count(signature[0]),
+                current_scroll=body_vertical_scroll,
+            )
+            if target_scroll is not None:
+                body_vertical_scroll = target_scroll
+                last_layout_signature = signature
+                self._force_turn_full_repaint(app)
+                return
+            if signature != last_layout_signature:
+                last_layout_signature = signature
+                self._force_turn_full_repaint(app)
+
+        app.after_render += _follow_turn_output
 
         async def _consume_wire() -> None:
             nonlocal feedback_message
@@ -1592,20 +1788,20 @@ class CustomPromptSession:
                 except QueueShutDown:
                     live_view.cleanup(is_interrupt=False)
                     live_view.finish_turn()
-                    app.invalidate()
+                    _refresh_turn_view(app)
                     app.exit()
                     return
 
                 if isinstance(msg, StepInterrupted):
                     live_view.cleanup(is_interrupt=True)
                     live_view.finish_turn()
-                    app.invalidate()
+                    _refresh_turn_view(app)
                     app.exit()
                     return
 
                 live_view.dispatch_wire_message(msg)
                 feedback_message = ""
-                app.invalidate()
+                _refresh_turn_view(app)
 
         async def _animate() -> None:
             last_full_repaint_at: float | None = None

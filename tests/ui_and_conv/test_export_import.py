@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kosong.message import Message
 
-from kimi_cli.soul.message import system
+from kimi_cli.soul.message import INTERNAL_USER_NAME, internal_user_message, system
 from kimi_cli.utils.export import (
     _IMPORTABLE_EXTENSIONS,
     _extract_tool_call_hint,
@@ -26,6 +26,7 @@ from kimi_cli.utils.export import (
     resolve_import_source,
     stringify_context_history,
 )
+from kimi_cli.utils.turns import is_real_user_turn_start_message
 from kimi_cli.wire.types import (
     AudioURLPart,
     ContentPart,
@@ -53,21 +54,15 @@ def _make_tool_call(
 
 
 def _make_checkpoint_message(checkpoint_id: int = 0) -> Message:
-    return Message(
-        role="user",
-        content=[system(f"CHECKPOINT {checkpoint_id}")],
-    )
+    return internal_user_message([system(f"CHECKPOINT {checkpoint_id}")])
 
 
 def _make_internal_reminder_message(text: str = "Reminder") -> Message:
-    return Message(
-        role="user",
-        content=[TextPart(text=f"<system-reminder>\n{text}\n</system-reminder>")],
-    )
+    return internal_user_message([TextPart(text=f"<system-reminder>\n{text}\n</system-reminder>")])
 
 
 def _make_skill_reminder_message(text: str = "Reminder: suggested skill") -> Message:
-    return Message(role="user", content=[system(text)])
+    return internal_user_message([system(text)])
 
 
 # ---------------------------------------------------------------------------
@@ -595,6 +590,20 @@ class TestBuildExportMarkdown:
         )
         assert "- **Topic**: Real task" in result
 
+    def test_overview_topic_keeps_literal_system_like_user_text(self) -> None:
+        history = [
+            Message(role="user", content=[TextPart(text="<system>literal user text</system>")]),
+            Message(role="assistant", content=[TextPart(text="Done")]),
+        ]
+        result = build_export_markdown(
+            session_id="s1",
+            work_dir="/w",
+            history=history,
+            token_count=100,
+            now=datetime(2026, 1, 1),
+        )
+        assert "- **Topic**: <system>literal user text</system>" in result
+
     def test_tool_calls_in_export(self) -> None:
         """Full round-trip: user -> assistant with tool call -> tool result -> final."""
         tc = _make_tool_call(call_id="c1", name="bash", arguments='{"command": "echo hi"}')
@@ -1020,6 +1029,8 @@ class TestBuildImportMessage:
     def test_returns_user_message_with_expected_structure(self) -> None:
         msg = build_import_message("hello world", "file 'test.md'")
         assert msg.role == "user"
+        assert msg.name == INTERNAL_USER_NAME
+        assert not is_real_user_turn_start_message(msg)
         assert len(msg.content) == 2
 
         # First part is a system hint

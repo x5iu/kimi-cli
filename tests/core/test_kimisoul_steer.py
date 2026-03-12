@@ -7,10 +7,10 @@ import pytest
 from kosong.message import Message
 from kosong.tooling.empty import EmptyToolset
 
-from kimi_cli.soul import LLMNotSupported
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul, StepOutcome
+from kimi_cli.soul.message import INTERNAL_USER_NAME
 from kimi_cli.wire.types import ImageURLPart, TextPart
 
 
@@ -39,6 +39,7 @@ async def test_consume_pending_steer_appends_user_reminder(
 
     assert consumed is True
     assert [message.role for message in soul.context.history] == ["user"]
+    assert soul.context.history[-1].name == INTERNAL_USER_NAME
 
     reminder_text = soul.context.history[-1].extract_text(" ")
     assert "<system-reminder>" in reminder_text
@@ -81,18 +82,11 @@ async def test_consume_pending_steer_preserves_non_text_content(
     assert consumed is True
     reminder_message = soul.context.history[-1]
     assert reminder_message.role == "user"
+    assert reminder_message.name == INTERNAL_USER_NAME
     assert reminder_message.content[0] == TextPart(
         text=(
             "<system-reminder>\n"
-            "The user sent a new reminder during the current turn. "
-            "Treat it as an additional user instruction for this task. "
-            "Incorporate it into the ongoing turn, but do not stop, summarize, or conclude "
-            "the turn only because of this reminder. "
-            "Use the reminder as hidden steering: do not explicitly acknowledge, answer, or "
-            "quote the reminder by itself in the final response unless the original turn prompt "
-            "directly asks for that. Do not use meta phrasing such as 'based on your reminder', "
-            "'you just added', or 'you mentioned later'. Keep the final response centered on the "
-            "user's original turn-opening request.\n\n"
+            f"{KimiSoul._steer_instruction_text()}\n\n"
             "Reminder content follows in the rest of this message.\n"
             "</system-reminder>"
         )
@@ -101,7 +95,7 @@ async def test_consume_pending_steer_preserves_non_text_content(
 
 
 @pytest.mark.asyncio
-async def test_consume_pending_steer_rejects_unsupported_media(
+async def test_consume_pending_steer_downgrades_unsupported_media_to_text(
     runtime: Runtime,
     tmp_path: Path,
 ) -> None:
@@ -122,12 +116,40 @@ async def test_consume_pending_steer_rejects_unsupported_media(
     turn_id = soul._begin_turn()
     try:
         soul.steer([image_part])
-        with pytest.raises(LLMNotSupported):
-            await soul._consume_pending_steers()
+        consumed = await soul._consume_pending_steers()
     finally:
         soul._end_turn(turn_id)
 
-    assert soul.context.history == []
+    assert consumed is True
+    assert len(soul.context.history) == 1
+    reminder_text = soul.context.history[-1].extract_text(" ")
+    assert "Reminder:" in reminder_text
+    assert "[image]" in reminder_text
+
+
+@pytest.mark.asyncio
+async def test_consume_pending_steer_string_and_list_use_same_wrapper_semantics(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Steer Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    string_message = soul._build_steer_message("plain text reminder")
+    list_message = soul._build_steer_message([TextPart(text="plain text reminder")])
+
+    assert string_message.name == INTERNAL_USER_NAME
+    assert list_message.name == INTERNAL_USER_NAME
+    assert string_message.content[0] == list_message.content[0]
+    assert string_message.content[1:] == [TextPart(text="plain text reminder")]
+    assert list_message.content[1:] == [TextPart(text="plain text reminder")]
 
 
 @pytest.mark.asyncio
@@ -173,24 +195,14 @@ async def test_early_turn_steer_is_not_dropped_before_agent_loop_starts(
     await run_task
 
     reminder_messages = [
-        message.extract_text(" ")
+        message
         for message in soul.context.history
         if message.role == "user" and "additional user instruction" in message.extract_text(" ")
     ]
-    assert reminder_messages == [
-        (
-            "<system-reminder>\n"
-            "The user sent a new reminder during the current turn. "
-            "Treat it as an additional user instruction for this task. "
-            "Incorporate it into the ongoing turn, but do not stop, summarize, or conclude "
-            "the turn only because of this reminder. "
-            "Use the reminder as hidden steering: do not explicitly acknowledge, answer, or "
-            "quote the reminder by itself in the final response unless the original turn prompt "
-            "directly asks for that. Do not use meta phrasing such as 'based on your reminder', "
-            "'you just added', or 'you mentioned later'. Keep the final response centered on the "
-            "user's original turn-opening request.\n\n"
-            "Reminder:\nalso do this\n"
-            "</system-reminder>"
-        )
-    ]
+    assert len(reminder_messages) == 1
+    assert reminder_messages[0].name == INTERNAL_USER_NAME
+    reminder_text = reminder_messages[0].extract_text(" ")
+    assert "<system-reminder>" in reminder_text
+    assert "Reminder content follows in the rest of this message." in reminder_text
+    assert reminder_text.endswith("also do this")
     assert step_calls == 2

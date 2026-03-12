@@ -89,3 +89,27 @@ def test_open_in_external_editor_toast_when_no_editor(monkeypatch) -> None:
     assert toast_calls == ["No editor found. Set $VISUAL/$EDITOR or run /editor."]
     assert app.tasks == []
     assert buff.document is None
+
+
+async def test_open_live_view_expansion_uses_run_in_terminal(monkeypatch) -> None:
+    prompt_session = object.__new__(shell_prompt.CustomPromptSession)
+    app = _DummyApp()
+    event = SimpleNamespace(app=app)
+    live_view = SimpleNamespace(show_more=lambda: True)
+    calls: list[str] = []
+
+    async def fake_run_in_terminal(func, in_executor=False):
+        assert in_executor is False
+        calls.append("run")
+        return func()
+
+    run_in_terminal_module = importlib.import_module("prompt_toolkit.application.run_in_terminal")
+    monkeypatch.setattr(run_in_terminal_module, "run_in_terminal", fake_run_in_terminal)
+    monkeypatch.setattr(app, "invalidate", lambda: calls.append("invalidate"), raising=False)
+
+    prompt_session._open_live_view_expansion(cast(KeyPressEvent, event), live_view)
+    assert len(app.tasks) == 1
+
+    await asyncio.gather(*app.tasks)
+
+    assert calls == ["run", "invalidate"]

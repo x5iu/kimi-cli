@@ -8,7 +8,7 @@ import aiofiles
 import aiofiles.os
 from kosong.message import Message
 
-from kimi_cli.soul.message import system
+from kimi_cli.soul.message import internal_user_message, system
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import next_available_rotation
 
@@ -74,7 +74,7 @@ class Context:
             await f.write(json.dumps({"role": "_checkpoint", "id": checkpoint_id}) + "\n")
         if add_user_message:
             await self.append_message(
-                Message(role="user", content=[system(f"CHECKPOINT {checkpoint_id}")])
+                internal_user_message([system(f"CHECKPOINT {checkpoint_id}")])
             )
 
     async def revert_to(self, checkpoint_id: int):

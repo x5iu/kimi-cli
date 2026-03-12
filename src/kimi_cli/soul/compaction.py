@@ -10,7 +10,7 @@ from kosong.tooling.empty import EmptyToolset
 
 import kimi_cli.prompts as prompts
 from kimi_cli.llm import LLM
-from kimi_cli.soul.message import system
+from kimi_cli.soul.message import internal_user_message, system
 from kimi_cli.utils.logging import logger
 from kimi_cli.wire.types import ContentPart, TextPart, ThinkPart
 
@@ -134,7 +134,7 @@ class SimpleCompaction:
 
         # drop thinking parts if any
         content.extend(part for part in compacted_msg.content if not isinstance(part, ThinkPart))
-        compacted_messages: list[Message] = [Message(role="user", content=content)]
+        compacted_messages: list[Message] = [internal_user_message(content)]
         compacted_messages.extend(to_preserve)
         return CompactionResult(messages=compacted_messages, usage=result.usage)
 

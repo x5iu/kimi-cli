@@ -11,7 +11,7 @@ import aiofiles
 from kaos.path import KaosPath
 from kosong.message import Message
 
-from kimi_cli.soul.message import system
+from kimi_cli.soul.message import internal_user_message, system
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.path import sanitize_cli_path
 from kimi_cli.utils.turns import (
@@ -636,9 +636,8 @@ async def resolve_import_source(
 def build_import_message(content: str, source_desc: str) -> Message:
     """Build the ``Message`` to append to context for an import operation."""
     import_text = f'<imported_context source="{source_desc}">\n{content}\n</imported_context>'
-    return Message(
-        role="user",
-        content=[
+    return internal_user_message(
+        [
             system(
                 f"The user has imported context from {source_desc}. "
                 "This is a prior conversation history that may be relevant "
@@ -646,7 +645,7 @@ def build_import_message(content: str, source_desc: str) -> Message:
                 "Please review this context and use it to inform your responses."
             ),
             TextPart(text=import_text),
-        ],
+        ]
     )
 
 

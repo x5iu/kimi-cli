@@ -6,12 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 from kosong.tooling.empty import EmptyToolset
+from rich.console import Console
 
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
 from kimi_cli.ui.shell.prompt import PROMPT_SYMBOL, PromptMode, TurnSubmitResult, UserInput
+from kimi_cli.utils.slashcmd import parse_slash_command_call
 from kimi_cli.wire.types import ImageURLPart, TextPart
 
 
@@ -131,9 +133,9 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
 
 
 def test_echo_agent_input_shows_image_marker(monkeypatch: pytest.MonkeyPatch) -> None:
-    printed: list[str] = []
     shell_module = importlib.import_module("kimi_cli.ui.shell")
-    monkeypatch.setattr(shell_module.console, "print", lambda text: printed.append(text))
+    render_console = Console(record=True, width=80, highlight=False)
+    monkeypatch.setattr(shell_module, "console", render_console)
 
     shell = Shell(SimpleNamespace(available_slash_commands=[]))
     shell._echo_agent_input(
@@ -148,4 +150,93 @@ def test_echo_agent_input_shows_image_marker(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
 
-    assert printed == [f"{PROMPT_SYMBOL} [image]"]
+    assert f"{PROMPT_SYMBOL} [image]" in render_console.export_text()
+
+
+@pytest.mark.asyncio
+async def test_top_level_slash_command_is_not_echoed_as_user_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    printed: list[str] = []
+    monkeypatch.setattr(
+        shell_module.console, "print", lambda text, *args, **kwargs: printed.append(text)
+    )
+
+    shell = Shell(SimpleNamespace(available_slash_commands=[], status=SimpleNamespace()))
+    calls: list[str] = []
+
+    async def fake_run_slash_command(call) -> None:
+        calls.append(call.name)
+
+    shell._run_slash_command = fake_run_slash_command
+
+    keep_running = await shell._handle_agent_input(
+        SimpleNamespace(),
+        UserInput(mode=PromptMode.AGENT, command="/help", content=[TextPart(text="/help")]),
+    )
+
+    assert keep_running is True
+    assert calls == ["help"]
+    assert printed == []
+
+
+@pytest.mark.asyncio
+async def test_top_level_soul_slash_command_uses_interactive_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module.console, "print", lambda *args, **kwargs: None)
+
+    monkeypatch.setattr(shell_module.shell_slash_registry, "find_command", lambda name: None)
+
+    shell = Shell(
+        SimpleNamespace(
+            available_slash_commands=[SimpleNamespace(name="clear", aliases=["reset"])],
+            status=SimpleNamespace(),
+        )
+    )
+    prompt_session = SimpleNamespace()
+    received: list[object] = []
+
+    async def fake_run_interactive_turn(session, soul_input) -> bool:
+        assert session is prompt_session
+        received.append(soul_input)
+        return True
+
+    shell._run_interactive_turn = fake_run_interactive_turn
+
+    keep_running = await shell._handle_agent_input(
+        prompt_session,
+        UserInput(mode=PromptMode.AGENT, command="/reset", content=[TextPart(text="/reset")]),
+    )
+
+    assert keep_running is True
+    assert received == ["/reset"]
+
+
+@pytest.mark.asyncio
+async def test_run_slash_command_accepts_soul_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module.console, "print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(shell_module.shell_slash_registry, "find_command", lambda name: None)
+
+    shell = Shell(
+        SimpleNamespace(
+            available_slash_commands=[SimpleNamespace(name="clear", aliases=["reset"])],
+            status=SimpleNamespace(),
+        )
+    )
+    calls: list[str] = []
+
+    async def fake_run_soul_command(raw_input: str) -> bool:
+        calls.append(raw_input)
+        return True
+
+    shell.run_soul_command = fake_run_soul_command
+
+    await shell._run_slash_command(parse_slash_command_call("/reset"))
+
+    assert calls == ["/reset"]

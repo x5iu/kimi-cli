@@ -99,6 +99,21 @@ def test_stringify_skips_media_wrapper_tags():
     assert result == "[image]"
 
 
+def test_stringify_keeps_literal_media_tag_text():
+    message = Message(role="user", content=[TextPart(text="<image>")])
+
+    assert message_stringify(message) == "<image>"
+
+
+def test_stringify_keeps_non_wrapper_text_neighbors():
+    message = Message(
+        role="user",
+        content=[TextPart(text="<image>literal"), TextPart(text=" tail")],
+    )
+
+    assert message_stringify(message) == "<image>literal tail"
+
+
 def test_stringify_empty_string():
     """Test stringifying message with empty string content."""
     message = Message(role="user", content="")

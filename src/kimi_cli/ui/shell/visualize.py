@@ -884,7 +884,7 @@ class LiveView:
         self._flush_to_console = flush_to_console
         self._allow_expand = allow_expand
         self._flushed_blocks: list[RenderableType] = []
-        self._pending_local_blocks: list[RenderableType] = []
+        self._sticky_reminder_blocks: list[RenderableType] = []
 
         self._need_recompose = False
 
@@ -944,14 +944,7 @@ class LiveView:
         stripped = text.strip()
         if not stripped:
             return
-        self._pending_local_blocks.append(_render_reminder_block(stripped))
-        self.refresh_soon()
-
-    def _flush_pending_local_blocks(self) -> None:
-        if not self._pending_local_blocks:
-            return
-        self._flushed_blocks.extend(self._pending_local_blocks)
-        self._pending_local_blocks.clear()
+        self._sticky_reminder_blocks.append(_render_reminder_block(stripped))
         self.refresh_soon()
 
     def finish_turn(self) -> None:
@@ -980,13 +973,7 @@ class LiveView:
             return True
         return any(not block.finished for block in self._tool_call_blocks.values())
 
-    def render_ansi(
-        self,
-        width: int,
-        *,
-        include_status: bool = False,
-        include_running_indicators: bool = True,
-    ) -> str:
+    def _renderable_to_ansi(self, renderable: RenderableType, width: int) -> str:
         width = max(20, width)
         sio = StringIO()
         render_console = Console(
@@ -996,14 +983,37 @@ class LiveView:
             color_system="truecolor",
             highlight=False,
         )
-        render_console.print(
+        render_console.print(renderable, end="")
+        return sio.getvalue()
+
+    def render_ansi(
+        self,
+        width: int,
+        *,
+        include_status: bool = False,
+        include_running_indicators: bool = True,
+        include_sticky_reminders: bool = True,
+    ) -> str:
+        return self._renderable_to_ansi(
             self.compose(
                 include_status=include_status,
                 include_running_indicators=include_running_indicators,
+                include_sticky_reminders=include_sticky_reminders,
             ),
-            end="",
+            width,
         )
-        return sio.getvalue()
+
+    @property
+    def has_sticky_reminders(self) -> bool:
+        return bool(self._sticky_reminder_blocks)
+
+    def compose_sticky_reminders(self) -> RenderableType:
+        return Group(*self._sticky_reminder_blocks)
+
+    def render_sticky_reminders_ansi(self, width: int) -> str:
+        if not self._sticky_reminder_blocks:
+            return ""
+        return self._renderable_to_ansi(self.compose_sticky_reminders(), width)
 
     @property
     def has_pending_input_request(self) -> bool:
@@ -1047,7 +1057,7 @@ class LiveView:
                 return "Turn is running. Type a message and press Enter to send a reminder."
 
     @property
-    def footer_indicator(self) -> tuple[str, str] | None:
+    def activity_indicator(self) -> tuple[str, str] | None:
         if self._current_approval_request_panel is not None:
             return ("approval", "Awaiting approval...")
         if self._current_question_panel is not None:
@@ -1069,6 +1079,10 @@ class LiveView:
         if self._turn_spinner is not None:
             return ("running", "Running...")
         return None
+
+    @staticmethod
+    def is_expand_command(text: str) -> bool:
+        return text.strip().casefold() in {"/more", "more", "/expand", "expand"}
 
     def show_more(self) -> bool:
         if not self.can_expand_current_panel:
@@ -1108,7 +1122,7 @@ class LiveView:
         stripped = text.strip()
         if not stripped:
             return False
-        if stripped.casefold() in {"/more", "more", "/expand", "expand"}:
+        if self.is_expand_command(stripped):
             return self.show_more()
         if self._current_approval_request_panel is not None:
             return self._submit_approval_line(stripped)
@@ -1246,13 +1260,12 @@ class LiveView:
         self._resolve_question_submission(panel, all_done=all_done)
         return True
 
-    def compose(
+    def compose_body(
         self,
         *,
-        include_status: bool = True,
         include_running_indicators: bool = True,
+        include_sticky_reminders: bool = True,
     ) -> RenderableType:
-        """Compose the live view display content."""
         blocks: list[RenderableType] = list(self._flushed_blocks)
         has_specific_running_indicator = False
         if self._mcp_loading_spinner is not None:
@@ -1285,12 +1298,30 @@ class LiveView:
             and not has_specific_running_indicator
         ):
             blocks.append(self._turn_spinner)
-        blocks.extend(self._pending_local_blocks)
+        if include_sticky_reminders:
+            blocks.extend(self._sticky_reminder_blocks)
         if self._current_approval_request_panel:
-            blocks.append(self._current_approval_request_panel.render(allow_expand=self._allow_expand))
+            blocks.append(
+                self._current_approval_request_panel.render(allow_expand=self._allow_expand)
+            )
         if self._current_question_panel:
             blocks.append(self._current_question_panel.render(allow_expand=self._allow_expand))
+        return Group(*blocks)
 
+    def compose(
+        self,
+        *,
+        include_status: bool = True,
+        include_running_indicators: bool = True,
+        include_sticky_reminders: bool = True,
+    ) -> RenderableType:
+        """Compose the live view display content."""
+        blocks: list[RenderableType] = [
+            self.compose_body(
+                include_running_indicators=include_running_indicators,
+                include_sticky_reminders=include_sticky_reminders,
+            )
+        ]
         if include_status:
             blocks.append(self._status_block.render())
         return Group(*blocks)
@@ -1301,7 +1332,6 @@ class LiveView:
 
         if isinstance(msg, StepBegin):
             self.cleanup(is_interrupt=False)
-            self._flush_pending_local_blocks()
             self._mcp_loading_spinner = None
             self._mooning_spinner = Spinner("moon", "")
             self.refresh_soon()

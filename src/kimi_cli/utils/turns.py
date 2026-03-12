@@ -6,10 +6,21 @@ from typing import Any
 
 from kosong.message import Message
 
+from kimi_cli.soul.message import INTERNAL_USER_NAME
 from kimi_cli.wire.types import TextPart
 
 CHECKPOINT_USER_PATTERN = re.compile(r"^<system>CHECKPOINT \d+</system>$")
-_INTERNAL_USER_PREFIXES = ("<system>", "<system-reminder>")
+_LEGACY_INTERNAL_USER_PREFIXES = (
+    "<system-reminder>\nThe user sent a new reminder during the current turn.",
+    "<system-reminder>\nPlan mode is active.",
+    "<system-reminder>\nPlan mode still active (see full instructions earlier).",
+    "<system>Reminder: the following skill suggestions may be helpful in the current context.",
+    "<system>The user just ran `/init` slash command.",
+    "<system>The user has added an additional directory to the workspace:",
+    "<system>The user has imported context from ",
+    "<system>Previous context has been compacted. Here is the compaction output:",
+    "<system>You just got a D-Mail from your future self.",
+)
 
 
 def _first_text_part_message(message: Message) -> str | None:
@@ -39,12 +50,15 @@ def is_checkpoint_user_text(text: str) -> bool:
 
 
 def is_internal_user_text(text: str) -> bool:
-    return text.strip().startswith(_INTERNAL_USER_PREFIXES)
+    stripped = text.strip()
+    return any(stripped.startswith(prefix) for prefix in _LEGACY_INTERNAL_USER_PREFIXES)
 
 
 def is_internal_user_message(message: Message) -> bool:
     if message.role != "user":
         return False
+    if message.name == INTERNAL_USER_NAME:
+        return True
     first_text = _first_text_part_message(message)
     return first_text is not None and is_internal_user_text(first_text)
 
@@ -52,13 +66,25 @@ def is_internal_user_message(message: Message) -> bool:
 def is_internal_user_record(record: Mapping[str, Any]) -> bool:
     if record.get("role") != "user":
         return False
+    if record.get("name") == INTERNAL_USER_NAME:
+        return True
     first_text = _first_text_part_record(record)
     return first_text is not None and is_internal_user_text(first_text)
 
 
 def is_real_user_turn_start_message(message: Message) -> bool:
-    return message.role == "user" and not is_internal_user_message(message)
+    if message.role != "user":
+        return False
+    first_text = _first_text_part_message(message)
+    if first_text is not None and is_checkpoint_user_text(first_text):
+        return False
+    return not is_internal_user_message(message)
 
 
 def is_real_user_turn_start_record(record: Mapping[str, Any]) -> bool:
-    return record.get("role") == "user" and not is_internal_user_record(record)
+    if record.get("role") != "user":
+        return False
+    first_text = _first_text_part_record(record)
+    if first_text is not None and is_checkpoint_user_text(first_text):
+        return False
+    return not is_internal_user_record(record)

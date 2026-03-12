@@ -226,7 +226,7 @@ def test_active_turn_input_box_renders_static_hint(monkeypatch) -> None:
     assert rprompt == "│"
 
 
-def test_active_turn_footer_includes_fixed_running_indicator() -> None:
+def test_active_turn_footer_only_shows_fixed_status() -> None:
     prompt_session = object.__new__(CustomPromptSession)
     prompt_session._mode = PromptMode.AGENT
     prompt_session._model_name = "kimi"
@@ -236,28 +236,54 @@ def test_active_turn_footer_includes_fixed_running_indicator() -> None:
     rendered = prompt_session._render_turn_footer(
         80,
         status=StatusSnapshot(context_usage=0.0),
-        live_view=SimpleNamespace(footer_indicator=("tool", "Using Shell (make test)")),
     )
     plain = "".join(fragment[1] for fragment in rendered)
 
     assert "agent (kimi)" in plain
+    assert "Using Shell (make test)" not in plain
+
+
+def test_active_turn_activity_line_shows_running_indicator() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+
+    rendered = prompt_session._render_turn_activity(
+        SimpleNamespace(activity_indicator=("tool", "Using Shell (make test)"))
+    )
+    plain = "".join(fragment[1] for fragment in rendered)
+
     assert "Using Shell (make test)" in plain
 
 
-def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
+def test_rich_renderable_control_tracks_width_and_line_count() -> None:
+    calls: list[str] = []
+    control = shell_prompt._RichRenderableControl(lambda: calls.append("render") or "head\nbody")
+
+    content = control.create_content(80, None)
+
+    assert calls == ["render"]
+    assert content.line_count == 2
+    assert control.line_count(80) == 2
+    assert calls == ["render", "render"]
+
+
+def test_rich_style_to_prompt_toolkit_maps_basic_styles() -> None:
+    style = shell_prompt._rich_style_to_prompt_toolkit(
+        shell_prompt.RichStyle.parse("bold italic underline #ff0000 on #0000ff")
+    )
+
+    assert "fg:#ff0000" in style
+    assert "bg:#0000ff" in style
+    assert "bold" in style
+    assert "italic" in style
+    assert "underline" in style
+
+
+def test_force_turn_full_repaint_resets_renderer_cache() -> None:
     invalidate_calls = 0
 
     class _Renderer:
         def __init__(self) -> None:
             self._last_screen = object()
-            self.erase_calls = 0
-            self.reset_calls = 0
-
-        def erase(self, *, leave_alternate_screen: bool = True) -> None:
-            self.erase_calls += 1
-
-        def reset(self) -> None:
-            self.reset_calls += 1
 
     class _App:
         def __init__(self) -> None:
@@ -268,64 +294,44 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
             invalidate_calls += 1
 
     app = _App()
-    live_view = SimpleNamespace(needs_periodic_refresh=True)
+    CustomPromptSession._force_turn_full_repaint(app)
 
+    assert app.renderer._last_screen is None
+    assert invalidate_calls == 1
+
+
+def test_refresh_turn_application_invalidates_while_live() -> None:
+    invalidate_calls = 0
+
+    class _App:
+        def invalidate(self) -> None:
+            nonlocal invalidate_calls
+            invalidate_calls += 1
+
+    app = _App()
     last_repaint = CustomPromptSession._refresh_turn_application(
         app,
-        live_view=live_view,
+        live_view=SimpleNamespace(needs_periodic_refresh=True),
         last_full_repaint_at=None,
         now=10.0,
     )
     assert last_repaint == 10.0
-    assert app.renderer._last_screen is not None
-    assert app.renderer.erase_calls == 0
-    assert app.renderer.reset_calls == 0
     assert invalidate_calls == 1
 
     last_repaint = CustomPromptSession._refresh_turn_application(
         app,
-        live_view=live_view,
+        live_view=SimpleNamespace(needs_periodic_refresh=True),
         last_full_repaint_at=last_repaint,
         now=10.5,
     )
-    assert last_repaint == 10.0
-    assert app.renderer._last_screen is not None
-    assert app.renderer.erase_calls == 0
-    assert app.renderer.reset_calls == 0
+    assert last_repaint == 10.5
     assert invalidate_calls == 2
-
-    last_repaint = CustomPromptSession._refresh_turn_application(
-        app,
-        live_view=live_view,
-        last_full_repaint_at=last_repaint,
-        now=11.1,
-    )
-    assert last_repaint == 11.1
-    assert app.renderer._last_screen is None
-    assert app.renderer.erase_calls == 0
-    assert app.renderer.reset_calls == 0
-    assert invalidate_calls == 3
 
 
 def test_refresh_turn_application_stops_repainting_when_idle() -> None:
     invalidate_calls = 0
 
-    class _Renderer:
-        def __init__(self) -> None:
-            self._last_screen = object()
-            self.erase_calls = 0
-            self.reset_calls = 0
-
-        def erase(self, *, leave_alternate_screen: bool = True) -> None:
-            self.erase_calls += 1
-
-        def reset(self) -> None:
-            self.reset_calls += 1
-
     class _App:
-        def __init__(self) -> None:
-            self.renderer = _Renderer()
-
         def invalidate(self) -> None:
             nonlocal invalidate_calls
             invalidate_calls += 1
@@ -339,10 +345,28 @@ def test_refresh_turn_application_stops_repainting_when_idle() -> None:
     )
 
     assert last_repaint is None
-    assert app.renderer._last_screen is not None
-    assert app.renderer.erase_calls == 0
-    assert app.renderer.reset_calls == 0
     assert invalidate_calls == 0
+
+
+def test_target_turn_body_bottom_scroll_tracks_latest_output() -> None:
+    body_window = SimpleNamespace(render_info=SimpleNamespace(window_height=4, window_width=20))
+
+    assert (
+        CustomPromptSession._target_turn_body_bottom_scroll(
+            body_window,
+            line_count=11,
+            current_scroll=0,
+        )
+        == 7
+    )
+    assert (
+        CustomPromptSession._target_turn_body_bottom_scroll(
+            body_window,
+            line_count=11,
+            current_scroll=7,
+        )
+        is None
+    )
 
 
 def test_bottom_toolbar_no_overflow_when_tip_would_exactly_fill_old_available(monkeypatch) -> None:

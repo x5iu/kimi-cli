@@ -178,11 +178,17 @@ def test_live_view_echoes_reminder_in_output() -> None:
     assert "Reminder:" in rendered
     assert "please keep the answer short" in rendered
 
+    body_only = view.render_ansi(80, include_sticky_reminders=False)
+    sticky_only = view.render_sticky_reminders_ansi(80)
+    assert "Reminder:" not in body_only
+    assert "please keep the answer short" in sticky_only
+
     view.dispatch_wire_message(StepBegin(n=2))
     rendered = view.render_ansi(80)
 
     assert "Reminder:" in rendered
     assert "please keep the answer short" in rendered
+    assert view.has_sticky_reminders is True
 
 
 def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
@@ -205,20 +211,20 @@ def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
     assert "Running..." not in view.render_ansi(80)
 
 
-def test_live_view_reports_fixed_footer_indicator_for_running_states() -> None:
+def test_live_view_reports_activity_indicator_for_running_states() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
 
     view.dispatch_wire_message(TurnBegin(user_input="hello"))
-    assert view.footer_indicator == ("running", "Running...")
+    assert view.activity_indicator == ("running", "Running...")
 
     view.dispatch_wire_message(ThinkPart(think="analyzing"))
-    assert view.footer_indicator == ("thinking", "Thinking...")
+    assert view.activity_indicator == ("thinking", "Thinking...")
 
     view.dispatch_wire_message(StepBegin(n=1))
-    assert view.footer_indicator == ("moon", "Running...")
+    assert view.activity_indicator == ("moon", "Running...")
 
     view.dispatch_wire_message(TurnEnd())
-    assert view.footer_indicator is None
+    assert view.activity_indicator is None
 
 
 def test_live_view_can_hide_running_indicators_in_body() -> None:
@@ -258,7 +264,6 @@ def test_live_view_hides_expand_prompts_when_expansion_disabled() -> None:
 
     assert "/more" not in rendered
     assert view.try_submit_line("/more") is False
-
 
 
 def test_live_view_renders_skill_reminder_notice() -> None:

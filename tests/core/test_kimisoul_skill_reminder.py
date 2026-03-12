@@ -19,6 +19,7 @@ from kimi_cli.soul.kimisoul import (
     SkillRecommendationItem,
     StepOutcome,
 )
+from kimi_cli.soul.message import INTERNAL_USER_NAME
 from kimi_cli.wire.types import SkillReminderNotice
 
 
@@ -149,6 +150,11 @@ async def test_turn_injects_skill_reminder_on_next_step(
         for message in soul.context.history
         if message.role == "user" and "skill suggestions" in message.extract_text(" ")
     ]
+    assert [
+        message.name
+        for message in soul.context.history
+        if message.role == "user" and "skill suggestions" in message.extract_text(" ")
+    ] == [INTERNAL_USER_NAME]
     assert reminder_messages == [
         (
             "<system>Reminder: the following skill suggestions may be helpful in the current "

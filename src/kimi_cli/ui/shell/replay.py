@@ -63,7 +63,7 @@ async def replay_recent_history(
 
     for turn in turns:
         wire = Wire()
-        console.print(f"{PROMPT_SYMBOL} {message_stringify(turn.user_message)}")
+        console.print(f"{PROMPT_SYMBOL} {message_stringify(turn.user_message)}", markup=False)
         ui_task = asyncio.create_task(
             visualize(wire.ui_side(merge=False), initial_status=StatusUpdate())
         )

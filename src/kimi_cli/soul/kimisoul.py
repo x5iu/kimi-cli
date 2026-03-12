@@ -38,12 +38,18 @@ from kimi_cli.soul.attachment import Attachment, AttachmentProvider, normalize_h
 from kimi_cli.soul.attachments.plan_mode import PlanModeAttachmentProvider
 from kimi_cli.soul.compaction import CompactionResult, SimpleCompaction, should_auto_compact
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.message import check_message, system, tool_result_to_message
+from kimi_cli.soul.message import (
+    check_message,
+    internal_user_message,
+    system,
+    tool_result_to_message,
+)
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.message import content_parts_stringify
 from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
@@ -401,9 +407,9 @@ class KimiSoul:
             consumed = True
         return consumed
 
-    async def _inject_steer(self, content: str | list[ContentPart]) -> None:
-        """Inject a single steer as a real-time reminder appended to user messages."""
-        reminder = (
+    @staticmethod
+    def _steer_instruction_text() -> str:
+        return (
             "The user sent a new reminder during the current turn. "
             "Treat it as an additional user instruction for this task. "
             "Incorporate it into the ongoing turn, but do not stop, summarize, or conclude "
@@ -414,30 +420,57 @@ class KimiSoul:
             "'you just added', or 'you mentioned later'. Keep the final response centered on the "
             "user's original turn-opening request."
         )
-        content_parts: list[ContentPart]
-        if isinstance(content, str):
-            content_parts = [
-                TextPart(
-                    text=f"<system-reminder>\n{reminder}\n\nReminder:\n{content.strip()}\n</system-reminder>"
+
+    @classmethod
+    def _build_steer_message(cls, content: str | list[ContentPart]) -> Message:
+        content_parts = [
+            TextPart(
+                text=(
+                    "<system-reminder>\n"
+                    f"{cls._steer_instruction_text()}\n\n"
+                    "Reminder content follows in the rest of this message.\n"
+                    "</system-reminder>"
                 )
-            ]
+            )
+        ]
+        if isinstance(content, str):
+            stripped = content.strip()
+            if stripped:
+                content_parts.append(TextPart(text=stripped))
         else:
-            content_parts = [
-                TextPart(
-                    text=(
-                        "<system-reminder>\n"
-                        f"{reminder}\n\n"
-                        "Reminder content follows in the rest of this message.\n"
-                        "</system-reminder>"
-                    )
-                ),
-                *content,
-            ]
-        reminder_message = Message(role="user", content=content_parts)
+            content_parts.extend(content)
+        return internal_user_message(content_parts)
+
+    @staticmethod
+    def _stringify_steer_content(content: str | list[ContentPart]) -> str:
+        if isinstance(content, str):
+            return content.strip()
+        return content_parts_stringify(content).strip()
+
+    async def _inject_steer(self, content: str | list[ContentPart]) -> None:
+        """Inject a single steer as a real-time reminder appended to user messages."""
+        reminder_message = self._build_steer_message(content)
         if self._runtime.llm is None:
             raise LLMNotSet()
         if missing_caps := check_message(reminder_message, self._runtime.llm.capabilities):
-            raise LLMNotSupported(self._runtime.llm, list(missing_caps))
+            fallback_text = self._stringify_steer_content(content)
+            if not fallback_text:
+                fallback_text = (
+                    "The reminder included non-text content that is not supported by the current "
+                    "model."
+                )
+            reminder_message = internal_user_message(
+                TextPart(
+                    text=(
+                        "<system-reminder>\n"
+                        f"{self._steer_instruction_text()}\n\n"
+                        f"Reminder:\n{fallback_text}\n"
+                        "</system-reminder>"
+                    )
+                )
+            )
+            if missing_caps := check_message(reminder_message, self._runtime.llm.capabilities):
+                raise LLMNotSupported(self._runtime.llm, list(missing_caps))
         await self._context.append_message(reminder_message)
 
     @property
@@ -722,7 +755,7 @@ class KimiSoul:
             lines.append(
                 "  Consider reading this skill's SKILL.md before continuing if it seems useful."
             )
-        return Message(role="user", content=[system("\n".join(lines))])
+        return internal_user_message([system("\n".join(lines))])
 
     async def _agent_loop(self, skill_reminder: SkillReminderState | None = None) -> TurnOutcome:
         """The main agent loop for one run."""
@@ -839,9 +872,7 @@ class KimiSoul:
             combined = "\n".join(
                 f"<system-reminder>\n{att.content}\n</system-reminder>" for att in attachments
             )
-            await self._context.append_message(
-                Message(role="user", content=[TextPart(text=combined)])
-            )
+            await self._context.append_message(internal_user_message([TextPart(text=combined)]))
 
         # Normalize: merge adjacent user messages for clean API input
         effective_history = normalize_history(self._context.history)
@@ -905,9 +936,8 @@ class KimiSoul:
             raise BackToTheFuture(
                 dmail.checkpoint_id,
                 [
-                    Message(
-                        role="user",
-                        content=[
+                    internal_user_message(
+                        [
                             system(
                                 "You just got a D-Mail from your future self. "
                                 "It is likely that your future self has already done "
@@ -916,7 +946,7 @@ class KimiSoul:
                                 "mention to the user about this information. "
                                 f"D-Mail content:\n\n{dmail.message.strip()}"
                             )
-                        ],
+                        ]
                     )
                 ],
             )

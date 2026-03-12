@@ -6,14 +6,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kaos.path import KaosPath
-from kosong.message import Message
 from loguru import logger
 
 import kimi_cli.prompts as prompts
 from kimi_cli.soul import wire_send
 from kimi_cli.soul.agent import load_project_agents_md
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.message import system
+from kimi_cli.soul.message import internal_user_message, system
 from kimi_cli.utils.export import is_sensitive_file
 from kimi_cli.utils.path import sanitize_cli_path, shorten_home
 from kimi_cli.utils.slashcmd import SlashCommandRegistry
@@ -49,7 +48,7 @@ async def init(soul: KimiSoul, args: str):
         "The system has analyzed the codebase and generated an `AGENTS.md` file. "
         f"Latest AGENTS.md file content:\n{agents_md}"
     )
-    await soul.context.append_message(Message(role="user", content=[system_message]))
+    await soul.context.append_message(internal_user_message([system_message]))
 
 
 @registry.command
@@ -206,7 +205,7 @@ async def add_dir(soul: KimiSoul, args: str):
         "You can now read, write, search, and glob files in this directory "
         "as if it were part of the working directory."
     )
-    await soul.context.append_message(Message(role="user", content=[system_message]))
+    await soul.context.append_message(internal_user_message([system_message]))
 
     wire_send(TextPart(text=f"Added directory to workspace: {path}"))
     logger.info("Added additional directory: {path}", path=path)
