@@ -300,10 +300,17 @@ def test_force_turn_full_repaint_resets_renderer_cache() -> None:
     assert invalidate_calls == 1
 
 
-def test_refresh_turn_application_invalidates_while_live() -> None:
+def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
     invalidate_calls = 0
 
+    class _Renderer:
+        def __init__(self) -> None:
+            self._last_screen = object()
+
     class _App:
+        def __init__(self) -> None:
+            self.renderer = _Renderer()
+
         def invalidate(self) -> None:
             nonlocal invalidate_calls
             invalidate_calls += 1
@@ -316,16 +323,28 @@ def test_refresh_turn_application_invalidates_while_live() -> None:
         now=10.0,
     )
     assert last_repaint == 10.0
+    assert app.renderer._last_screen is not None
     assert invalidate_calls == 1
 
     last_repaint = CustomPromptSession._refresh_turn_application(
         app,
         live_view=SimpleNamespace(needs_periodic_refresh=True),
         last_full_repaint_at=last_repaint,
-        now=10.5,
+        now=10.4,
     )
-    assert last_repaint == 10.5
+    assert last_repaint == 10.0
+    assert app.renderer._last_screen is not None
     assert invalidate_calls == 2
+
+    last_repaint = CustomPromptSession._refresh_turn_application(
+        app,
+        live_view=SimpleNamespace(needs_periodic_refresh=True),
+        last_full_repaint_at=last_repaint,
+        now=10.6,
+    )
+    assert last_repaint == 10.6
+    assert app.renderer._last_screen is None
+    assert invalidate_calls == 3
 
 
 def test_refresh_turn_application_stops_repainting_when_idle() -> None:

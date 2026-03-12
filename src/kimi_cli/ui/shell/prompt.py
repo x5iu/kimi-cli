@@ -108,6 +108,7 @@ _INDICATOR_STYLES = {
     "question": "fg:#22d3ee",
 }
 _TURN_UI_REFRESH_INTERVAL = 0.1
+_TURN_UI_FULL_REPAINT_INTERVAL = 0.5
 
 
 def _rich_from_ansi(text: str) -> RichText:
@@ -1320,8 +1321,14 @@ class CustomPromptSession:
         if not getattr(live_view, "needs_periodic_refresh", False):
             return None
         current = time.monotonic() if now is None else now
+        if last_full_repaint_at is None:
+            app.invalidate()
+            return current
+        if current - last_full_repaint_at >= _TURN_UI_FULL_REPAINT_INTERVAL:
+            cls._force_turn_full_repaint(app)
+            return current
         app.invalidate()
-        return current
+        return last_full_repaint_at
 
     def _format_live_activity_status(self, live_view: Any) -> tuple[str, str] | None:
         indicator = getattr(live_view, "activity_indicator", None)
@@ -1563,6 +1570,7 @@ class CustomPromptSession:
                 else _input_box_height()
             )
             return (
+                getattr(live_view, "render_revision", 0),
                 body_width,
                 body_control.line_count(body_width),
                 reminder_width,

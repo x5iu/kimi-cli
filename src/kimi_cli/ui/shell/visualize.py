@@ -887,6 +887,7 @@ class LiveView:
         self._sticky_reminder_blocks: list[RenderableType] = []
 
         self._need_recompose = False
+        self._render_revision = 0
 
     def _reset_live_shape(self, live: Live) -> None:
         # Rich doesn't expose a public API to clear Live's cached render height.
@@ -937,8 +938,13 @@ class LiveView:
                     await animate_task
                 self._live = None
 
+    @property
+    def render_revision(self) -> int:
+        return self._render_revision
+
     def refresh_soon(self) -> None:
         self._need_recompose = True
+        self._render_revision += 1
 
     def echo_reminder(self, text: str) -> None:
         stripped = text.strip()
@@ -1566,12 +1572,11 @@ class LiveView:
                 is_think = isinstance(part, ThinkPart)
                 if self._current_content_block is None:
                     self._current_content_block = _ContentBlock(is_think)
-                    self.refresh_soon()
                 elif self._current_content_block.is_think != is_think:
                     self.flush_content()
                     self._current_content_block = _ContentBlock(is_think)
-                    self.refresh_soon()
                 self._current_content_block.append(text)
+                self.refresh_soon()
             case _:
                 # TODO: support more content part types
                 pass

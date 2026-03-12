@@ -211,6 +211,37 @@ def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
     assert "Running..." not in view.render_ansi(80)
 
 
+def test_live_view_bumps_render_revision_for_same_height_content_updates() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    assert view.render_revision == 0
+
+    view.dispatch_wire_message(TextPart(text="ab"))
+    first_revision = view.render_revision
+    assert first_revision > 0
+
+    view.dispatch_wire_message(TextPart(text="cd"))
+    assert view.render_revision == first_revision + 1
+    assert "abcd" in view.render_ansi(80, include_running_indicators=False)
+
+
+def test_live_view_refresh_soon_bumps_render_revision() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.echo_reminder("keep going")
+    first_revision = view.render_revision
+    assert first_revision > 0
+
+    view.finish_turn()
+    assert view.render_revision == first_revision
+
+    view.dispatch_wire_message(TurnBegin(user_input="hello"))
+    assert view.render_revision == first_revision + 1
+
+    view.finish_turn()
+    assert view.render_revision == first_revision + 2
+
+
 def test_live_view_reports_activity_indicator_for_running_states() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
 
