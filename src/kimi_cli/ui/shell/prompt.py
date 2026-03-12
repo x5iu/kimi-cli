@@ -1525,7 +1525,6 @@ class CustomPromptSession:
         feedback_message = ""
         body_vertical_scroll = 0
         body_window: Window | None = None
-        reminder_window: Window | None = None
         last_layout_signature: tuple[object, ...] | None = None
 
         def _app_columns(app: Application[Any] | None = None) -> int:
@@ -1576,14 +1575,9 @@ class CustomPromptSession:
         body_control = _RichRenderableControl(
             lambda: live_view.compose_body(
                 include_running_indicators=False,
-                include_sticky_reminders=False,
                 tail_block_limit=MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
                 content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
             ),
-            get_cache_revision=lambda: getattr(live_view, "render_revision", 0),
-        )
-        reminder_control = _RichRenderableControl(
-            live_view.compose_sticky_reminders,
             get_cache_revision=lambda: getattr(live_view, "render_revision", 0),
         )
 
@@ -1593,29 +1587,18 @@ class CustomPromptSession:
                 if body_window is not None and body_window.render_info is not None
                 else _app_columns()
             )
-            reminder_width = (
-                reminder_window.render_info.window_width
-                if reminder_window is not None and reminder_window.render_info is not None
-                else _app_columns()
-            )
             input_height = (
                 text_area.window.render_info.window_height
                 if text_area.window.render_info is not None
                 else _input_box_height()
             )
             body_line_count = body_control.line_count(body_width)
-            reminder_line_count = (
-                reminder_control.line_count(reminder_width) if live_view.has_sticky_reminders else 0
-            )
             has_activity = bool(self._render_turn_activity(live_view))
             has_hint = bool(_render_hint())
             return (
                 getattr(live_view, "render_revision", 0),
                 body_width,
                 body_line_count,
-                reminder_width,
-                reminder_line_count,
-                live_view.has_sticky_reminders,
                 has_activity,
                 has_hint,
                 input_height,
@@ -1751,7 +1734,6 @@ class CustomPromptSession:
             always_hide_cursor=True,
             get_vertical_scroll=lambda _: body_vertical_scroll,
         )
-        reminder_window = Window(reminder_control, dont_extend_height=True)
         activity_window = Window(
             FormattedTextControl(_render_activity),
             height=1,
@@ -1771,10 +1753,6 @@ class CustomPromptSession:
             HSplit(
                 [
                     body_window,
-                    ConditionalContainer(
-                        reminder_window,
-                        filter=Condition(lambda: live_view.has_sticky_reminders),
-                    ),
                     ConditionalContainer(
                         activity_window,
                         filter=Condition(lambda: bool(self._render_turn_activity(live_view))),

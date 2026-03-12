@@ -177,18 +177,27 @@ def test_live_view_echoes_reminder_in_output() -> None:
 
     assert "Reminder:" in rendered
     assert "please keep the answer short" in rendered
-
-    body_only = view.render_ansi(80, include_sticky_reminders=False)
-    sticky_only = view.render_sticky_reminders_ansi(80)
-    assert "Reminder:" not in body_only
-    assert "please keep the answer short" in sticky_only
+    assert "please keep the answer short" in view.render_reminders_ansi(80)
 
     view.dispatch_wire_message(StepBegin(n=2))
     rendered = view.render_ansi(80)
 
     assert "Reminder:" in rendered
     assert "please keep the answer short" in rendered
-    assert view.has_sticky_reminders is True
+    assert view.has_reminders is True
+
+
+def test_live_view_renders_reminder_inline_with_body_output() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_content(TextPart(text="before reminder"))
+    view.echo_reminder("please keep the answer short")
+    view.append_content(TextPart(text="after reminder"))
+
+    rendered = view.render_ansi(80, include_running_indicators=False)
+
+    assert rendered.index("before reminder") < rendered.index("Reminder:")
+    assert rendered.index("Reminder:") < rendered.index("after reminder")
 
 
 def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
@@ -308,7 +317,6 @@ def test_live_view_compose_body_can_limit_to_recent_blocks() -> None:
     rendered = view._renderable_to_ansi(
         view.compose_body(
             include_running_indicators=False,
-            include_sticky_reminders=False,
             tail_block_limit=1,
         ),
         80,
@@ -327,7 +335,6 @@ def test_live_view_compose_body_can_limit_current_content_to_tail_chars() -> Non
     rendered = view._renderable_to_ansi(
         view.compose_body(
             include_running_indicators=False,
-            include_sticky_reminders=False,
             content_char_limit=16,
         ),
         80,

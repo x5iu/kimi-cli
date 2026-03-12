@@ -938,7 +938,7 @@ class LiveView:
         self._flush_to_console = flush_to_console
         self._allow_expand = allow_expand
         self._flushed_blocks: list[RenderableType] = []
-        self._sticky_reminder_blocks: list[RenderableType] = []
+        self._reminder_blocks: list[RenderableType] = []
 
         self._need_recompose = False
         self._render_revision = 0
@@ -1004,7 +1004,13 @@ class LiveView:
         stripped = text.strip()
         if not stripped:
             return
-        self._sticky_reminder_blocks.append(_render_reminder_block(stripped))
+        self.flush_content()
+        reminder = _render_reminder_block(stripped)
+        self._reminder_blocks.append(reminder)
+        if self._flush_to_console:
+            console.print(reminder)
+        else:
+            self._flushed_blocks.append(reminder)
         self.refresh_soon()
 
     def finish_turn(self) -> None:
@@ -1052,28 +1058,26 @@ class LiveView:
         *,
         include_status: bool = False,
         include_running_indicators: bool = True,
-        include_sticky_reminders: bool = True,
     ) -> str:
         return self._renderable_to_ansi(
             self.compose(
                 include_status=include_status,
                 include_running_indicators=include_running_indicators,
-                include_sticky_reminders=include_sticky_reminders,
             ),
             width,
         )
 
     @property
-    def has_sticky_reminders(self) -> bool:
-        return bool(self._sticky_reminder_blocks)
+    def has_reminders(self) -> bool:
+        return bool(self._reminder_blocks)
 
-    def compose_sticky_reminders(self) -> RenderableType:
-        return Group(*self._sticky_reminder_blocks)
+    def compose_reminders(self) -> RenderableType:
+        return Group(*self._reminder_blocks)
 
-    def render_sticky_reminders_ansi(self, width: int) -> str:
-        if not self._sticky_reminder_blocks:
+    def render_reminders_ansi(self, width: int) -> str:
+        if not self._reminder_blocks:
             return ""
-        return self._renderable_to_ansi(self.compose_sticky_reminders(), width)
+        return self._renderable_to_ansi(self.compose_reminders(), width)
 
     @property
     def has_pending_input_request(self) -> bool:
@@ -1324,7 +1328,6 @@ class LiveView:
         self,
         *,
         include_running_indicators: bool = True,
-        include_sticky_reminders: bool = True,
         tail_block_limit: int | None = None,
         content_char_limit: int | None = None,
     ) -> RenderableType:
@@ -1374,8 +1377,8 @@ class LiveView:
             and not has_specific_running_indicator
         ):
             blocks.append(self._turn_spinner)
-        if include_sticky_reminders:
-            blocks.extend(self._sticky_reminder_blocks)
+        # Reminders are appended to the body stream when submitted so they render
+        # inline with normal messages instead of sticking above the footer.
         if self._current_approval_request_panel:
             blocks.append(
                 self._current_approval_request_panel.render(allow_expand=self._allow_expand)
@@ -1391,13 +1394,11 @@ class LiveView:
         *,
         include_status: bool = True,
         include_running_indicators: bool = True,
-        include_sticky_reminders: bool = True,
     ) -> RenderableType:
         """Compose the live view display content."""
         blocks: list[RenderableType] = [
             self.compose_body(
                 include_running_indicators=include_running_indicators,
-                include_sticky_reminders=include_sticky_reminders,
             )
         ]
         if include_status:
