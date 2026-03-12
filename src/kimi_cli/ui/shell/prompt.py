@@ -103,6 +103,8 @@ _INDICATOR_STYLES = {
     "approval": "fg:#f59e0b",
     "question": "fg:#22d3ee",
 }
+_TURN_UI_REFRESH_INTERVAL = 0.1
+_TURN_UI_FULL_REDRAW_INTERVAL = 1.0
 
 
 def _rich_from_ansi(text: str) -> RichText:
@@ -1194,6 +1196,28 @@ class CustomPromptSession:
         current = time.monotonic() if now is None else now
         return frames[int(current * 10) % len(frames)]
 
+    @staticmethod
+    def _refresh_turn_application(
+        app: Application[Any],
+        *,
+        live_view: Any,
+        last_full_repaint_at: float | None,
+        now: float | None = None,
+    ) -> float | None:
+        if not getattr(live_view, "needs_periodic_refresh", False):
+            return None
+
+        current = time.monotonic() if now is None else now
+        if (
+            last_full_repaint_at is None
+            or current - last_full_repaint_at >= _TURN_UI_FULL_REDRAW_INTERVAL
+        ):
+            app.renderer.reset()
+            last_full_repaint_at = current
+
+        app.invalidate()
+        return last_full_repaint_at
+
     def _format_live_footer_status(self, live_view: Any) -> tuple[str, str] | None:
         indicator = getattr(live_view, "footer_indicator", None)
         if indicator is None:
@@ -1574,10 +1598,14 @@ class CustomPromptSession:
                 app.invalidate()
 
         async def _animate() -> None:
+            last_full_repaint_at: float | None = None
             while True:
-                await asyncio.sleep(0.1)
-                if live_view.needs_periodic_refresh:
-                    app.invalidate()
+                await asyncio.sleep(_TURN_UI_REFRESH_INTERVAL)
+                last_full_repaint_at = self._refresh_turn_application(
+                    app,
+                    live_view=live_view,
+                    last_full_repaint_at=last_full_repaint_at,
+                )
 
         consume_task = asyncio.create_task(_consume_wire())
         animate_task = asyncio.create_task(_animate())

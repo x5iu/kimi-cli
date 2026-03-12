@@ -244,6 +244,84 @@ def test_active_turn_footer_includes_fixed_running_indicator() -> None:
     assert "Using Shell (make test)" in plain
 
 
+def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
+    reset_calls = 0
+    invalidate_calls = 0
+
+    class _Renderer:
+        def reset(self) -> None:
+            nonlocal reset_calls
+            reset_calls += 1
+
+    class _App:
+        renderer = _Renderer()
+
+        def invalidate(self) -> None:
+            nonlocal invalidate_calls
+            invalidate_calls += 1
+
+    app = _App()
+    live_view = SimpleNamespace(needs_periodic_refresh=True)
+
+    last_repaint = CustomPromptSession._refresh_turn_application(
+        app,
+        live_view=live_view,
+        last_full_repaint_at=None,
+        now=10.0,
+    )
+    assert last_repaint == 10.0
+    assert reset_calls == 1
+    assert invalidate_calls == 1
+
+    last_repaint = CustomPromptSession._refresh_turn_application(
+        app,
+        live_view=live_view,
+        last_full_repaint_at=last_repaint,
+        now=10.5,
+    )
+    assert last_repaint == 10.0
+    assert reset_calls == 1
+    assert invalidate_calls == 2
+
+    last_repaint = CustomPromptSession._refresh_turn_application(
+        app,
+        live_view=live_view,
+        last_full_repaint_at=last_repaint,
+        now=11.1,
+    )
+    assert last_repaint == 11.1
+    assert reset_calls == 2
+    assert invalidate_calls == 3
+
+
+def test_refresh_turn_application_stops_repainting_when_idle() -> None:
+    reset_calls = 0
+    invalidate_calls = 0
+
+    class _Renderer:
+        def reset(self) -> None:
+            nonlocal reset_calls
+            reset_calls += 1
+
+    class _App:
+        renderer = _Renderer()
+
+        def invalidate(self) -> None:
+            nonlocal invalidate_calls
+            invalidate_calls += 1
+
+    last_repaint = CustomPromptSession._refresh_turn_application(
+        _App(),
+        live_view=SimpleNamespace(needs_periodic_refresh=False),
+        last_full_repaint_at=10.0,
+        now=10.5,
+    )
+
+    assert last_repaint is None
+    assert reset_calls == 0
+    assert invalidate_calls == 0
+
+
 def test_bottom_toolbar_no_overflow_when_tip_would_exactly_fill_old_available(monkeypatch) -> None:
     width = 60
     mode_text = "agent"
