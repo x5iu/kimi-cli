@@ -1197,7 +1197,16 @@ class CustomPromptSession:
         return frames[int(current * 10) % len(frames)]
 
     @staticmethod
+    def _force_turn_full_repaint(app: Application[Any]) -> None:
+        # Force prompt_toolkit to forget the previous frame so the next invalidate
+        # redraws the whole active-turn view in one render pass. This avoids the
+        # visible clear-and-repaint flicker caused by renderer.erase()/reset().
+        app.renderer._last_screen = None  # type: ignore[reportPrivateUsage]
+        app.invalidate()
+
+    @classmethod
     def _refresh_turn_application(
+        cls,
         app: Application[Any],
         *,
         live_view: Any,
@@ -1208,15 +1217,13 @@ class CustomPromptSession:
             return None
 
         current = time.monotonic() if now is None else now
-        if (
-            last_full_repaint_at is None
-            or current - last_full_repaint_at >= _TURN_UI_FULL_REDRAW_INTERVAL
-        ):
-            if hasattr(app.renderer, "erase"):
-                app.renderer.erase(leave_alternate_screen=False)
-            else:
-                app.renderer.reset()
-            last_full_repaint_at = current
+        if last_full_repaint_at is None:
+            app.invalidate()
+            return current
+
+        if current - last_full_repaint_at >= _TURN_UI_FULL_REDRAW_INTERVAL:
+            cls._force_turn_full_repaint(app)
+            return current
 
         app.invalidate()
         return last_full_repaint_at

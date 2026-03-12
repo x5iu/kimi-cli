@@ -245,21 +245,23 @@ def test_active_turn_footer_includes_fixed_running_indicator() -> None:
 
 
 def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
-    erase_calls = 0
-    reset_calls = 0
     invalidate_calls = 0
 
     class _Renderer:
+        def __init__(self) -> None:
+            self._last_screen = object()
+            self.erase_calls = 0
+            self.reset_calls = 0
+
         def erase(self, *, leave_alternate_screen: bool = True) -> None:
-            nonlocal erase_calls
-            erase_calls += 1
+            self.erase_calls += 1
 
         def reset(self) -> None:
-            nonlocal reset_calls
-            reset_calls += 1
+            self.reset_calls += 1
 
     class _App:
-        renderer = _Renderer()
+        def __init__(self) -> None:
+            self.renderer = _Renderer()
 
         def invalidate(self) -> None:
             nonlocal invalidate_calls
@@ -275,8 +277,9 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
         now=10.0,
     )
     assert last_repaint == 10.0
-    assert erase_calls == 1
-    assert reset_calls == 0
+    assert app.renderer._last_screen is not None
+    assert app.renderer.erase_calls == 0
+    assert app.renderer.reset_calls == 0
     assert invalidate_calls == 1
 
     last_repaint = CustomPromptSession._refresh_turn_application(
@@ -286,8 +289,9 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
         now=10.5,
     )
     assert last_repaint == 10.0
-    assert erase_calls == 1
-    assert reset_calls == 0
+    assert app.renderer._last_screen is not None
+    assert app.renderer.erase_calls == 0
+    assert app.renderer.reset_calls == 0
     assert invalidate_calls == 2
 
     last_repaint = CustomPromptSession._refresh_turn_application(
@@ -297,42 +301,47 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
         now=11.1,
     )
     assert last_repaint == 11.1
-    assert erase_calls == 2
-    assert reset_calls == 0
+    assert app.renderer._last_screen is None
+    assert app.renderer.erase_calls == 0
+    assert app.renderer.reset_calls == 0
     assert invalidate_calls == 3
 
 
 def test_refresh_turn_application_stops_repainting_when_idle() -> None:
-    erase_calls = 0
-    reset_calls = 0
     invalidate_calls = 0
 
     class _Renderer:
+        def __init__(self) -> None:
+            self._last_screen = object()
+            self.erase_calls = 0
+            self.reset_calls = 0
+
         def erase(self, *, leave_alternate_screen: bool = True) -> None:
-            nonlocal erase_calls
-            erase_calls += 1
+            self.erase_calls += 1
 
         def reset(self) -> None:
-            nonlocal reset_calls
-            reset_calls += 1
+            self.reset_calls += 1
 
     class _App:
-        renderer = _Renderer()
+        def __init__(self) -> None:
+            self.renderer = _Renderer()
 
         def invalidate(self) -> None:
             nonlocal invalidate_calls
             invalidate_calls += 1
 
+    app = _App()
     last_repaint = CustomPromptSession._refresh_turn_application(
-        _App(),
+        app,
         live_view=SimpleNamespace(needs_periodic_refresh=False),
         last_full_repaint_at=10.0,
         now=10.5,
     )
 
     assert last_repaint is None
-    assert erase_calls == 0
-    assert reset_calls == 0
+    assert app.renderer._last_screen is not None
+    assert app.renderer.erase_calls == 0
+    assert app.renderer.reset_calls == 0
     assert invalidate_calls == 0
 
 
