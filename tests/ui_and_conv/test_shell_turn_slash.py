@@ -11,7 +11,7 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
-from kimi_cli.ui.shell.prompt import PromptMode, UserInput
+from kimi_cli.ui.shell.prompt import PromptMode, TurnSubmitResult, UserInput
 from kimi_cli.wire.types import TextPart
 
 
@@ -34,16 +34,13 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
     monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
 
     async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
-        assert (
-            submit_handler(
-                UserInput(
-                    mode=PromptMode.AGENT,
-                    command="/help",
-                    content=[TextPart(text="/help")],
-                )
+        assert submit_handler(
+            UserInput(
+                mode=PromptMode.AGENT,
+                command="/help",
+                content=[TextPart(text="/help")],
             )
-            is True
-        )
+        ) == TurnSubmitResult.accept(persist_history=True)
         rendered = live_view.render_ansi(80)
         assert "Reminder:" in rendered
         assert "/help" in rendered

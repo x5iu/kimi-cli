@@ -228,10 +228,37 @@ def test_live_view_can_hide_running_indicators_in_body() -> None:
     assert "Running..." not in view.render_ansi(80, include_running_indicators=False)
 
     view.dispatch_wire_message(ThinkPart(think="analyzing"))
-    assert "Thinking..." not in view.render_ansi(80, include_running_indicators=False)
+    rendered = view.render_ansi(80, include_running_indicators=False)
+    assert "Thinking..." not in rendered
+    assert "analyzing" in rendered
 
     view.dispatch_wire_message(StepBegin(n=1))
     assert "Running..." not in view.render_ansi(80, include_running_indicators=False)
+
+
+def test_live_view_hides_expand_prompts_when_expansion_disabled() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)
+    request = QuestionRequest(
+        id="question-expand",
+        tool_call_id="tool-expand",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+                body="Long details",
+            )
+        ],
+    )
+
+    view.request_question(request)
+    rendered = view.render_ansi(80)
+
+    assert "/more" not in rendered
+    assert view.try_submit_line("/more") is False
+
 
 
 def test_live_view_renders_skill_reminder_notice() -> None:

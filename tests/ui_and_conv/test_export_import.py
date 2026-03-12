@@ -59,6 +59,17 @@ def _make_checkpoint_message(checkpoint_id: int = 0) -> Message:
     )
 
 
+def _make_internal_reminder_message(text: str = "Reminder") -> Message:
+    return Message(
+        role="user",
+        content=[TextPart(text=f"<system-reminder>\n{text}\n</system-reminder>")],
+    )
+
+
+def _make_skill_reminder_message(text: str = "Reminder: suggested skill") -> Message:
+    return Message(role="user", content=[system(text)])
+
+
 # ---------------------------------------------------------------------------
 # _stringify_content_parts
 # ---------------------------------------------------------------------------
@@ -510,6 +521,18 @@ class TestGroupIntoTurns:
         assert turns[1][0].role == "user"
         assert len(turns[1]) == 2
 
+    def test_internal_user_messages_do_not_start_new_turns(self) -> None:
+        history = [
+            Message(role="user", content=[TextPart(text="Q1")]),
+            Message(role="assistant", content=[TextPart(text="working")]),
+            _make_internal_reminder_message(),
+            _make_skill_reminder_message(),
+            Message(role="assistant", content=[TextPart(text="done")]),
+        ]
+        turns = _group_into_turns(history)
+        assert len(turns) == 1
+        assert turns[0][0].content[0].text == "Q1"
+
 
 # ---------------------------------------------------------------------------
 # build_export_markdown
@@ -555,6 +578,22 @@ class TestBuildExportMarkdown:
         assert "What is 2+2?" in result
         assert "### Assistant" in result
         assert "4" in result
+
+    def test_overview_topic_ignores_internal_user_messages(self) -> None:
+        history = [
+            _make_skill_reminder_message(),
+            _make_internal_reminder_message(),
+            Message(role="user", content=[TextPart(text="Real task")]),
+            Message(role="assistant", content=[TextPart(text="Done")]),
+        ]
+        result = build_export_markdown(
+            session_id="s1",
+            work_dir="/w",
+            history=history,
+            token_count=100,
+            now=datetime(2026, 1, 1),
+        )
+        assert "- **Topic**: Real task" in result
 
     def test_tool_calls_in_export(self) -> None:
         """Full round-trip: user -> assistant with tool call -> tool result -> final."""

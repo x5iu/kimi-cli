@@ -113,8 +113,10 @@ class _ContentBlock:
     def status_text(self) -> str:
         return "Thinking..." if self.is_think else "Composing..."
 
-    def compose(self) -> RenderableType:
-        return self._spinner
+    def compose(self, *, show_indicator: bool = True) -> RenderableType:
+        if show_indicator:
+            return self._spinner
+        return self.compose_final()
 
     def compose_final(self) -> RenderableType:
         return BulletColumns(
@@ -154,8 +156,10 @@ class _ToolCallBlock:
         self._spinning_dots = Spinner("dots", text="")
         self._renderable: RenderableType = self._compose()
 
-    def compose(self) -> RenderableType:
-        return self._renderable
+    def compose(self, *, show_indicator: bool = True) -> RenderableType:
+        if show_indicator:
+            return self._renderable
+        return self._compose(show_indicator=False)
 
     @property
     def finished(self) -> bool:
@@ -208,7 +212,7 @@ class _ToolCallBlock:
         self._n_finished_subagent_tool_calls += 1
         self._renderable = self._compose()
 
-    def _compose(self) -> RenderableType:
+    def _compose(self, *, show_indicator: bool = True) -> RenderableType:
         lines: list[RenderableType] = [
             self._build_headline_text(),
         ]
@@ -271,11 +275,12 @@ class _ToolCallBlock:
                 Group(*lines),
                 bullet_style="green" if not self._result.is_error else "red",
             )
-        else:
+        if show_indicator:
             return BulletColumns(
                 Group(*lines),
                 bullet=self._spinning_dots,
             )
+        return BulletColumns(Group(*lines), bullet_style="grey50")
 
     @staticmethod
     def _extract_full_url(arguments: str | None, tool_name: str) -> str | None:
@@ -443,7 +448,7 @@ class _ApprovalRequestPanel:
         self._total_lines = sum(b.lines for b in self._content_blocks)
         self.has_expandable_content = self._total_lines > MAX_PREVIEW_LINES
 
-    def render(self) -> RenderableType:
+    def render(self, *, allow_expand: bool = True) -> RenderableType:
         """Render the approval menu as a bordered panel."""
         content_lines: list[RenderableType] = [
             Text.from_markup(
@@ -462,7 +467,7 @@ class _ApprovalRequestPanel:
             content_lines.append(self._render_block(block, remaining))
             remaining -= min(block.lines, remaining)
 
-        if self.has_expandable_content:
+        if self.has_expandable_content and allow_expand:
             content_lines.append(Text("... (truncated, type /more to expand)", style="dim italic"))
 
         lines: list[RenderableType] = []
@@ -482,7 +487,7 @@ class _ApprovalRequestPanel:
         # Keyboard hints
         lines.append(Text(""))
         hint = "  Type 1/2/3 in the input box, then press Enter"
-        if self.has_expandable_content:
+        if self.has_expandable_content and allow_expand:
             hint += "  (/more to expand)"
         lines.append(Text(hint, style="dim"))
 
@@ -633,7 +638,7 @@ class _QuestionRequestPanel:
         self._selected_index = index
         return True
 
-    def render(self) -> RenderableType:
+    def render(self, *, allow_expand: bool = True) -> RenderableType:
         q = self._current_question
         lines: list[RenderableType] = []
 
@@ -659,7 +664,7 @@ class _QuestionRequestPanel:
         lines.append(Text(""))
 
         # Body hint: prompt user to view full content
-        if self._body_text:
+        if self._body_text and allow_expand:
             lines.append(
                 Text.from_markup("[bold cyan]  \u25b6 Type /more to view full content[/bold cyan]")
             )
@@ -688,7 +693,7 @@ class _QuestionRequestPanel:
         # Keyboard hints
         lines.append(Text(""))
         hint = "  Type option numbers in the input box, then press Enter"
-        if self.has_expandable_content:
+        if self.has_expandable_content and allow_expand:
             hint += "  (/more to expand)"
         lines.append(Text(hint, style="dim"))
         if q.multi_select:
@@ -1016,15 +1021,28 @@ class LiveView:
         return "reminder"
 
     @property
+    def can_expand_current_panel(self) -> bool:
+        if not self._allow_expand:
+            return False
+        if self._current_approval_request_panel is not None:
+            return self._current_approval_request_panel.has_expandable_content
+        if self._current_question_panel is not None:
+            return self._current_question_panel.has_expandable_content
+        return False
+
+    @property
     def input_hint(self) -> str:
-        expand_hint = " Type /more to expand." if self._allow_expand else ""
+        expand_hint = " Type /more to expand." if self.can_expand_current_panel else ""
         match self.input_mode:
             case "approval":
                 return f"Type 1/2/3 and press Enter.{expand_hint}"
             case "question_other":
                 return "Type a custom answer and press Enter."
             case "question":
-                return "Type option numbers and press Enter. You can also type a custom answer."
+                return (
+                    "Type option numbers and press Enter. "
+                    f"You can also type a custom answer.{expand_hint}"
+                )
             case _:
                 return "Turn is running. Type a message and press Enter to send a reminder."
 
@@ -1053,7 +1071,7 @@ class LiveView:
         return None
 
     def show_more(self) -> bool:
-        if not self._allow_expand:
+        if not self.can_expand_current_panel:
             return False
         live = self._live
         if (
@@ -1237,35 +1255,41 @@ class LiveView:
         """Compose the live view display content."""
         blocks: list[RenderableType] = list(self._flushed_blocks)
         has_specific_running_indicator = False
-        if include_running_indicators:
-            if self._mcp_loading_spinner is not None:
+        if self._mcp_loading_spinner is not None:
+            if include_running_indicators:
                 blocks.append(self._mcp_loading_spinner)
                 has_specific_running_indicator = True
-            elif self._mooning_spinner is not None:
+        elif self._mooning_spinner is not None:
+            if include_running_indicators:
                 blocks.append(self._mooning_spinner)
                 has_specific_running_indicator = True
-            elif self._compacting_spinner is not None:
+        elif self._compacting_spinner is not None:
+            if include_running_indicators:
                 blocks.append(self._compacting_spinner)
                 has_specific_running_indicator = True
-            else:
-                if self._current_content_block is not None:
-                    blocks.append(self._current_content_block.compose())
-                    has_specific_running_indicator = True
-                for tool_call in self._tool_call_blocks.values():
-                    blocks.append(tool_call.compose())
-                    if not tool_call.finished:
-                        has_specific_running_indicator = True
-            if self._turn_spinner is not None and not has_specific_running_indicator:
-                blocks.append(self._turn_spinner)
         else:
+            if self._current_content_block is not None:
+                blocks.append(
+                    self._current_content_block.compose(
+                        show_indicator=include_running_indicators,
+                    )
+                )
+                has_specific_running_indicator = include_running_indicators
             for tool_call in self._tool_call_blocks.values():
-                if tool_call.finished:
-                    blocks.append(tool_call.compose())
+                blocks.append(tool_call.compose(show_indicator=include_running_indicators))
+                if not tool_call.finished and include_running_indicators:
+                    has_specific_running_indicator = True
+        if (
+            include_running_indicators
+            and self._turn_spinner is not None
+            and not has_specific_running_indicator
+        ):
+            blocks.append(self._turn_spinner)
         blocks.extend(self._pending_local_blocks)
         if self._current_approval_request_panel:
-            blocks.append(self._current_approval_request_panel.render())
+            blocks.append(self._current_approval_request_panel.render(allow_expand=self._allow_expand))
         if self._current_question_panel:
-            blocks.append(self._current_question_panel.render())
+            blocks.append(self._current_question_panel.render(allow_expand=self._allow_expand))
 
         if include_status:
             blocks.append(self._status_block.render())

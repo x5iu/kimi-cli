@@ -16,6 +16,7 @@ from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.slashcmd import parse_slash_command_call
+from kimi_cli.utils.turns import is_real_user_turn_start_message
 from kimi_cli.wire import Wire
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
@@ -130,10 +131,7 @@ def _is_clear_command_input(user_input: str | list[ContentPart]) -> bool:
 
 def _is_user_message(message: Message) -> bool:
     # FIXME: should consider non-text tool call results which are sent as user messages
-    if message.role != "user":
-        return False
-    text = message.extract_text()
-    return not text.startswith(("<system>", "<system-reminder>"))
+    return is_real_user_turn_start_message(message)
 
 
 def _find_replay_start(history: Sequence[Message]) -> int | None:

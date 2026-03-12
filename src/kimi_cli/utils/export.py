@@ -14,6 +14,10 @@ from kosong.message import Message
 from kimi_cli.soul.message import system
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.path import sanitize_cli_path
+from kimi_cli.utils.turns import (
+    is_checkpoint_user_text,
+    is_real_user_turn_start_message,
+)
 from kimi_cli.wire.types import (
     AudioURLPart,
     ContentPart,
@@ -37,10 +41,10 @@ _HINT_KEYS = ("path", "file_path", "command", "query", "url", "name", "pattern")
 
 def _is_checkpoint_message(msg: Message) -> bool:
     """Check if a message is an internal checkpoint marker."""
-    if msg.role != "user" or len(msg.content) != 1:
+    if msg.role != "user":
         return False
-    part = msg.content[0]
-    return isinstance(part, TextPart) and part.text.strip().startswith("<system>CHECKPOINT")
+    checkpoint_texts = [part.text for part in msg.content if isinstance(part, TextPart)]
+    return len(checkpoint_texts) == 1 and is_checkpoint_user_text(checkpoint_texts[0])
 
 
 def _extract_tool_call_hint(args_json: str) -> str:
@@ -139,7 +143,7 @@ def _group_into_turns(history: Sequence[Message]) -> list[list[Message]]:
     for msg in history:
         if _is_checkpoint_message(msg):
             continue
-        if msg.role == "user" and current:
+        if is_real_user_turn_start_message(msg) and current:
             turns.append(current)
             current = []
         current.append(msg)
@@ -224,7 +228,7 @@ def _build_overview(
     # Topic: first real user message text, truncated
     topic = ""
     for msg in history:
-        if msg.role == "user" and not _is_checkpoint_message(msg):
+        if is_real_user_turn_start_message(msg):
             topic = shorten(message_stringify(msg), width=80, placeholder="…")
             break
 

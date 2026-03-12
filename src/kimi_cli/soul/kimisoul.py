@@ -433,7 +433,12 @@ class KimiSoul:
                 ),
                 *content,
             ]
-        await self._context.append_message(Message(role="user", content=content_parts))
+        reminder_message = Message(role="user", content=content_parts)
+        if self._runtime.llm is None:
+            raise LLMNotSet()
+        if missing_caps := check_message(reminder_message, self._runtime.llm.capabilities):
+            raise LLMNotSupported(self._runtime.llm, list(missing_caps))
+        await self._context.append_message(reminder_message)
 
     @property
     def available_slash_commands(self) -> list[SlashCommand[Any]]:

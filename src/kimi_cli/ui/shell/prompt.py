@@ -502,6 +502,21 @@ class UserInput(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TurnSubmitResult:
+    accepted: bool
+    persist_history: bool = False
+    feedback: str = ""
+
+    @classmethod
+    def accept(cls, *, persist_history: bool = False) -> TurnSubmitResult:
+        return cls(accepted=True, persist_history=persist_history)
+
+    @classmethod
+    def reject(cls, feedback: str = "") -> TurnSubmitResult:
+        return cls(accepted=False, feedback=feedback)
+
+
+@dataclass(frozen=True, slots=True)
 class InputBoxState:
     active: bool = False
     mode: Literal["default", "reminder", "approval", "question", "question_other"] = "default"
@@ -1337,7 +1352,7 @@ class CustomPromptSession:
         *,
         wire: Any,
         live_view: Any,
-        submit_handler: Callable[[UserInput], bool],
+        submit_handler: Callable[[UserInput], TurnSubmitResult],
         cancel_handler: Callable[[], None],
     ) -> None:
         self._mode = PromptMode.AGENT
@@ -1454,13 +1469,15 @@ class CustomPromptSession:
             if not command:
                 return
             user_input = self.parse_user_input(command)
-            if submit_handler(user_input):
-                self._append_history_entry(command)
-                self._tip_rotation_index += 1
+            submit_result = submit_handler(user_input)
+            if submit_result.accepted:
+                if submit_result.persist_history:
+                    self._append_history_entry(command)
+                    self._tip_rotation_index += 1
                 feedback_message = ""
                 event.current_buffer.document = Document(text="", cursor_position=0)
             else:
-                feedback_message = live_view.input_hint
+                feedback_message = submit_result.feedback or live_view.input_hint
             event.app.invalidate()
 
         @key_bindings.add("escape", "enter", eager=True)

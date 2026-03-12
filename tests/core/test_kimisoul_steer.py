@@ -7,6 +7,7 @@ import pytest
 from kosong.message import Message
 from kosong.tooling.empty import EmptyToolset
 
+from kimi_cli.soul import LLMNotSupported
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul, StepOutcome
@@ -97,6 +98,36 @@ async def test_consume_pending_steer_preserves_non_text_content(
         )
     )
     assert reminder_message.content[1:] == [TextPart(text="look at this image"), image_part]
+
+
+@pytest.mark.asyncio
+async def test_consume_pending_steer_rejects_unsupported_media(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    runtime.llm.capabilities = set()
+    soul = KimiSoul(
+        Agent(
+            name="Steer Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    image_part = ImageURLPart(
+        image_url=ImageURLPart.ImageURL(url="https://example.com/reminder.png")
+    )
+    turn_id = soul._begin_turn()
+    try:
+        soul.steer([image_part])
+        with pytest.raises(LLMNotSupported):
+            await soul._consume_pending_steers()
+    finally:
+        soul._end_turn(turn_id)
+
+    assert soul.context.history == []
 
 
 @pytest.mark.asyncio

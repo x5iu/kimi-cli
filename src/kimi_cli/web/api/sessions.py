@@ -25,6 +25,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from kimi_cli.metadata import load_metadata, save_metadata
 from kimi_cli.session import Session as KimiCLISession
 from kimi_cli.utils.subprocess_env import get_clean_env
+from kimi_cli.utils.turns import is_checkpoint_user_text, is_real_user_turn_start_record
 from kimi_cli.web.auth import is_origin_allowed, is_private_ip, verify_token
 from kimi_cli.web.models import (
     GenerateTitleRequest,
@@ -91,8 +92,6 @@ SENSITIVE_HOME_PATHS = {
     ".aws",
     ".kube",
 }
-CHECKPOINT_USER_PATTERN = re.compile(r"^<system>CHECKPOINT \d+</system>$")
-
 
 def sanitize_filename(filename: str) -> str:
     """Remove potentially dangerous characters from filename."""
@@ -754,16 +753,13 @@ def _is_checkpoint_user_message(record: dict[str, Any]) -> bool:
 
     content = record.get("content")
     if isinstance(content, str):
-        return CHECKPOINT_USER_PATTERN.fullmatch(content.strip()) is not None
+        return is_checkpoint_user_text(content)
 
     parts = cast(list[Any], content) if isinstance(content, list) else []
-    if len(parts) == 1 and isinstance(parts[0], dict):
-        first_part = cast(dict[str, Any], parts[0])
-        text = first_part.get("text")
-        if isinstance(text, str):
-            return CHECKPOINT_USER_PATTERN.fullmatch(text.strip()) is not None
-
-    return False
+    text_parts = [part.get("text") for part in parts if isinstance(part, dict)]
+    return len(text_parts) == 1 and isinstance(text_parts[0], str) and is_checkpoint_user_text(
+        text_parts[0]
+    )
 
 
 def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
@@ -793,7 +789,7 @@ def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
             except json.JSONDecodeError:
                 continue
 
-            if record.get("role") == "user" and not _is_checkpoint_user_message(record):
+            if is_real_user_turn_start_record(record):
                 current_turn += 1
                 if current_turn > turn_index:
                     break

@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any
 
 from kosong.chat_provider import APIStatusError, ChatProviderError
+from kosong.message import Message
 from loguru import logger
 from rich.console import Group, RenderableType
 from rich.panel import Panel
@@ -16,11 +17,13 @@ from rich.text import Text
 
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
 from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.soul.message import check_message
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.prompt import (
     PROMPT_SYMBOL,
     CustomPromptSession,
     PromptMode,
+    TurnSubmitResult,
     UserInput,
     toast,
 )
@@ -179,26 +182,34 @@ class Shell:
             self._initial_status_update(),
             cancel_event=cancel_event,
             flush_to_console=False,
-            allow_expand=False,
+            allow_expand=True,
         )
         queued_input: UserInput | None = None
 
-        def _submit_handler(turn_input: UserInput) -> bool:
+        def _submit_handler(turn_input: UserInput) -> TurnSubmitResult:
             nonlocal queued_input
             text = turn_input.command.strip()
             if not text:
-                return False
+                return TurnSubmitResult.reject()
             if live_view.has_pending_input_request:
-                return live_view.try_submit_line(text)
+                accepted = live_view.try_submit_line(text)
+                return TurnSubmitResult.accept() if accepted else TurnSubmitResult.reject()
             if text in {"exit", "quit"}:
                 queued_input = turn_input
                 cancel_event.set()
-                return True
+                return TurnSubmitResult.accept()
             if not isinstance(self.soul, KimiSoul):
-                return False
+                return TurnSubmitResult.reject()
+            if self.soul.runtime.llm is None:
+                return TurnSubmitResult.reject('LLM not set, send "/login" to login')
+            reminder_message = Message(role="user", content=turn_input.content)
+            if missing_caps := check_message(reminder_message, self.soul.runtime.llm.capabilities):
+                return TurnSubmitResult.reject(
+                    str(LLMNotSupported(self.soul.runtime.llm, list(missing_caps)))
+                )
             self.soul.steer(turn_input.content)
             live_view.echo_reminder(text)
-            return True
+            return TurnSubmitResult.accept(persist_history=True)
 
         def _cancel_handler() -> None:
             cancel_event.set()
