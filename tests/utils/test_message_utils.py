@@ -82,6 +82,23 @@ def test_stringify_only_image_parts():
     assert result == "[image][image]"
 
 
+def test_stringify_skips_media_wrapper_tags():
+    """Media wrapper tags should not leak into compact shell display text."""
+    image_part = ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://example.com/image.jpg"))
+
+    message = Message(
+        role="user",
+        content=[
+            TextPart(text='<image path="/tmp/example.png">'),
+            image_part,
+            TextPart(text="</image>"),
+        ],
+    )
+    result = message_stringify(message)
+
+    assert result == "[image]"
+
+
 def test_stringify_empty_string():
     """Test stringifying message with empty string content."""
     message = Message(role="user", content="")

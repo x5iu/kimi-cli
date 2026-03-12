@@ -1212,7 +1212,10 @@ class CustomPromptSession:
             last_full_repaint_at is None
             or current - last_full_repaint_at >= _TURN_UI_FULL_REDRAW_INTERVAL
         ):
-            app.renderer.reset()
+            if hasattr(app.renderer, "erase"):
+                app.renderer.erase(leave_alternate_screen=False)
+            else:
+                app.renderer.reset()
             last_full_repaint_at = current
 
         app.invalidate()

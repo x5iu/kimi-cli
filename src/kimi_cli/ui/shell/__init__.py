@@ -34,6 +34,7 @@ from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_updat
 from kimi_cli.ui.shell.visualize import LiveView, visualize
 from kimi_cli.utils.envvar import get_env_bool
 from kimi_cli.utils.logging import open_original_stderr
+from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.signals import install_sigint_handler
 from kimi_cli.utils.slashcmd import SlashCommand, SlashCommandCall, parse_slash_command_call
 from kimi_cli.utils.subprocess_env import get_clean_env
@@ -121,10 +122,14 @@ class Shell:
 
         return True
 
+    @staticmethod
+    def _display_user_input(user_input: UserInput) -> str:
+        return message_stringify(Message(role="user", content=user_input.content))
+
     def _echo_agent_input(self, user_input: UserInput) -> None:
         if user_input.mode != PromptMode.AGENT:
             return
-        console.print(f"{PROMPT_SYMBOL} {user_input.command}")
+        console.print(f"{PROMPT_SYMBOL} {self._display_user_input(user_input)}")
 
     async def _handle_agent_input(
         self,
@@ -208,7 +213,7 @@ class Shell:
                     str(LLMNotSupported(self.soul.runtime.llm, list(missing_caps)))
                 )
             self.soul.steer(turn_input.content)
-            live_view.echo_reminder(text)
+            live_view.echo_reminder(self._display_user_input(turn_input))
             return TurnSubmitResult.accept(persist_history=True)
 
         def _cancel_handler() -> None:

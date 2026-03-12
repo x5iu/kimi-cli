@@ -245,10 +245,15 @@ def test_active_turn_footer_includes_fixed_running_indicator() -> None:
 
 
 def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
+    erase_calls = 0
     reset_calls = 0
     invalidate_calls = 0
 
     class _Renderer:
+        def erase(self, *, leave_alternate_screen: bool = True) -> None:
+            nonlocal erase_calls
+            erase_calls += 1
+
         def reset(self) -> None:
             nonlocal reset_calls
             reset_calls += 1
@@ -270,7 +275,8 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
         now=10.0,
     )
     assert last_repaint == 10.0
-    assert reset_calls == 1
+    assert erase_calls == 1
+    assert reset_calls == 0
     assert invalidate_calls == 1
 
     last_repaint = CustomPromptSession._refresh_turn_application(
@@ -280,7 +286,8 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
         now=10.5,
     )
     assert last_repaint == 10.0
-    assert reset_calls == 1
+    assert erase_calls == 1
+    assert reset_calls == 0
     assert invalidate_calls == 2
 
     last_repaint = CustomPromptSession._refresh_turn_application(
@@ -290,15 +297,21 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
         now=11.1,
     )
     assert last_repaint == 11.1
-    assert reset_calls == 2
+    assert erase_calls == 2
+    assert reset_calls == 0
     assert invalidate_calls == 3
 
 
 def test_refresh_turn_application_stops_repainting_when_idle() -> None:
+    erase_calls = 0
     reset_calls = 0
     invalidate_calls = 0
 
     class _Renderer:
+        def erase(self, *, leave_alternate_screen: bool = True) -> None:
+            nonlocal erase_calls
+            erase_calls += 1
+
         def reset(self) -> None:
             nonlocal reset_calls
             reset_calls += 1
@@ -318,6 +331,7 @@ def test_refresh_turn_application_stops_repainting_when_idle() -> None:
     )
 
     assert last_repaint is None
+    assert erase_calls == 0
     assert reset_calls == 0
     assert invalidate_calls == 0
 

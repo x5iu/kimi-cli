@@ -11,8 +11,8 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
-from kimi_cli.ui.shell.prompt import PromptMode, TurnSubmitResult, UserInput
-from kimi_cli.wire.types import TextPart
+from kimi_cli.ui.shell.prompt import PROMPT_SYMBOL, PromptMode, TurnSubmitResult, UserInput
+from kimi_cli.wire.types import ImageURLPart, TextPart
 
 
 @pytest.mark.asyncio
@@ -67,3 +67,85 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
 
     assert keep_running is True
     assert recorded == [[TextPart(text="/help")]]
+
+
+@pytest.mark.asyncio
+async def test_image_reminder_submitted_during_turn_shows_image_marker(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Shell Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+    shell = Shell(soul)
+    monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
+
+    image_content = [
+        TextPart(text='<image path="/tmp/example.png">'),
+        ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://example.com/image.png")),
+        TextPart(text="</image>"),
+    ]
+
+    async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
+        assert submit_handler(
+            UserInput(
+                mode=PromptMode.AGENT,
+                command="[image:abc123,10x10]",
+                content=image_content,
+            )
+        ) == TurnSubmitResult.accept(persist_history=True)
+        rendered = live_view.render_ansi(80)
+        assert "Reminder:" in rendered
+        assert "[image]" in rendered
+        assert "<image" not in rendered
+
+    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+        class _FakeWire:
+            @staticmethod
+            def ui_side(merge: bool = False):
+                return None
+
+        await ui_loop_fn(_FakeWire())
+
+    recorded: list[object] = []
+
+    def fake_steer(content) -> None:
+        recorded.append(content)
+
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(soul, "steer", fake_steer)
+
+    prompt_session = SimpleNamespace(run_turn_ui=fake_run_turn_ui)
+    keep_running = await shell._run_interactive_turn(prompt_session, "hello")
+
+    assert keep_running is True
+    assert recorded == [image_content]
+
+
+def test_echo_agent_input_shows_image_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    printed: list[str] = []
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module.console, "print", lambda text: printed.append(text))
+
+    shell = Shell(SimpleNamespace(available_slash_commands=[]))
+    shell._echo_agent_input(
+        UserInput(
+            mode=PromptMode.AGENT,
+            command="[image:abc123,10x10]",
+            content=[
+                TextPart(text='<image path="/tmp/example.png">'),
+                ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://example.com/image.png")),
+                TextPart(text="</image>"),
+            ],
+        )
+    )
+
+    assert printed == [f"{PROMPT_SYMBOL} [image]"]
