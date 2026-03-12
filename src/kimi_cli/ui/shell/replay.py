@@ -132,7 +132,8 @@ def _is_user_message(message: Message) -> bool:
     # FIXME: should consider non-text tool call results which are sent as user messages
     if message.role != "user":
         return False
-    return not message.extract_text().startswith("<system>CHECKPOINT")
+    text = message.extract_text()
+    return not text.startswith(("<system>", "<system-reminder>"))
 
 
 def _find_replay_start(history: Sequence[Message]) -> int | None:

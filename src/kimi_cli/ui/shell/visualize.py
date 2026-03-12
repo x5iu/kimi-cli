@@ -1336,10 +1336,15 @@ class LiveView:
         panel = self._current_question_panel
         if panel is None:
             return
+        if panel.should_prompt_other_input():
+            self._question_waiting_for_other_text = True
+            self.refresh_soon()
+            return
         all_done = panel.submit()
         if all_done:
             panel.request.resolve(panel.get_answers())
             self.show_next_question_request()
+        self.refresh_soon()
 
     def dispatch_keyboard_event(self, event: KeyEvent) -> None:
         # Handle question panel keyboard events

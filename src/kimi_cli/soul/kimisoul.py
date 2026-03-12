@@ -403,11 +403,6 @@ class KimiSoul:
 
     async def _inject_steer(self, content: str | list[ContentPart]) -> None:
         """Inject a single steer as a real-time reminder appended to user messages."""
-        text = (
-            content
-            if isinstance(content, str)
-            else Message(role="user", content=content).extract_text(" ")
-        ).strip()
         reminder = (
             "The user sent a new reminder during the current turn. "
             "Treat it as an additional user instruction for this task. "
@@ -417,15 +412,28 @@ class KimiSoul:
             "quote the reminder by itself in the final response unless the original turn prompt "
             "directly asks for that. Do not use meta phrasing such as 'based on your reminder', "
             "'you just added', or 'you mentioned later'. Keep the final response centered on the "
-            "user's original turn-opening request.\n\n"
-            f"Reminder:\n{text}"
+            "user's original turn-opening request."
         )
-        await self._context.append_message(
-            Message(
-                role="user",
-                content=[TextPart(text=f"<system-reminder>\n{reminder}\n</system-reminder>")],
-            )
-        )
+        content_parts: list[ContentPart]
+        if isinstance(content, str):
+            content_parts = [
+                TextPart(
+                    text=f"<system-reminder>\n{reminder}\n\nReminder:\n{content.strip()}\n</system-reminder>"
+                )
+            ]
+        else:
+            content_parts = [
+                TextPart(
+                    text=(
+                        "<system-reminder>\n"
+                        f"{reminder}\n\n"
+                        "Reminder content follows in the rest of this message.\n"
+                        "</system-reminder>"
+                    )
+                ),
+                *content,
+            ]
+        await self._context.append_message(Message(role="user", content=content_parts))
 
     @property
     def available_slash_commands(self) -> list[SlashCommand[Any]]:

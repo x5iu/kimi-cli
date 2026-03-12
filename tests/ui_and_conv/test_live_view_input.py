@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.visualize import LiveView
 from kimi_cli.wire.types import (
     ApprovalRequest,
@@ -85,6 +86,62 @@ async def test_live_view_switches_to_custom_answer_mode_for_other_option() -> No
     assert view.input_mode == "question_other"
     assert view.try_submit_line("TOML") is True
     assert await request.wait() == {"Which format should I use?": "TOML"}
+
+
+@pytest.mark.asyncio
+async def test_live_view_switches_to_custom_answer_mode_for_keyboard_selected_other() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-keyboard-other",
+        tool_call_id="tool-keyboard-other",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+
+    assert view.input_mode == "question_other"
+    assert view.try_submit_line("TOML") is True
+    assert await request.wait() == {"Which format should I use?": "TOML"}
+
+
+@pytest.mark.asyncio
+async def test_live_view_switches_to_custom_answer_mode_for_keyboard_multi_select_other() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-keyboard-multi-other",
+        tool_call_id="tool-keyboard-multi-other",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                multi_select=True,
+                options=[
+                    QuestionOption(label="format"),
+                    QuestionOption(label="lint"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.SPACE)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+
+    assert view.input_mode == "question_other"
+    assert view.try_submit_line("smoke") is True
+    assert await request.wait() == {"Which checks should I run?": "smoke"}
 
 
 @pytest.mark.asyncio
