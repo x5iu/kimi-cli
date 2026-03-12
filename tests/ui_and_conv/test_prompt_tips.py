@@ -263,7 +263,32 @@ def test_rich_renderable_control_tracks_width_and_line_count() -> None:
     assert calls == ["render"]
     assert content.line_count == 2
     assert control.line_count(80) == 2
-    assert calls == ["render", "render"]
+    assert calls == ["render"]
+
+
+def test_rich_renderable_control_invalidates_cache_when_revision_changes() -> None:
+    revision = 0
+    calls: list[int] = []
+
+    def _render() -> str:
+        calls.append(revision)
+        return "head\nbody"
+
+    control = shell_prompt._RichRenderableControl(
+        _render,
+        get_cache_revision=lambda: revision,
+    )
+
+    first_content = control.create_content(80, None)
+    assert first_content.line_count == 2
+    assert control.line_count(80) == 2
+    assert calls == [0]
+
+    revision = 1
+    second_content = control.create_content(80, None)
+    assert second_content.line_count == 2
+    assert control.line_count(80) == 2
+    assert calls == [0, 1]
 
 
 def test_rich_style_to_prompt_toolkit_maps_basic_styles() -> None:

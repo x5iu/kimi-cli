@@ -297,6 +297,47 @@ def test_live_view_hides_expand_prompts_when_expansion_disabled() -> None:
     assert view.try_submit_line("/more") is False
 
 
+def test_live_view_compose_body_can_limit_to_recent_blocks() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_content(TextPart(text="older block"))
+    view.flush_content()
+    view.append_content(TextPart(text="recent block"))
+    view.flush_content()
+
+    rendered = view._renderable_to_ansi(
+        view.compose_body(
+            include_running_indicators=False,
+            include_sticky_reminders=False,
+            tail_block_limit=1,
+        ),
+        80,
+    )
+
+    assert "older block" not in rendered
+    assert "recent block" in rendered
+    assert "recent output only during live turn" in rendered
+
+
+def test_live_view_compose_body_can_limit_current_content_to_tail_chars() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_content(TextPart(text="prefix-" * 50 + "tail-end"))
+
+    rendered = view._renderable_to_ansi(
+        view.compose_body(
+            include_running_indicators=False,
+            include_sticky_reminders=False,
+            content_char_limit=16,
+        ),
+        80,
+    )
+
+    assert "tail-end" in rendered
+    assert "prefix-prefix-prefix" not in rendered
+    assert "recent output only during live turn" in rendered
+
+
 def test_live_view_renders_skill_reminder_notice() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
 

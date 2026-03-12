@@ -65,6 +65,10 @@ from kimi_cli.share import get_share_dir
 from kimi_cli.soul import StatusSnapshot, format_context_status
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.keyboard import KeyEvent
+from kimi_cli.ui.shell.visualize import (
+    MAX_ACTIVE_TURN_CONTENT_CHARS,
+    MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
+)
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.clipboard import (
     grab_media_from_clipboard,
@@ -143,24 +147,50 @@ def _rich_style_to_prompt_toolkit(style: RichStyle | None) -> str:
 class _RichRenderableControl(UIControl):
     """Render Rich renderables directly with the actual width assigned by prompt_toolkit."""
 
-    def __init__(self, get_renderable: Callable[[], RenderableType]) -> None:
-        self._get_renderable = get_renderable
-        self._console = RichConsole(force_terminal=True, color_system="truecolor", highlight=False)
-        self._cache: dict[tuple[int, tuple[tuple[tuple[str, str], ...], ...]], UIContent] = {}
+    _CACHE_UNSET = object()
 
-    def _render_lines(self, width: int) -> list[list[tuple[str, str]]]:
+    def __init__(
+        self,
+        get_renderable: Callable[[], RenderableType],
+        *,
+        get_cache_revision: Callable[[], object] | None = None,
+    ) -> None:
+        self._get_renderable = get_renderable
+        self._get_cache_revision = get_cache_revision or (lambda: None)
+        self._console = RichConsole(force_terminal=True, color_system="truecolor", highlight=False)
+        self._cached_revision: object = self._CACHE_UNSET
+        self._rendered_lines_cache: dict[int, tuple[tuple[tuple[str, str], ...], ...]] = {}
+        self._content_cache: dict[int, UIContent] = {}
+
+    def _invalidate_cache_if_needed(self) -> None:
+        revision = self._get_cache_revision()
+        if revision == self._cached_revision:
+            return
+        self._cached_revision = revision
+        self._rendered_lines_cache.clear()
+        self._content_cache.clear()
+
+    def _render_lines(self, width: int) -> tuple[tuple[tuple[str, str], ...], ...]:
+        normalized_width = max(20, width)
+        self._invalidate_cache_if_needed()
+        cached = self._rendered_lines_cache.get(normalized_width)
+        if cached is not None:
+            return cached
+
         renderable = self._get_renderable()
-        options = self._console.options.update_width(max(20, width))
+        options = self._console.options.update_width(normalized_width)
         lines = self._console.render_lines(renderable, options=options, pad=False, new_lines=False)
-        rendered_lines: list[list[tuple[str, str]]] = []
+        rendered_lines: list[tuple[tuple[str, str], ...]] = []
         for line in lines or [[]]:
             fragments: list[tuple[str, str]] = []
             for segment in Segment.simplify(line):
                 if segment.control or not segment.text:
                     continue
                 fragments.append((_rich_style_to_prompt_toolkit(segment.style), segment.text))
-            rendered_lines.append(fragments)
-        return rendered_lines or [[]]
+            rendered_lines.append(tuple(fragments))
+        cached = tuple(rendered_lines) or ((),)
+        self._rendered_lines_cache[normalized_width] = cached
+        return cached
 
     def line_count(self, width: int) -> int:
         return len(self._render_lines(width))
@@ -175,21 +205,19 @@ class _RichRenderableControl(UIControl):
         return min(self.line_count(width), max_available_height)
 
     def create_content(self, width: int, height: int | None) -> UIContent:
-        lines = self._render_lines(width)
-        key_lines = tuple(tuple(line) for line in lines)
-        key = (max(20, width), key_lines)
+        normalized_width = max(20, width)
+        self._invalidate_cache_if_needed()
+        cached = self._content_cache.get(normalized_width)
+        if cached is not None:
+            return cached
 
-        def get_content() -> UIContent:
-            return UIContent(
-                get_line=lambda i: list(key_lines[i]),
-                line_count=len(key_lines),
-                show_cursor=False,
-            )
-
-        cached = self._cache.get(key)
-        if cached is None:
-            cached = get_content()
-            self._cache = {key: cached}
+        key_lines = self._render_lines(normalized_width)
+        cached = UIContent(
+            get_line=lambda i: list(key_lines[i]),
+            line_count=len(key_lines),
+            show_cursor=False,
+        )
+        self._content_cache[normalized_width] = cached
         return cached
 
 
@@ -1549,9 +1577,15 @@ class CustomPromptSession:
             lambda: live_view.compose_body(
                 include_running_indicators=False,
                 include_sticky_reminders=False,
-            )
+                tail_block_limit=MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
+                content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
+            ),
+            get_cache_revision=lambda: getattr(live_view, "render_revision", 0),
         )
-        reminder_control = _RichRenderableControl(live_view.compose_sticky_reminders)
+        reminder_control = _RichRenderableControl(
+            live_view.compose_sticky_reminders,
+            get_cache_revision=lambda: getattr(live_view, "render_revision", 0),
+        )
 
         def _turn_layout_signature() -> tuple[object, ...]:
             body_width = (
@@ -1569,15 +1603,21 @@ class CustomPromptSession:
                 if text_area.window.render_info is not None
                 else _input_box_height()
             )
+            body_line_count = body_control.line_count(body_width)
+            reminder_line_count = (
+                reminder_control.line_count(reminder_width) if live_view.has_sticky_reminders else 0
+            )
+            has_activity = bool(self._render_turn_activity(live_view))
+            has_hint = bool(_render_hint())
             return (
                 getattr(live_view, "render_revision", 0),
                 body_width,
-                body_control.line_count(body_width),
+                body_line_count,
                 reminder_width,
-                reminder_control.line_count(reminder_width),
+                reminder_line_count,
                 live_view.has_sticky_reminders,
-                bool(self._render_turn_activity(live_view)),
-                bool(_render_hint()),
+                has_activity,
+                has_hint,
                 input_height,
             )
 
@@ -1774,7 +1814,7 @@ class CustomPromptSession:
             signature = _turn_layout_signature()
             target_scroll = self._target_turn_body_bottom_scroll(
                 body_window,
-                line_count=body_control.line_count(signature[0]),
+                line_count=signature[2],
                 current_scroll=body_vertical_scroll,
             )
             if target_scroll is not None:

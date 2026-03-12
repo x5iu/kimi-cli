@@ -63,6 +63,8 @@ from kimi_cli.wire.types import (
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
+MAX_ACTIVE_TURN_FLUSHED_BLOCKS = 12
+MAX_ACTIVE_TURN_CONTENT_CHARS = 12_000
 
 # Truncation limits for approval request display
 MAX_PREVIEW_LINES = 4
@@ -103,11 +105,23 @@ def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
     return BulletColumns(content, bullet_style="cyan")
 
 
+def _render_recent_output_notice() -> RenderableType:
+    return Text("… showing recent output only during live turn", style="grey50 italic")
+
+
 class _ContentBlock:
     def __init__(self, is_think: bool):
         self.is_think = is_think
         self._spinner = Spinner("dots", self.status_text)
-        self.raw_text = ""
+        self._chunks: list[str] = []
+        self._raw_text_cache: str | None = ""
+        self._raw_text_length = 0
+
+    @property
+    def raw_text(self) -> str:
+        if self._raw_text_cache is None:
+            self._raw_text_cache = "".join(self._chunks)
+        return self._raw_text_cache
 
     @property
     def status_text(self) -> str:
@@ -127,8 +141,48 @@ class _ContentBlock:
             bullet_style="grey50" if self.is_think else None,
         )
 
+    def compose_tail(
+        self,
+        *,
+        max_chars: int,
+        show_indicator: bool = True,
+    ) -> tuple[RenderableType, bool]:
+        if show_indicator:
+            return self._spinner, False
+
+        text, truncated = self._tail_text(max_chars)
+        if truncated:
+            text = f"...\n\n{text}"
+        renderable = BulletColumns(
+            Markdown(
+                text,
+                style="grey50 italic" if self.is_think else "",
+            ),
+            bullet_style="grey50" if self.is_think else None,
+        )
+        return renderable, truncated
+
+    def _tail_text(self, max_chars: int) -> tuple[str, bool]:
+        if max_chars <= 0 or self._raw_text_length <= max_chars:
+            return self.raw_text, False
+
+        remaining = max_chars
+        parts: list[str] = []
+        for chunk in reversed(self._chunks):
+            if remaining <= 0:
+                break
+            if len(chunk) <= remaining:
+                parts.append(chunk)
+                remaining -= len(chunk)
+            else:
+                parts.append(chunk[-remaining:])
+                remaining = 0
+        return "".join(reversed(parts)), True
+
     def append(self, content: str) -> None:
-        self.raw_text += content
+        self._chunks.append(content)
+        self._raw_text_cache = None
+        self._raw_text_length += len(content)
 
 
 class _ToolCallBlock:
@@ -1271,8 +1325,15 @@ class LiveView:
         *,
         include_running_indicators: bool = True,
         include_sticky_reminders: bool = True,
+        tail_block_limit: int | None = None,
+        content_char_limit: int | None = None,
     ) -> RenderableType:
-        blocks: list[RenderableType] = list(self._flushed_blocks)
+        truncated = False
+        if tail_block_limit is not None and len(self._flushed_blocks) > tail_block_limit:
+            blocks: list[RenderableType] = list(self._flushed_blocks[-tail_block_limit:])
+            truncated = True
+        else:
+            blocks = list(self._flushed_blocks)
         has_specific_running_indicator = False
         if self._mcp_loading_spinner is not None:
             if include_running_indicators:
@@ -1288,12 +1349,21 @@ class LiveView:
                 has_specific_running_indicator = True
         else:
             if self._current_content_block is not None:
-                blocks.append(
-                    self._current_content_block.compose(
+                if content_char_limit is None:
+                    blocks.append(
+                        self._current_content_block.compose(
+                            show_indicator=include_running_indicators,
+                        )
+                    )
+                    has_specific_running_indicator = include_running_indicators
+                else:
+                    rendered, content_truncated = self._current_content_block.compose_tail(
+                        max_chars=content_char_limit,
                         show_indicator=include_running_indicators,
                     )
-                )
-                has_specific_running_indicator = include_running_indicators
+                    blocks.append(rendered)
+                    truncated = truncated or content_truncated
+                    has_specific_running_indicator = include_running_indicators
             for tool_call in self._tool_call_blocks.values():
                 blocks.append(tool_call.compose(show_indicator=include_running_indicators))
                 if not tool_call.finished and include_running_indicators:
@@ -1312,6 +1382,8 @@ class LiveView:
             )
         if self._current_question_panel:
             blocks.append(self._current_question_panel.render(allow_expand=self._allow_expand))
+        if truncated:
+            blocks.insert(0, _render_recent_output_notice())
         return Group(*blocks)
 
     def compose(
