@@ -7,10 +7,10 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import kaos
 from kaos.path import KaosPath
 from pydantic import SecretStr
 
+import kaos
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.cli import InputFormat, OutputFormat
@@ -298,30 +298,6 @@ class KimiCLI:
                     level=WelcomeInfoItem.Level.INFO,
                 )
             )
-            if self._soul.model_name not in (
-                "kimi-for-coding",
-                "kimi-code",
-                "kimi-k2.5",
-                "kimi-k2-5",
-            ):
-                welcome_info.append(
-                    WelcomeInfoItem(
-                        name="Tip",
-                        value="send /login to use our latest kimi-k2.5 model",
-                        level=WelcomeInfoItem.Level.WARN,
-                    )
-                )
-        welcome_info.append(
-            WelcomeInfoItem(
-                name="\nTip",
-                value=(
-                    "Kimi Code Web UI, a GUI version of Kimi Code, is now in technical preview."
-                    "\n"
-                    "     Type /web to switch, or next time run `kimi web` directly."
-                ),
-                level=WelcomeInfoItem.Level.INFO,
-            )
-        )
         async with self._env():
             shell = Shell(self._soul, welcome_info=welcome_info)
             return await shell.run(command)

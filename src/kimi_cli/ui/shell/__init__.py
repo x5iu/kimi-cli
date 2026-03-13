@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
-from collections.abc import Awaitable, Coroutine
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -19,19 +19,11 @@ from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancel
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import check_message
 from kimi_cli.ui.shell.console import console
-from kimi_cli.ui.shell.prompt import (
-    CustomPromptSession,
-    PromptMode,
-    TurnSubmitResult,
-    UserInput,
-    toast,
-)
+from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, TurnSubmitResult, UserInput
 from kimi_cli.ui.shell.replay import replay_recent_history
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.ui.shell.slash import shell_mode_registry
-from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_update, semver_tuple
 from kimi_cli.ui.shell.visualize import LiveView, render_user_prompt_block, visualize
-from kimi_cli.utils.envvar import get_env_bool
 from kimi_cli.utils.logging import open_original_stderr
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.signals import install_sigint_handler
@@ -45,7 +37,6 @@ class Shell:
     def __init__(self, soul: Soul, welcome_info: list[WelcomeInfoItem] | None = None):
         self.soul = soul
         self._welcome_info = list(welcome_info or [])
-        self._background_tasks: set[asyncio.Task[Any]] = set()
         commands = [*soul.available_slash_commands, *shell_slash_registry.list_commands()]
         self._available_slash_commands: dict[str, SlashCommand[Any]] = {
             cmd.name: cmd for cmd in commands
@@ -76,12 +67,6 @@ class Shell:
             # run single command and exit
             logger.info("Running agent with command: {command}", command=command)
             return await self.run_soul_command(command)
-
-        # Start auto-update background task if not disabled
-        if get_env_bool("KIMI_CLI_NO_AUTO_UPDATE"):
-            logger.info("Auto-update disabled by KIMI_CLI_NO_AUTO_UPDATE environment variable")
-        else:
-            self._start_background_task(self._auto_update())
 
         _print_welcome_info(self.soul.name or "Kimi Code CLI", self._welcome_info)
 
@@ -461,36 +446,6 @@ class Shell:
         finally:
             remove_sigint()
 
-    async def _auto_update(self) -> None:
-        toast("checking for updates...", topic="update", duration=2.0)
-        result = await do_update(print=False, check_only=True)
-        if result == UpdateResult.UPDATE_AVAILABLE:
-            while True:
-                toast(
-                    "new version found, run `uv tool upgrade kimi-cli` to upgrade",
-                    topic="update",
-                    duration=30.0,
-                )
-                await asyncio.sleep(60.0)
-        elif result == UpdateResult.UPDATED:
-            toast("auto updated, restart to use the new version", topic="update", duration=5.0)
-
-    def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
-        task = asyncio.create_task(coro)
-        self._background_tasks.add(task)
-
-        def _cleanup(t: asyncio.Task[Any]) -> None:
-            self._background_tasks.discard(t)
-            try:
-                t.result()
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                logger.exception("Background task failed:")
-
-        task.add_done_callback(_cleanup)
-        return task
-
 
 _KIMI_BLUE = "dodger_blue1"
 _LOGO = f"""\
@@ -530,18 +485,6 @@ def _print_welcome_info(name: str, info_items: list[WelcomeInfoItem]) -> None:
         rows.append(Text(""))  # empty line
     for item in info_items:
         rows.append(Text(f"{item.name}: {item.value}", style=item.level.value))
-
-    if LATEST_VERSION_FILE.exists():
-        from kimi_cli.constant import VERSION as current_version
-
-        latest_version = LATEST_VERSION_FILE.read_text(encoding="utf-8").strip()
-        if semver_tuple(latest_version) > semver_tuple(current_version):
-            rows.append(
-                Text.from_markup(
-                    f"\n[yellow]New version available: {latest_version}. "
-                    "Please run `uv tool upgrade kimi-cli` to upgrade.[/yellow]"
-                )
-            )
 
     console.print(
         Panel(
