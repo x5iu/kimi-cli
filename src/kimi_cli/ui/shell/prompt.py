@@ -112,7 +112,6 @@ _INDICATOR_STYLES = {
     "question": "fg:#22d3ee",
 }
 _TURN_UI_REFRESH_INTERVAL = 0.1
-_TURN_UI_FULL_REPAINT_INTERVAL = 0.5
 _TERMINAL_SIZE_POLLING_INTERVAL = 1.0
 
 
@@ -1107,6 +1106,8 @@ class CustomPromptSession:
     def _should_route_live_navigation(live_view: Any, buffer_text: str) -> bool:
         if not live_view.has_pending_input_request:
             return False
+        if live_view.input_mode == "question":
+            return True
         if live_view.input_mode == "question_other":
             return False
         return not buffer_text.strip()
@@ -1372,12 +1373,16 @@ class CustomPromptSession:
         *,
         signature: tuple[object, ...],
         last_signature: tuple[object, ...] | None,
+        full_repaint_on_change: bool = True,
     ) -> tuple[object, ...]:
         if last_signature is None:
             app.invalidate()
             return signature
         if signature != last_signature:
-            cls._force_turn_full_repaint(app)
+            if full_repaint_on_change:
+                cls._force_turn_full_repaint(app)
+            else:
+                app.invalidate()
             return signature
         app.invalidate()
         return last_signature
@@ -1398,26 +1403,16 @@ class CustomPromptSession:
             return None
         return target_scroll
 
-    @classmethod
+    @staticmethod
     def _refresh_turn_application(
-        cls,
         app: Application[Any],
         *,
         live_view: Any,
-        last_full_repaint_at: float | None,
-        now: float | None = None,
-    ) -> float | None:
+    ) -> bool:
         if not getattr(live_view, "needs_periodic_refresh", False):
-            return None
-        current = time.monotonic() if now is None else now
-        if last_full_repaint_at is None:
-            app.invalidate()
-            return current
-        if current - last_full_repaint_at >= _TURN_UI_FULL_REPAINT_INTERVAL:
-            cls._force_turn_full_repaint(app)
-            return current
+            return False
         app.invalidate()
-        return last_full_repaint_at
+        return True
 
     def _format_live_activity_status(self, live_view: Any) -> tuple[str, str] | None:
         indicator = getattr(live_view, "activity_indicator", None)
@@ -1609,8 +1604,26 @@ class CustomPromptSession:
             columns = max(1, _app_columns() - 4)
             return text_area.window.preferred_height(columns, 6).preferred
 
+        clearing_question_buffer = False
+
         @text_area.buffer.on_text_changed.add_handler
         def _(buffer: Buffer) -> None:
+            nonlocal clearing_question_buffer
+            if (
+                not clearing_question_buffer
+                and live_view.has_pending_input_request
+                and live_view.input_mode == "question"
+                and buffer.text
+            ):
+                clearing_question_buffer = True
+                try:
+                    buffer.document = Document(text="", cursor_position=0)
+                finally:
+                    clearing_question_buffer = False
+                app = get_app_or_none()
+                if app is not None:
+                    _redraw_turn_view(app)
+                return
             if buffer.complete_while_typing():
                 buffer.start_completion()
             app = get_app_or_none()
@@ -1677,6 +1690,7 @@ class CustomPromptSession:
                 app,
                 signature=_turn_layout_signature(),
                 last_signature=last_layout_signature,
+                full_repaint_on_change=False,
             )
 
         def _refresh_turn_view(app: Application[Any]) -> None:
@@ -1864,11 +1878,11 @@ class CustomPromptSession:
             if target_scroll is not None:
                 body_vertical_scroll = target_scroll
                 last_layout_signature = signature
-                self._force_turn_full_repaint(app)
+                app.invalidate()
                 return
             if signature != last_layout_signature:
                 last_layout_signature = signature
-                self._force_turn_full_repaint(app)
+                app.invalidate()
 
         app.after_render += _follow_turn_output
 
@@ -1896,13 +1910,11 @@ class CustomPromptSession:
                 _refresh_turn_view(app)
 
         async def _animate() -> None:
-            last_full_repaint_at: float | None = None
             while True:
                 await asyncio.sleep(_TURN_UI_REFRESH_INTERVAL)
-                last_full_repaint_at = self._refresh_turn_application(
+                self._refresh_turn_application(
                     app,
                     live_view=live_view,
-                    last_full_repaint_at=last_full_repaint_at,
                 )
 
         consume_task = asyncio.create_task(_consume_wire())

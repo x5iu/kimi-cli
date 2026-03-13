@@ -73,11 +73,18 @@ def test_rich_from_ansi_strips_escape_sequences() -> None:
     assert rendered.plain == "hello"
 
 
-def test_route_live_navigation_when_panel_open_and_buffer_empty() -> None:
+def test_route_live_navigation_when_question_panel_open() -> None:
     live_view = SimpleNamespace(has_pending_input_request=True, input_mode="question")
 
     assert CustomPromptSession._should_route_live_navigation(live_view, "") is True
     assert CustomPromptSession._should_route_live_navigation(live_view, "  ") is True
+    assert CustomPromptSession._should_route_live_navigation(live_view, "1") is True
+
+
+def test_do_not_route_approval_navigation_when_buffer_has_text() -> None:
+    live_view = SimpleNamespace(has_pending_input_request=True, input_mode="approval")
+
+    assert CustomPromptSession._should_route_live_navigation(live_view, "") is True
     assert CustomPromptSession._should_route_live_navigation(live_view, "1") is False
 
 
@@ -427,7 +434,7 @@ def test_force_turn_full_repaint_resets_renderer_cache() -> None:
     assert invalidate_calls == 1
 
 
-def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
+def test_redraw_for_layout_change_can_skip_full_repaint() -> None:
     invalidate_calls = 0
 
     class _Renderer:
@@ -443,35 +450,44 @@ def test_refresh_turn_application_forces_periodic_full_repaint() -> None:
             invalidate_calls += 1
 
     app = _App()
-    last_repaint = CustomPromptSession._refresh_turn_application(
+    signature = ("body", 10)
+
+    updated = CustomPromptSession._redraw_for_layout_change(
         app,
-        live_view=SimpleNamespace(needs_periodic_refresh=True),
-        last_full_repaint_at=None,
-        now=10.0,
+        signature=signature,
+        last_signature=("body", 9),
+        full_repaint_on_change=False,
     )
-    assert last_repaint == 10.0
+
+    assert updated == signature
     assert app.renderer._last_screen is not None
     assert invalidate_calls == 1
 
-    last_repaint = CustomPromptSession._refresh_turn_application(
-        app,
-        live_view=SimpleNamespace(needs_periodic_refresh=True),
-        last_full_repaint_at=last_repaint,
-        now=10.4,
-    )
-    assert last_repaint == 10.0
-    assert app.renderer._last_screen is not None
-    assert invalidate_calls == 2
 
-    last_repaint = CustomPromptSession._refresh_turn_application(
+def test_refresh_turn_application_uses_incremental_redraw() -> None:
+    invalidate_calls = 0
+
+    class _Renderer:
+        def __init__(self) -> None:
+            self._last_screen = object()
+
+    class _App:
+        def __init__(self) -> None:
+            self.renderer = _Renderer()
+
+        def invalidate(self) -> None:
+            nonlocal invalidate_calls
+            invalidate_calls += 1
+
+    app = _App()
+    refreshed = CustomPromptSession._refresh_turn_application(
         app,
         live_view=SimpleNamespace(needs_periodic_refresh=True),
-        last_full_repaint_at=last_repaint,
-        now=10.6,
     )
-    assert last_repaint == 10.6
-    assert app.renderer._last_screen is None
-    assert invalidate_calls == 3
+
+    assert refreshed is True
+    assert app.renderer._last_screen is not None
+    assert invalidate_calls == 1
 
 
 def test_refresh_turn_application_stops_repainting_when_idle() -> None:
@@ -483,14 +499,12 @@ def test_refresh_turn_application_stops_repainting_when_idle() -> None:
             invalidate_calls += 1
 
     app = _App()
-    last_repaint = CustomPromptSession._refresh_turn_application(
+    refreshed = CustomPromptSession._refresh_turn_application(
         app,
         live_view=SimpleNamespace(needs_periodic_refresh=False),
-        last_full_repaint_at=10.0,
-        now=10.5,
     )
 
-    assert last_repaint is None
+    assert refreshed is False
     assert invalidate_calls == 0
 
 
