@@ -12,7 +12,7 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
-from kimi_cli.ui.shell.prompt import PROMPT_SYMBOL, PromptMode, TurnSubmitResult, UserInput
+from kimi_cli.ui.shell.prompt import PromptMode, TurnSubmitResult, UserInput
 from kimi_cli.utils.slashcmd import parse_slash_command_call
 from kimi_cli.wire.types import ImageURLPart, TextPart
 
@@ -44,7 +44,8 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
             )
         ) == TurnSubmitResult.accept(persist_history=True)
         rendered = live_view.render_ansi(80)
-        assert "Reminder:" in rendered
+        assert "Reminder" in rendered
+        assert "╭" in rendered
         assert "/help" in rendered
 
     async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
@@ -104,7 +105,8 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
             )
         ) == TurnSubmitResult.accept(persist_history=True)
         rendered = live_view.render_ansi(80)
-        assert "Reminder:" in rendered
+        assert "Reminder" in rendered
+        assert "╭" in rendered
         assert "[image]" in rendered
         assert "<image" not in rendered
 
@@ -150,7 +152,10 @@ def test_echo_agent_input_shows_image_marker(monkeypatch: pytest.MonkeyPatch) ->
         )
     )
 
-    assert f"{PROMPT_SYMBOL} [image]" in render_console.export_text()
+    rendered = render_console.export_text()
+    assert "User" in rendered
+    assert "[image]" in rendered
+    assert "╭" in rendered
 
 
 @pytest.mark.asyncio

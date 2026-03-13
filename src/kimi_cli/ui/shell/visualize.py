@@ -10,6 +10,7 @@ from typing import Any, NamedTuple, cast
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
 from kosong.tooling import ToolError, ToolOk
+from rich import box
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.markup import escape
@@ -89,11 +90,29 @@ async def visualize(
     await view.visualize_loop(wire)
 
 
+def _render_prompt_block(
+    text: str,
+    *,
+    title: str,
+    border_style: str,
+) -> RenderableType:
+    return Panel(
+        Text(text, overflow="fold"),
+        box=box.ROUNDED,
+        border_style=border_style,
+        title=Text(title, style=f"bold {border_style}"),
+        title_align="left",
+        padding=(0, 1),
+        expand=False,
+    )
+
+
+def render_user_prompt_block(text: str) -> RenderableType:
+    return _render_prompt_block(text, title="User", border_style="blue")
+
+
 def _render_reminder_block(text: str) -> RenderableType:
-    content = Text()
-    content.append("Reminder: ", style="cyan bold")
-    content.append(text, style="grey50")
-    return BulletColumns(content, bullet_style="cyan")
+    return _render_prompt_block(text, title="Reminder", border_style="cyan")
 
 
 def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:

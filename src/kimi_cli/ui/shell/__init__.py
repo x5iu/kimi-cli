@@ -20,7 +20,6 @@ from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import check_message
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.prompt import (
-    PROMPT_SYMBOL,
     CustomPromptSession,
     PromptMode,
     TurnSubmitResult,
@@ -31,7 +30,7 @@ from kimi_cli.ui.shell.replay import replay_recent_history
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.ui.shell.slash import shell_mode_registry
 from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UpdateResult, do_update, semver_tuple
-from kimi_cli.ui.shell.visualize import LiveView, visualize
+from kimi_cli.ui.shell.visualize import LiveView, render_user_prompt_block, visualize
 from kimi_cli.utils.envvar import get_env_bool
 from kimi_cli.utils.logging import open_original_stderr
 from kimi_cli.utils.message import message_stringify
@@ -143,7 +142,7 @@ class Shell:
     def _echo_agent_input(self, user_input: UserInput) -> None:
         if user_input.mode != PromptMode.AGENT:
             return
-        console.print(f"{PROMPT_SYMBOL} {self._display_user_input(user_input)}", markup=False)
+        console.print(render_user_prompt_block(self._display_user_input(user_input)))
 
     async def _handle_agent_input(
         self,

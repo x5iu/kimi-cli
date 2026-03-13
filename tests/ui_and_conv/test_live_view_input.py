@@ -175,14 +175,17 @@ def test_live_view_echoes_reminder_in_output() -> None:
     view.echo_reminder("please keep the answer short")
     rendered = view.render_ansi(80)
 
-    assert "Reminder:" in rendered
+    assert "Reminder" in rendered
+    assert "╭" in rendered
     assert "please keep the answer short" in rendered
+    assert "Reminder" in view.render_reminders_ansi(80)
     assert "please keep the answer short" in view.render_reminders_ansi(80)
 
     view.dispatch_wire_message(StepBegin(n=2))
     rendered = view.render_ansi(80)
 
-    assert "Reminder:" in rendered
+    assert "Reminder" in rendered
+    assert "╭" in rendered
     assert "please keep the answer short" in rendered
     assert view.has_reminders is True
 
@@ -196,8 +199,8 @@ def test_live_view_renders_reminder_inline_with_body_output() -> None:
 
     rendered = view.render_ansi(80, include_running_indicators=False)
 
-    assert rendered.index("before reminder") < rendered.index("Reminder:")
-    assert rendered.index("Reminder:") < rendered.index("after reminder")
+    assert rendered.index("before reminder") < rendered.index("Reminder")
+    assert rendered.index("Reminder") < rendered.index("after reminder")
 
 
 def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
