@@ -11,6 +11,7 @@ Kimi Code CLI shell mode supports the following keyboard shortcuts.
 | `Ctrl-O` | Edit in external editor (`$VISUAL`/`$EDITOR`) |
 | `Ctrl-J` | Insert newline |
 | `Alt-Enter` | Insert newline (same as `Ctrl-J`) |
+| `Ctrl-L` | Redraw the whole TUI |
 | `Ctrl-V` | Paste (supports images and video files) |
 | `Ctrl-E` | Expand full approval request content |
 | `1`–`3` | Quick select approval option |
@@ -67,6 +68,14 @@ By default, pressing `Enter` submits the input. To enter multi-line content, use
 - `Alt-Enter`: Insert newline at any position
 
 Useful for entering multi-line code snippets or formatted text.
+
+## Screen redraw
+
+### `Ctrl-L`: Redraw the whole TUI
+
+Press `Ctrl-L` to clear and redraw the whole TUI in the current terminal, including the output area, input box, and bottom status bar.
+
+This is a useful manual recovery shortcut when window switching, terminal resizing, or focus changes leave behind stale borders, duplicate frames, or a misplaced input box.
 
 ## Clipboard operations
 

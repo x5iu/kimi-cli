@@ -113,6 +113,7 @@ _INDICATOR_STYLES = {
 }
 _TURN_UI_REFRESH_INTERVAL = 0.1
 _TURN_UI_FULL_REPAINT_INTERVAL = 0.5
+_TERMINAL_SIZE_POLLING_INTERVAL = 1.0
 
 
 def _rich_from_ansi(text: str) -> RichText:
@@ -695,6 +696,7 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
         "shift-tab: plan mode",
         "ctrl-o: editor",
         "ctrl-j: newline",
+        "ctrl-l: redraw",
     ]
     if clipboard_available:
         tips.append("ctrl-v: paste media")
@@ -956,6 +958,10 @@ class CustomPromptSession:
             """Open current buffer in external editor."""
             self._open_in_external_editor(event)
 
+        @_kb.add("c-l", eager=True)
+        def _(event: KeyPressEvent) -> None:
+            self._hard_redraw(event.app)
+
         if clipboard_available:
 
             @_kb.add("c-v", eager=True)
@@ -989,8 +995,9 @@ class CustomPromptSession:
             style=Style.from_dict({"bottom-toolbar": "noreverse"}),
         )
         # PromptSession defaults to polling terminal size every 0.5s, which causes
-        # needless redraws/flicker in our persistent TUI input box.
-        self._session.app.terminal_size_polling_interval = None
+        # needless redraws/flicker in our persistent TUI input box. Keep a slower
+        # polling interval so focus/window switches and resizes still recover cleanly.
+        self._session.app.terminal_size_polling_interval = _TERMINAL_SIZE_POLLING_INTERVAL
 
         # Allow completion to be triggered when the text is changed,
         # such as when backspace is used to delete text.
@@ -1239,7 +1246,7 @@ class CustomPromptSession:
             full_screen=False,
             erase_when_done=True,
             refresh_interval=None,
-            terminal_size_polling_interval=None,
+            terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
         return app, text_area
 
@@ -1320,6 +1327,14 @@ class CustomPromptSession:
     def _force_turn_full_repaint(app: Application[Any]) -> None:
         app.renderer._last_screen = None  # type: ignore[reportPrivateUsage]
         app.invalidate()
+
+    @classmethod
+    def _hard_redraw(cls, app: Application[Any]) -> None:
+        on_resize = getattr(app, "_on_resize", None)
+        if callable(on_resize):
+            on_resize()
+            return
+        cls._force_turn_full_repaint(app)
 
     @staticmethod
     def _target_turn_body_bottom_scroll(
@@ -1719,6 +1734,10 @@ class CustomPromptSession:
         def _(event: KeyPressEvent) -> None:
             self._open_in_external_editor(event)
 
+        @key_bindings.add("c-l", eager=True)
+        def _(event: KeyPressEvent) -> None:
+            self._hard_redraw(event.app)
+
         if self._clipboard is not None:
 
             @key_bindings.add("c-v", eager=True)
@@ -1789,7 +1808,7 @@ class CustomPromptSession:
             full_screen=False,
             erase_when_done=True,
             refresh_interval=None,
-            terminal_size_polling_interval=None,
+            terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
         last_layout_signature = _turn_layout_signature()
 

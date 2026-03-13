@@ -22,6 +22,7 @@ def test_build_toolbar_tips_without_clipboard():
         "shift-tab: plan mode",
         "ctrl-o: editor",
         "ctrl-j: newline",
+        "ctrl-l: redraw",
         "@: mention files",
     ]
 
@@ -32,6 +33,7 @@ def test_build_toolbar_tips_with_clipboard():
         "shift-tab: plan mode",
         "ctrl-o: editor",
         "ctrl-j: newline",
+        "ctrl-l: redraw",
         "ctrl-v: paste media",
         "@: mention files",
     ]
@@ -105,7 +107,7 @@ def test_prompt_application_shows_completion_menu(
     assert isinstance(app.layout.container, FloatContainer)
 
 
-def test_prompt_session_disables_terminal_size_polling(
+def test_prompt_session_uses_slow_terminal_size_polling(
     temp_work_dir,
     tmp_path,
     monkeypatch,
@@ -121,7 +123,53 @@ def test_prompt_session_disables_terminal_size_polling(
         shell_mode_slash_commands=[],
     )
 
-    assert prompt_session._session.app.terminal_size_polling_interval is None
+    assert (
+        prompt_session._session.app.terminal_size_polling_interval
+        == shell_prompt._TERMINAL_SIZE_POLLING_INTERVAL
+    )
+
+
+def test_prompt_force_turn_full_repaint_resets_last_screen() -> None:
+    calls: list[str] = []
+    renderer = SimpleNamespace(_last_screen="screen")
+    app = SimpleNamespace(renderer=renderer, invalidate=lambda: calls.append("invalidate"))
+
+    shell_prompt.CustomPromptSession._force_turn_full_repaint(app)
+
+    assert renderer._last_screen is None
+    assert calls == ["invalidate"]
+
+
+def test_prompt_hard_redraw_prefers_resize_path() -> None:
+    calls: list[str] = []
+
+    class _DummyApp:
+        def _on_resize(self) -> None:
+            calls.append("resize")
+
+    shell_prompt.CustomPromptSession._hard_redraw(_DummyApp())
+
+    assert calls == ["resize"]
+
+
+def test_custom_prompt_app_uses_slow_terminal_size_polling(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[],
+        shell_mode_slash_commands=[],
+    )
+    app, _ = prompt_session._build_prompt_application()
+
+    assert app.terminal_size_polling_interval == shell_prompt._TERMINAL_SIZE_POLLING_INTERVAL
 
 
 def test_custom_prompt_app_clears_rendered_input_when_done(
@@ -142,6 +190,27 @@ def test_custom_prompt_app_clears_rendered_input_when_done(
     app, _ = prompt_session._build_prompt_application()
 
     assert app.erase_when_done is True
+
+
+def test_custom_prompt_app_binds_ctrl_l_to_redraw(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[],
+        shell_mode_slash_commands=[],
+    )
+    app, _ = prompt_session._build_prompt_application()
+
+    bindings = app.key_bindings.get_bindings_for_keys((Keys.ControlL,))
+    assert bindings
 
 
 def test_custom_prompt_app_binds_ctrl_c_to_keyboard_interrupt(
