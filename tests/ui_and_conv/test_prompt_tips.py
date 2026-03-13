@@ -247,11 +247,28 @@ def test_active_turn_activity_line_shows_running_indicator() -> None:
     prompt_session = object.__new__(CustomPromptSession)
 
     rendered = prompt_session._render_turn_activity(
-        SimpleNamespace(activity_indicator=("tool", "Using Shell (make test)"))
+        SimpleNamespace(
+            has_pending_input_request=False,
+            activity_indicator=("tool", "Using Shell (make test)"),
+        )
     )
     plain = "".join(fragment[1] for fragment in rendered)
 
     assert "Using Shell (make test)" in plain
+
+
+def test_active_turn_activity_line_hides_while_waiting_for_input() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+
+    assert (
+        prompt_session._render_turn_activity(
+            SimpleNamespace(
+                has_pending_input_request=True,
+                activity_indicator=("question", "Awaiting answer..."),
+            )
+        )
+        == ""
+    )
 
 
 def test_rich_renderable_control_tracks_width_and_line_count() -> None:

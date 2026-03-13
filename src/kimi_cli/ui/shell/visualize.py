@@ -1351,9 +1351,15 @@ class LiveView:
         content_char_limit: int | None = None,
     ) -> RenderableType:
         truncated = False
-        if tail_block_limit is not None and len(self._flushed_blocks) > tail_block_limit:
-            blocks: list[RenderableType] = list(self._flushed_blocks[-tail_block_limit:])
-            truncated = True
+        if tail_block_limit is not None:
+            if tail_block_limit <= 0 and self._flushed_blocks:
+                blocks = []
+                truncated = True
+            elif len(self._flushed_blocks) > tail_block_limit:
+                blocks = list(self._flushed_blocks[-tail_block_limit:])
+                truncated = True
+            else:
+                blocks = list(self._flushed_blocks)
         else:
             blocks = list(self._flushed_blocks)
         has_specific_running_indicator = False

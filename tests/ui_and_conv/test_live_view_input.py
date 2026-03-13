@@ -330,6 +330,40 @@ def test_live_view_compose_body_can_limit_to_recent_blocks() -> None:
     assert "recent output only during live turn" in rendered
 
 
+def test_live_view_compose_body_can_hide_previous_blocks_while_waiting_for_input() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_content(TextPart(text="older block"))
+    view.flush_content()
+    view.request_question(
+        QuestionRequest(
+            id="question-hide-history",
+            tool_call_id="tool-hide-history",
+            questions=[
+                QuestionItem(
+                    question="Which format should I use?",
+                    options=[
+                        QuestionOption(label="JSON"),
+                        QuestionOption(label="YAML"),
+                    ],
+                )
+            ],
+        )
+    )
+
+    rendered = view._renderable_to_ansi(
+        view.compose_body(
+            include_running_indicators=False,
+            tail_block_limit=0,
+        ),
+        80,
+    )
+
+    assert "older block" not in rendered
+    assert "Which format should I use?" in rendered
+    assert "recent output only during live turn" in rendered
+
+
 def test_live_view_compose_body_can_limit_current_content_to_tail_chars() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
 

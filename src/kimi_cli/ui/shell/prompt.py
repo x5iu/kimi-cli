@@ -1369,6 +1369,8 @@ class CustomPromptSession:
         return f"{frame} {text}", _INDICATOR_STYLES.get(kind, "fg:#22c55e")
 
     def _render_turn_activity(self, live_view: Any) -> FormattedText | str:
+        if getattr(live_view, "has_pending_input_request", False):
+            return ""
         live_status = self._format_live_activity_status(live_view)
         if live_status is None:
             return ""
@@ -1562,6 +1564,8 @@ class CustomPromptSession:
                 return ""
             if live_view.input_mode == "reminder":
                 return ""
+            if live_view.has_pending_input_request and not feedback_message:
+                return ""
             hint = feedback_message or live_view.input_hint
             if not hint:
                 return ""
@@ -1575,7 +1579,9 @@ class CustomPromptSession:
         body_control = _RichRenderableControl(
             lambda: live_view.compose_body(
                 include_running_indicators=False,
-                tail_block_limit=MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
+                tail_block_limit=(
+                    0 if live_view.has_pending_input_request else MAX_ACTIVE_TURN_FLUSHED_BLOCKS
+                ),
                 content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
             ),
             get_cache_revision=lambda: getattr(live_view, "render_revision", 0),
