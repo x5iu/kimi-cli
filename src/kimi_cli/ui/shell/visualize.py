@@ -764,14 +764,21 @@ class _QuestionRequestPanel:
 
         # Keyboard hints
         lines.append(Text(""))
-        hint = "  Type option numbers in the input box, then press Enter"
+        hint = "  Use ↑/↓ to move focus and Enter to choose"
         if self.has_expandable_content and allow_expand:
             hint += "  (/more to expand)"
         lines.append(Text(hint, style="dim"))
         if q.multi_select:
-            lines.append(Text("  Separate multiple selections with commas.", style="dim"))
+            lines.append(
+                Text(
+                    "  Press Space or Enter to select. "
+                    "Press Enter again on a checked option to submit.",
+                    style="dim",
+                )
+            )
+            lines.append(Text("  Select Other to enter custom text.", style="dim"))
         else:
-            lines.append(Text("  You can also type a custom answer directly.", style="dim"))
+            lines.append(Text("  Select Other to enter custom text.", style="dim"))
 
         return Panel(
             Group(*lines),
@@ -1131,9 +1138,15 @@ class LiveView:
             case "question_other":
                 return "Type a custom answer and press Enter."
             case "question":
+                panel = self._current_question_panel
+                if panel is not None and panel.is_multi_select:
+                    return (
+                        "Use ↑/↓ to focus, Space or Enter to select, and Enter to submit. "
+                        f"Select Other to type custom text.{expand_hint}"
+                    )
                 return (
-                    "Type option numbers and press Enter. "
-                    f"You can also type a custom answer.{expand_hint}"
+                    "Use ↑/↓ to focus and Enter to choose. "
+                    f"Select Other to type custom text.{expand_hint}"
                 )
             case _:
                 return "Turn is running. Type a message and press Enter to send a reminder."
@@ -1274,9 +1287,7 @@ class LiveView:
             self._resolve_question_submission(panel, all_done=all_done)
             return True
 
-        if panel.is_multi_select:
-            return self._submit_multi_select_question_line(panel, text)
-        return self._submit_single_select_question_line(panel, text)
+        return False
 
     def _submit_single_select_question_line(self, panel: _QuestionRequestPanel, text: str) -> bool:
         idx = self._parse_index_token(text)
@@ -1493,6 +1504,8 @@ class LiveView:
         panel = self._current_question_panel
         if panel is None:
             return
+        if panel.is_multi_select and panel.is_other_selected:
+            panel._multi_selected.add(len(panel._options) - 1)
         if panel.should_prompt_other_input():
             self._question_waiting_for_other_text = True
             self.refresh_soon()
@@ -1521,8 +1534,21 @@ class LiveView:
                     else:
                         self._try_submit_question()
                 case KeyEvent.ENTER:
-                    # "Other" is handled in keyboard_handler (async context)
-                    self._try_submit_question()
+                    panel = self._current_question_panel
+                    if panel is None:
+                        return
+                    if panel.is_multi_select:
+                        other_idx = len(panel._options) - 1
+                        if panel._selected_index == other_idx:
+                            panel._multi_selected.add(other_idx)
+                            self._try_submit_question()
+                        elif panel._selected_index in panel._multi_selected:
+                            self._try_submit_question()
+                        else:
+                            panel.toggle_select()
+                    else:
+                        # "Other" is handled in keyboard_handler (async context)
+                        self._try_submit_question()
                 case KeyEvent.ESCAPE:
                     self._current_question_panel.request.resolve({})
                     self.show_next_question_request()

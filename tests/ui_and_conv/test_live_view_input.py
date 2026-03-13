@@ -39,8 +39,7 @@ async def test_live_view_accepts_line_based_approval_input() -> None:
     assert await request.wait() == "approve_for_session"
 
 
-@pytest.mark.asyncio
-async def test_live_view_accepts_custom_single_select_answer() -> None:
+def test_live_view_rejects_line_input_for_single_select_question() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
         id="question-1",
@@ -59,12 +58,11 @@ async def test_live_view_accepts_custom_single_select_answer() -> None:
     view.request_question(request)
 
     assert view.input_mode == "question"
-    assert view.try_submit_line("TOML") is True
-    assert await request.wait() == {"Which format should I use?": "TOML"}
+    assert view.try_submit_line("TOML") is False
+    assert request.resolved is False
 
 
-@pytest.mark.asyncio
-async def test_live_view_switches_to_custom_answer_mode_for_other_option() -> None:
+def test_live_view_rejects_numeric_line_input_for_question_selection() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
         id="question-other",
@@ -82,10 +80,9 @@ async def test_live_view_switches_to_custom_answer_mode_for_other_option() -> No
 
     view.request_question(request)
 
-    assert view.try_submit_line("3") is True
-    assert view.input_mode == "question_other"
-    assert view.try_submit_line("TOML") is True
-    assert await request.wait() == {"Which format should I use?": "TOML"}
+    assert view.try_submit_line("3") is False
+    assert view.input_mode == "question"
+    assert request.resolved is False
 
 
 @pytest.mark.asyncio
@@ -113,6 +110,86 @@ async def test_live_view_switches_to_custom_answer_mode_for_keyboard_selected_ot
     assert view.input_mode == "question_other"
     assert view.try_submit_line("TOML") is True
     assert await request.wait() == {"Which format should I use?": "TOML"}
+
+
+def test_live_view_enter_toggles_multi_select_option_before_submit() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-keyboard-multi-toggle",
+        tool_call_id="tool-keyboard-multi-toggle",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                multi_select=True,
+                options=[
+                    QuestionOption(label="format"),
+                    QuestionOption(label="lint"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+
+    panel = view._current_question_panel
+    assert panel is not None
+    assert panel._multi_selected == {0}
+    assert view.input_mode == "question"
+    assert request.resolved is False
+
+
+@pytest.mark.asyncio
+async def test_live_view_enter_submits_multi_select_when_current_option_already_checked() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-keyboard-multi-submit",
+        tool_call_id="tool-keyboard-multi-submit",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                multi_select=True,
+                options=[
+                    QuestionOption(label="format"),
+                    QuestionOption(label="lint"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+
+    assert request.resolved is True
+
+
+@pytest.mark.asyncio
+async def test_live_view_switches_to_custom_answer_mode_for_keyboard_multi_select_other_without_precheck() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-keyboard-multi-other-no-space",
+        tool_call_id="tool-keyboard-multi-other-no-space",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                multi_select=True,
+                options=[
+                    QuestionOption(label="format"),
+                    QuestionOption(label="lint"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+
+    assert view.input_mode == "question_other"
+    assert view.try_submit_line("smoke") is True
+    assert await request.wait() == {"Which checks should I run?": "smoke"}
 
 
 @pytest.mark.asyncio
@@ -145,6 +222,59 @@ async def test_live_view_switches_to_custom_answer_mode_for_keyboard_multi_selec
 
 
 @pytest.mark.asyncio
+async def test_live_view_accepts_keyboard_multi_select_submission() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-keyboard-multi-select",
+        tool_call_id="tool-keyboard-multi-select",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                multi_select=True,
+                options=[
+                    QuestionOption(label="format"),
+                    QuestionOption(label="lint"),
+                    QuestionOption(label="tests"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.SPACE)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.SPACE)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+
+    assert await request.wait() == {"Which checks should I run?": "format, tests"}
+
+
+def test_live_view_rejects_line_input_for_multi_select_question() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-2-line-input",
+        tool_call_id="tool-2-line-input",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                multi_select=True,
+                options=[
+                    QuestionOption(label="format"),
+                    QuestionOption(label="lint"),
+                    QuestionOption(label="tests"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert view.try_submit_line("1, 3") is False
+    assert request.resolved is False
+
+
+@pytest.mark.asyncio
 async def test_live_view_accepts_multi_select_answer_with_custom_text() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
@@ -164,9 +294,15 @@ async def test_live_view_accepts_multi_select_answer_with_custom_text() -> None:
     )
 
     view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
 
-    assert view.try_submit_line("1, 3, smoke") is True
-    assert await request.wait() == {"Which checks should I run?": "format, tests, smoke"}
+    assert view.input_mode == "question_other"
+    assert view.try_submit_line("smoke") is True
+    assert await request.wait() == {"Which checks should I run?": "format, smoke"}
 
 
 def test_live_view_echoes_reminder_in_output() -> None:
