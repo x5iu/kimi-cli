@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from kosong.chat_provider import APIStatusError
 from kosong.tooling.empty import EmptyToolset
 from rich.console import Console
 
@@ -218,6 +219,34 @@ async def test_top_level_soul_slash_command_uses_interactive_turn(
 
     assert keep_running is True
     assert received == ["/reset"]
+
+
+@pytest.mark.asyncio
+async def test_interactive_turn_keeps_shell_alive_on_provider_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    printed: list[str] = []
+    monkeypatch.setattr(
+        shell_module.console, "print", lambda text, *args, **kwargs: printed.append(str(text))
+    )
+
+    shell = Shell(
+        SimpleNamespace(
+            available_slash_commands=[],
+            status=SimpleNamespace(context_usage=0.0, context_tokens=0, max_context_tokens=0),
+        )
+    )
+
+    async def fake_run_soul(*args, **kwargs) -> None:
+        raise APIStatusError(503, "Service unavailable.")
+
+    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+
+    keep_running = await shell._run_interactive_turn(SimpleNamespace(), "hello")
+
+    assert keep_running is True
+    assert any("LLM provider error" in line for line in printed)
 
 
 @pytest.mark.asyncio

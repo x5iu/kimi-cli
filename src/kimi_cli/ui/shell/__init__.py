@@ -266,7 +266,7 @@ class Shell:
                 )
             else:
                 console.print(f"[red]LLM provider error: {e}[/red]")
-            keep_running = False
+            keep_running = True
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
             console.print(f"[yellow]{e}[/yellow]")
