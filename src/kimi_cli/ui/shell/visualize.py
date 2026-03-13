@@ -116,12 +116,11 @@ def _render_reminder_block(text: str) -> RenderableType:
 
 
 def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
-    content = Text()
-    content.append("Reminder: ", style="cyan bold")
-    content.append("recommended ", style="grey50")
-    content.append(", ".join(skills), style="cyan")
-    content.append(" to the main flow", style="grey50")
-    return BulletColumns(content, bullet_style="cyan")
+    return _render_prompt_block(
+        f"Recommended {', '.join(skills)} to the main flow",
+        title="Reminder",
+        border_style="cyan",
+    )
 
 
 def _render_recent_output_notice() -> RenderableType:

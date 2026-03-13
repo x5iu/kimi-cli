@@ -388,6 +388,7 @@ def test_live_view_renders_skill_reminder_notice() -> None:
     view.dispatch_wire_message(SkillReminderNotice(skills=["/skill:gen-docs"]))
     rendered = view.render_ansi(80)
 
-    assert "Reminder:" in rendered
+    assert "Reminder" in rendered
+    assert "╭" in rendered
     assert "/skill:gen-docs" in rendered
     assert "main flow" in rendered
