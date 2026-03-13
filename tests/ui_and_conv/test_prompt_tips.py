@@ -152,6 +152,22 @@ def test_prompt_hard_redraw_prefers_resize_path() -> None:
     assert calls == ["resize"]
 
 
+def test_prompt_redraw_for_layout_change_triggers_full_repaint() -> None:
+    calls: list[str] = []
+    renderer = SimpleNamespace(_last_screen="screen")
+    app = SimpleNamespace(renderer=renderer, invalidate=lambda: calls.append("invalidate"))
+
+    result = shell_prompt.CustomPromptSession._redraw_for_layout_change(
+        app,
+        signature=("agent", 80, False, 1),
+        last_signature=("agent", 80, True, 2),
+    )
+
+    assert renderer._last_screen is None
+    assert calls == ["invalidate"]
+    assert result == ("agent", 80, False, 1)
+
+
 def test_custom_prompt_app_uses_slow_terminal_size_polling(
     temp_work_dir,
     tmp_path,

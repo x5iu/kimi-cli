@@ -1155,6 +1155,12 @@ class CustomPromptSession:
         )
 
     def _build_prompt_application(self) -> tuple[Application[str], TextArea]:
+        last_layout_signature: tuple[object, ...] | None = None
+
+        def _app_columns(app: Application[Any] | None = None) -> int:
+            current_app = get_app_or_none() if app is None else app
+            return current_app.output.get_size().columns if current_app is not None else 80
+
         text_area = TextArea(
             text="",
             multiline=True,
@@ -1171,13 +1177,35 @@ class CustomPromptSession:
             dont_extend_height=True,
         )
 
+        def _prompt_layout_signature() -> tuple[object, ...]:
+            input_height = (
+                text_area.window.render_info.window_height
+                if text_area.window.render_info is not None
+                else max(1, text_area.buffer.document.line_count)
+            )
+            has_hint = bool(self._show_agent_input_frame() and self._render_hint_line(text_area))
+            return (
+                self._mode,
+                _app_columns(),
+                has_hint,
+                input_height,
+            )
+
+        def _redraw_prompt_view(app: Application[Any]) -> None:
+            nonlocal last_layout_signature
+            last_layout_signature = self._redraw_for_layout_change(
+                app,
+                signature=_prompt_layout_signature(),
+                last_signature=last_layout_signature,
+            )
+
         @text_area.buffer.on_text_changed.add_handler
         def _(buffer: Buffer) -> None:
             if buffer.complete_while_typing():
                 buffer.start_completion()
             app = get_app_or_none()
             if app is not None:
-                app.invalidate()
+                _redraw_prompt_view(app)
 
         hint_window = Window(
             FormattedTextControl(lambda: self._render_hint_line(text_area)),
@@ -1248,6 +1276,7 @@ class CustomPromptSession:
             refresh_interval=None,
             terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
+        last_layout_signature = _prompt_layout_signature()
         return app, text_area
 
     def _open_in_external_editor(self, event: KeyPressEvent) -> None:
@@ -1335,6 +1364,23 @@ class CustomPromptSession:
             on_resize()
             return
         cls._force_turn_full_repaint(app)
+
+    @classmethod
+    def _redraw_for_layout_change(
+        cls,
+        app: Application[Any],
+        *,
+        signature: tuple[object, ...],
+        last_signature: tuple[object, ...] | None,
+    ) -> tuple[object, ...]:
+        if last_signature is None:
+            app.invalidate()
+            return signature
+        if signature != last_signature:
+            cls._force_turn_full_repaint(app)
+            return signature
+        app.invalidate()
+        return last_signature
 
     @staticmethod
     def _target_turn_body_bottom_scroll(
@@ -1627,16 +1673,11 @@ class CustomPromptSession:
 
         def _redraw_turn_view(app: Application[Any]) -> None:
             nonlocal last_layout_signature
-            signature = _turn_layout_signature()
-            if last_layout_signature is None:
-                last_layout_signature = signature
-                app.invalidate()
-                return
-            if signature != last_layout_signature:
-                last_layout_signature = signature
-                self._force_turn_full_repaint(app)
-                return
-            app.invalidate()
+            last_layout_signature = self._redraw_for_layout_change(
+                app,
+                signature=_turn_layout_signature(),
+                last_signature=last_layout_signature,
+            )
 
         def _refresh_turn_view(app: Application[Any]) -> None:
             _redraw_turn_view(app)
