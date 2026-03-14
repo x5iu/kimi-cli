@@ -3,7 +3,7 @@ from typing import override
 
 from kaos.path import KaosPath
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, detect_file_type
@@ -25,11 +25,13 @@ class Params(BaseModel):
     line_offset: int = Field(
         description=(
             "The line number to start reading from. "
-            "By default read from the beginning of the file. "
-            "Set this when the file is too large to read at once."
+            "Positive values count from the beginning of the file. "
+            "Negative values count backward from the end of the file, where -1 is the last "
+            "line. By default read from the beginning of the file. "
+            "Set this when the file is too large to read at once or when you want to read the "
+            "tail of a file."
         ),
         default=1,
-        ge=1,
     )
     n_lines: int = Field(
         description=(
@@ -40,6 +42,13 @@ class Params(BaseModel):
         default=MAX_LINES,
         ge=1,
     )
+
+    @field_validator("line_offset")
+    @classmethod
+    def validate_line_offset(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("line_offset cannot be 0")
+        return value
 
 
 class ReadFile(CallableTool2[Params]):
@@ -130,28 +139,36 @@ class ReadFile(CallableTool2[Params]):
                     brief="File not readable",
                 )
 
-            assert params.line_offset >= 1
             assert params.n_lines >= 1
+
+            total_lines = 0
+            async for _line in p.read_lines(errors="replace"):
+                total_lines += 1
+
+            effective_line_offset = (
+                params.line_offset
+                if params.line_offset > 0
+                else max(1, total_lines + params.line_offset + 1)
+            )
+            requested_line_limit = min(params.n_lines, MAX_LINES)
+            available_from_offset = max(0, total_lines - effective_line_offset + 1)
 
             lines: list[str] = []
             n_bytes = 0
             truncated_line_numbers: list[int] = []
-            max_lines_reached = False
+            max_lines_reached = params.n_lines > MAX_LINES and available_from_offset > MAX_LINES
             max_bytes_reached = False
             current_line_no = 0
             async for line in p.read_lines(errors="replace"):
                 current_line_no += 1
-                if current_line_no < params.line_offset:
+                if current_line_no < effective_line_offset:
                     continue
                 truncated = truncate_line(line, MAX_LINE_LENGTH)
                 if truncated != line:
                     truncated_line_numbers.append(current_line_no)
                 lines.append(truncated)
                 n_bytes += len(truncated.encode("utf-8"))
-                if len(lines) >= params.n_lines:
-                    break
-                if len(lines) >= MAX_LINES:
-                    max_lines_reached = True
+                if len(lines) >= requested_line_limit:
                     break
                 if n_bytes >= MAX_BYTES:
                     max_bytes_reached = True
@@ -160,21 +177,29 @@ class ReadFile(CallableTool2[Params]):
             # Format output with line numbers like `cat -n`
             lines_with_no: list[str] = []
             for line_num, line in zip(
-                range(params.line_offset, params.line_offset + len(lines)), lines, strict=True
+                range(effective_line_offset, effective_line_offset + len(lines)),
+                lines,
+                strict=True,
             ):
                 # Use 6-digit line number width, right-aligned, with tab separator
                 lines_with_no.append(f"{line_num:6d}\t{line}")
 
             message = (
-                f"{len(lines)} lines read from file starting from line {params.line_offset}."
+                f"{len(lines)} lines read from file starting from line {effective_line_offset}. "
+                f"File has {total_lines} total lines."
                 if len(lines) > 0
-                else "No lines read from file."
+                else (
+                    f"No lines read from file starting from line {effective_line_offset}. "
+                    f"File has {total_lines} total lines."
+                    if effective_line_offset != 1 or total_lines != 0
+                    else f"No lines read from file. File has {total_lines} total lines."
+                )
             )
             if max_lines_reached:
                 message += f" Max {MAX_LINES} lines reached."
             elif max_bytes_reached:
                 message += f" Max {MAX_BYTES} bytes reached."
-            elif len(lines) < params.n_lines:
+            elif available_from_offset <= requested_line_limit:
                 message += " End of file reached."
             if truncated_line_numbers:
                 message += f" Lines {truncated_line_numbers} were truncated."

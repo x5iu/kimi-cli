@@ -164,8 +164,7 @@ def test_read_file_params_schema(read_file_tool: ReadFile):
                 },
                 "line_offset": {
                     "default": 1,
-                    "description": "The line number to start reading from. By default read from the beginning of the file. Set this when the file is too large to read at once.",
-                    "minimum": 1,
+                    "description": "The line number to start reading from. Positive values count from the beginning of the file. Negative values count backward from the end of the file, where -1 is the last line. By default read from the beginning of the file. Set this when the file is too large to read at once or when you want to read the tail of a file.",
                     "type": "integer",
                 },
                 "n_lines": {

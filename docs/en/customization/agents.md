@@ -214,8 +214,10 @@ The following are all built-in tools in Kimi Code CLI.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `path` | string | File path |
-| `line_offset` | int | Starting line number, default 1 |
+| `line_offset` | int | Starting line number, default 1; negative values count from the end |
 | `n_lines` | int | Number of lines to read, default/max 1000 |
+
+`ReadFile` also reports the file's total line count in its result message.
 
 ### `ReadMediaFile`
 

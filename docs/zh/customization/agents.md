@@ -214,8 +214,10 @@ agent:
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `path` | string | 文件路径 |
-| `line_offset` | int | 起始行号，默认 1 |
+| `line_offset` | int | 起始行号，默认 1；负数表示从文件末尾倒数 |
 | `n_lines` | int | 读取行数，默认/最大 1000 |
+
+`ReadFile` 的结果消息还会返回文件总行数。
 
 ### `ReadMediaFile`
 
