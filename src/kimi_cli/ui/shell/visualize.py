@@ -313,33 +313,17 @@ class _ToolCallBlock:
                 arg_style = Style(color="grey50", link=sub_url) if sub_url else "grey50"
                 sub_text.append(argument, style=arg_style)
                 sub_text.append(")", style="grey50")
+            sub_lines = [cast(RenderableType, sub_text)]
+            sub_lines.extend(self._render_result_display(sub_result))
             lines.append(
                 BulletColumns(
-                    sub_text,
+                    Group(*sub_lines),
                     bullet_style="green" if not sub_result.is_error else "red",
                 )
             )
 
         if self._result is not None:
-            if self._result.is_error:
-                error_message = self._extract_error_message(self._result)
-                if error_message:
-                    lines.append(Text(error_message, style="red", overflow="fold"))
-
-                error_output = self._extract_error_output(self._result)
-                if error_output:
-                    lines.append(Text(error_output, style="red", overflow="fold"))
-
-            for block in self._result.display:
-                if isinstance(block, BriefDisplayBlock):
-                    if self._result.is_error:
-                        continue
-                    if block.text:
-                        lines.append(Markdown(block.text, style="grey50"))
-                elif isinstance(block, TodoDisplayBlock):
-                    markdown = self._render_todo_markdown(block)
-                    if markdown:
-                        lines.append(Markdown(markdown, style="grey50"))
+            lines.extend(self._render_result_display(self._result))
 
         if self.finished:
             assert self._result is not None
@@ -400,6 +384,54 @@ class _ToolCallBlock:
                 return block.text.strip()
 
         return ""
+
+    def _render_result_display(self, result: ToolReturnValue) -> list[RenderableType]:
+        lines: list[RenderableType] = []
+        if result.is_error:
+            error_message = self._extract_error_message(result)
+            if error_message:
+                lines.append(Text(error_message, style="red", overflow="fold"))
+
+            error_output = self._extract_error_output(result)
+            if error_output:
+                lines.append(Text(error_output, style="red", overflow="fold"))
+        else:
+            has_diff_display = any(isinstance(block, DiffDisplayBlock) for block in result.display)
+            if result.message and has_diff_display:
+                lines.append(Markdown(result.message, style="dim"))
+
+        last_diff_path: str | None = None
+        for block in result.display:
+            if isinstance(block, BriefDisplayBlock):
+                last_diff_path = None
+                if result.is_error:
+                    continue
+                if block.text:
+                    lines.append(Markdown(block.text, style="grey50"))
+            elif isinstance(block, TodoDisplayBlock):
+                last_diff_path = None
+                markdown = self._render_todo_markdown(block)
+                if markdown:
+                    lines.append(Markdown(markdown, style="grey50"))
+            elif isinstance(block, DiffDisplayBlock):
+                if block.path != last_diff_path:
+                    lines.append(Text(block.path, style="bold"))
+                    last_diff_path = block.path
+                else:
+                    lines.append(Text("⋮", style="grey50"))
+
+                diff_text = format_unified_diff(
+                    block.old_text,
+                    block.new_text,
+                    block.path,
+                    include_file_header=False,
+                ).rstrip("\n")
+                if diff_text:
+                    lines.append(KimiSyntax(diff_text, "diff"))
+            else:
+                last_diff_path = None
+
+        return lines
 
     @classmethod
     def _extract_error_output(cls, result: ToolReturnValue) -> str:

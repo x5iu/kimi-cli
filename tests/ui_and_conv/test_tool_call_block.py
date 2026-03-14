@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from io import StringIO
 
-from kosong.tooling import ToolError
+from kosong.tooling import ToolError, ToolReturnValue
 from rich.console import Console
 
 from kimi_cli.ui.shell.visualize import (
     MAX_TOOL_ERROR_OUTPUT_LINES,
     _ToolCallBlock,
 )
-from kimi_cli.wire.types import ToolCall
+from kimi_cli.wire.types import DiffDisplayBlock, ToolCall, ToolResult
 
 
 def _render_to_str(block: _ToolCallBlock) -> str:
@@ -137,3 +137,83 @@ class TestErrorRendering:
         assert f"line {MAX_TOOL_ERROR_OUTPUT_LINES - 1}" in rendered
         assert f"line {MAX_TOOL_ERROR_OUTPUT_LINES}" not in rendered
         assert "[...truncated]" in rendered
+
+
+def test_renders_diff_display_for_file_edit_result() -> None:
+    block = _ToolCallBlock(
+        ToolCall(
+            id="call_write",
+            function=ToolCall.FunctionBody(
+                name="WriteFile",
+                arguments='{"path": "src/example.py", "content": "after"}',
+            ),
+        )
+    )
+    block.finish(
+        ToolReturnValue(
+            is_error=False,
+            output="",
+            message="File successfully overwritten.",
+            display=[
+                DiffDisplayBlock(
+                    path="src/example.py",
+                    old_text="before",
+                    new_text="after",
+                )
+            ],
+        )
+    )
+
+    rendered = _render_to_str(block)
+
+    assert "File successfully overwritten." in rendered
+    assert "src/example.py" in rendered
+    assert "@@ -1 +1 @@" in rendered
+    assert "-before" in rendered
+    assert "+after" in rendered
+
+
+def test_renders_diff_display_for_subagent_file_edit_result() -> None:
+    block = _ToolCallBlock(
+        ToolCall(
+            id="task_1",
+            function=ToolCall.FunctionBody(
+                name="Task",
+                arguments='{"description": "edit file", "subagent_name": "coder", "prompt": "..."}',
+            ),
+        )
+    )
+    sub_call = ToolCall(
+        id="call_edit",
+        function=ToolCall.FunctionBody(
+            name="Edit",
+            arguments='{"path": "src/example.py", "edit": {"kind": "replace", "old": "before", "new": "after"}}',
+        ),
+    )
+    block.append_sub_tool_call(sub_call)
+    block.finish_sub_tool_call(
+        ToolResult(
+            tool_call_id="call_edit",
+            return_value=ToolReturnValue(
+                is_error=False,
+                output="",
+                message="File successfully edited.",
+                display=[
+                    DiffDisplayBlock(
+                        path="src/example.py",
+                        old_text="before",
+                        new_text="after",
+                    )
+                ],
+            ),
+        )
+    )
+    block.finish(ToolReturnValue(is_error=False, output="", message="done", display=[]))
+
+    rendered = _render_to_str(block)
+
+    assert "Used Edit (src/example.py)" in rendered
+    assert "File successfully edited." in rendered
+    assert "src/example.py" in rendered
+    assert "-before" in rendered
+    assert "+after" in rendered
