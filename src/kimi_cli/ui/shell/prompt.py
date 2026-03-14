@@ -1106,8 +1106,6 @@ class CustomPromptSession:
     def _should_route_live_navigation(live_view: Any, buffer_text: str) -> bool:
         if not live_view.has_pending_input_request:
             return False
-        if live_view.input_mode == "question":
-            return True
         if live_view.input_mode == "question_other":
             return False
         return not buffer_text.strip()
@@ -1604,26 +1602,8 @@ class CustomPromptSession:
             columns = max(1, _app_columns() - 4)
             return text_area.window.preferred_height(columns, 6).preferred
 
-        clearing_question_buffer = False
-
         @text_area.buffer.on_text_changed.add_handler
         def _(buffer: Buffer) -> None:
-            nonlocal clearing_question_buffer
-            if (
-                not clearing_question_buffer
-                and live_view.has_pending_input_request
-                and live_view.input_mode == "question"
-                and buffer.text
-            ):
-                clearing_question_buffer = True
-                try:
-                    buffer.document = Document(text="", cursor_position=0)
-                finally:
-                    clearing_question_buffer = False
-                app = get_app_or_none()
-                if app is not None:
-                    _redraw_turn_view(app)
-                return
             if buffer.complete_while_typing():
                 buffer.start_completion()
             app = get_app_or_none()

@@ -78,7 +78,8 @@ def test_route_live_navigation_when_question_panel_open() -> None:
 
     assert CustomPromptSession._should_route_live_navigation(live_view, "") is True
     assert CustomPromptSession._should_route_live_navigation(live_view, "  ") is True
-    assert CustomPromptSession._should_route_live_navigation(live_view, "1") is True
+    assert CustomPromptSession._should_route_live_navigation(live_view, "1") is False
+    assert CustomPromptSession._should_route_live_navigation(live_view, "/more") is False
 
 
 def test_do_not_route_approval_navigation_when_buffer_has_text() -> None:

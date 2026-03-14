@@ -1287,7 +1287,9 @@ class LiveView:
             self._resolve_question_submission(panel, all_done=all_done)
             return True
 
-        return False
+        if panel.is_multi_select:
+            return self._submit_multi_select_question_line(panel, text)
+        return self._submit_single_select_question_line(panel, text)
 
     def _submit_single_select_question_line(self, panel: _QuestionRequestPanel, text: str) -> bool:
         idx = self._parse_index_token(text)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
 from kimi_cli.ui.shell.keyboard import KeyEvent
@@ -39,7 +41,8 @@ async def test_live_view_accepts_line_based_approval_input() -> None:
     assert await request.wait() == "approve_for_session"
 
 
-def test_live_view_rejects_line_input_for_single_select_question() -> None:
+@pytest.mark.asyncio
+async def test_live_view_accepts_custom_single_select_answer() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
         id="question-1",
@@ -58,11 +61,12 @@ def test_live_view_rejects_line_input_for_single_select_question() -> None:
     view.request_question(request)
 
     assert view.input_mode == "question"
-    assert view.try_submit_line("TOML") is False
-    assert request.resolved is False
+    assert view.try_submit_line("TOML") is True
+    assert await request.wait() == {"Which format should I use?": "TOML"}
 
 
-def test_live_view_rejects_numeric_line_input_for_question_selection() -> None:
+@pytest.mark.asyncio
+async def test_live_view_switches_to_custom_answer_mode_for_other_option() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
         id="question-other",
@@ -80,9 +84,10 @@ def test_live_view_rejects_numeric_line_input_for_question_selection() -> None:
 
     view.request_question(request)
 
-    assert view.try_submit_line("3") is False
-    assert view.input_mode == "question"
-    assert request.resolved is False
+    assert view.try_submit_line("3") is True
+    assert view.input_mode == "question_other"
+    assert view.try_submit_line("TOML") is True
+    assert await request.wait() == {"Which format should I use?": "TOML"}
 
 
 @pytest.mark.asyncio
@@ -165,7 +170,9 @@ async def test_live_view_enter_submits_multi_select_when_current_option_already_
 
 
 @pytest.mark.asyncio
-async def test_live_view_switches_to_custom_answer_mode_for_keyboard_multi_select_other_without_precheck() -> None:
+async def test_live_view_switches_to_custom_answer_mode_for_keyboard_multi_select_other_without_precheck() -> (
+    None
+):
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
         id="question-keyboard-multi-other-no-space",
@@ -250,7 +257,8 @@ async def test_live_view_accepts_keyboard_multi_select_submission() -> None:
     assert await request.wait() == {"Which checks should I run?": "format, tests"}
 
 
-def test_live_view_rejects_line_input_for_multi_select_question() -> None:
+@pytest.mark.asyncio
+async def test_live_view_accepts_multi_select_line_input() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
         id="question-2-line-input",
@@ -270,8 +278,8 @@ def test_live_view_rejects_line_input_for_multi_select_question() -> None:
 
     view.request_question(request)
 
-    assert view.try_submit_line("1, 3") is False
-    assert request.resolved is False
+    assert view.try_submit_line("1, 3") is True
+    assert await request.wait() == {"Which checks should I run?": "format, tests"}
 
 
 @pytest.mark.asyncio
@@ -419,6 +427,38 @@ def test_live_view_can_hide_running_indicators_in_body() -> None:
 
     view.dispatch_wire_message(StepBegin(n=1))
     assert "Running..." not in view.render_ansi(80, include_running_indicators=False)
+
+
+def test_live_view_accepts_expand_command_for_question(monkeypatch: pytest.MonkeyPatch) -> None:
+    visualize_module = importlib.import_module("kimi_cli.ui.shell.visualize")
+    shown: list[str] = []
+    monkeypatch.setattr(
+        visualize_module,
+        "_show_question_body_in_pager",
+        lambda panel: shown.append(panel.current_question_text),
+    )
+
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-expand-open",
+        tool_call_id="tool-expand-open",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+                body="Long details",
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert view.try_submit_line("/more") is True
+    assert shown == ["Which format should I use?"]
+    assert request.resolved is False
 
 
 def test_live_view_hides_expand_prompts_when_expansion_disabled() -> None:
