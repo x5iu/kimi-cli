@@ -1931,6 +1931,7 @@ class CustomPromptSession:
             self._history_file.parent.mkdir(parents=True, exist_ok=True)
             with self._history_file.open("a", encoding="utf-8") as f:
                 f.write(entry.model_dump_json(ensure_ascii=False) + "\n")
+            self._history.append_string(entry.content)
             self._last_history_content = entry.content
         except OSError as exc:
             logger.warning(

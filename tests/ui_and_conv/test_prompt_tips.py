@@ -530,6 +530,20 @@ def test_target_turn_body_bottom_scroll_tracks_latest_output() -> None:
     )
 
 
+def test_append_history_entry_updates_in_memory_history(tmp_path) -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._history_file = tmp_path / "history.jsonl"
+    prompt_session._history = shell_prompt.InMemoryHistory()
+    prompt_session._last_history_content = None
+
+    prompt_session._append_history_entry("hello")
+    prompt_session._append_history_entry("hello")
+
+    assert list(prompt_session._history.get_strings()) == ["hello"]
+    assert prompt_session._last_history_content == "hello"
+    assert prompt_session._history_file.read_text(encoding="utf-8").count("hello") == 1
+
+
 def test_bottom_toolbar_no_overflow_when_tip_would_exactly_fill_old_available(monkeypatch) -> None:
     width = 60
     mode_text = "agent"
