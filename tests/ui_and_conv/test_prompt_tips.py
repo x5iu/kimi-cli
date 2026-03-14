@@ -321,12 +321,13 @@ def test_active_turn_input_box_renders_static_hint(monkeypatch) -> None:
     assert rprompt == "│"
 
 
-def test_active_turn_footer_only_shows_fixed_status() -> None:
+def test_active_turn_footer_shows_working_directory() -> None:
     prompt_session = object.__new__(CustomPromptSession)
     prompt_session._mode = PromptMode.AGENT
     prompt_session._model_name = "kimi"
     prompt_session._thinking = False
     prompt_session._status_provider = lambda: StatusSnapshot(context_usage=0.0)
+    prompt_session._working_dir_provider = lambda: "/tmp/project"
 
     rendered = prompt_session._render_turn_footer(
         80,
@@ -335,7 +336,37 @@ def test_active_turn_footer_only_shows_fixed_status() -> None:
     plain = "".join(fragment[1] for fragment in rendered)
 
     assert "agent (kimi)" in plain
+    assert "/tmp/project" in plain
     assert "Using Shell (make test)" not in plain
+
+
+def test_bottom_toolbar_shows_working_directory(monkeypatch) -> None:
+    width = 100
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._mode = PromptMode.AGENT
+    prompt_session._model_name = "kimi"
+    prompt_session._thinking = False
+    prompt_session._status_provider = lambda: StatusSnapshot(context_usage=0.0)
+    prompt_session._working_dir_provider = lambda: "/tmp/project"
+    prompt_session._tips = []
+    prompt_session._tip_rotation_index = 0
+    prompt_session._input_box_state_provider = lambda: InputBoxState()
+
+    class _DummyOutput:
+        @staticmethod
+        def get_size():
+            return SimpleNamespace(columns=width)
+
+    dummy_app = SimpleNamespace(output=_DummyOutput())
+    monkeypatch.setattr(shell_prompt, "get_app_or_none", lambda: dummy_app)
+    _toast_queues["left"].clear()
+    _toast_queues["right"].clear()
+
+    plain = "".join(fragment[1] for fragment in prompt_session._render_bottom_toolbar())
+    second_line = plain.split("\n", 1)[1]
+
+    assert "/tmp/project" in second_line
+    assert len(second_line) <= width
 
 
 def test_active_turn_activity_line_shows_running_indicator() -> None:

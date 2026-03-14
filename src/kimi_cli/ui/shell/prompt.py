@@ -77,7 +77,7 @@ from kimi_cli.utils.clipboard import (
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.media_tags import wrap_media_part
 from kimi_cli.utils.slashcmd import SlashCommand
-from kimi_cli.utils.string import random_string
+from kimi_cli.utils.string import random_string, shorten_middle
 from kimi_cli.wire.types import ContentPart, ImageURLPart, StepInterrupted, TextPart
 
 PROMPT_SYMBOL = "✨"
@@ -860,6 +860,7 @@ class CustomPromptSession:
         editor_command_provider: Callable[[], str] = lambda: "",
         plan_mode_toggle_callback: Callable[[], Awaitable[bool]] | None = None,
         input_box_state_provider: Callable[[], InputBoxState] | None = None,
+        working_dir_provider: Callable[[], str] | None = None,
     ) -> None:
         history_dir = get_share_dir() / "user-history"
         history_dir.mkdir(parents=True, exist_ok=True)
@@ -869,6 +870,7 @@ class CustomPromptSession:
         self._editor_command_provider = editor_command_provider
         self._plan_mode_toggle_callback = plan_mode_toggle_callback
         self._input_box_state_provider = input_box_state_provider or (lambda: InputBoxState())
+        self._working_dir_provider = working_dir_provider or (lambda: str(KaosPath.cwd()))
         self._model_capabilities = model_capabilities
         self._model_name = model_name
         self._last_history_content: str | None = None
@@ -1124,11 +1126,14 @@ class CustomPromptSession:
 
     def _render_footer_line(self) -> FormattedText:
         status = self._status_provider()
-        mode_text = self._mode_text(status)
         right_text = self._render_right_span(status)
         app = get_app_or_none()
         columns = app.output.get_size().columns if app is not None else 80
-        left_text = mode_text
+        left_text = self._render_footer_left_text(
+            status=status,
+            columns=columns,
+            right_text=right_text,
+        )
         padding = max(1, columns - len(left_text) - len(right_text))
         return FormattedText(
             [
@@ -1333,6 +1338,7 @@ class CustomPromptSession:
             self._mode,
             self._thinking,
             self._model_name,
+            self._working_dir_text(),
             input_box_state,
             status.context_usage,
             status.context_tokens,
@@ -1434,16 +1440,61 @@ class CustomPromptSession:
             ]
         )
 
+    @staticmethod
+    def _shorten_footer_path(path: str, width: int) -> str:
+        if width <= 0:
+            return ""
+        if width <= 4:
+            return CustomPromptSession._truncate_text(path, width)
+        return shorten_middle(path, width)
+
+    def _working_dir_text(self) -> str:
+        provider = getattr(self, "_working_dir_provider", None)
+        if provider is None:
+            return str(KaosPath.cwd())
+        return provider().strip()
+
+    def _render_footer_left_text(
+        self,
+        *,
+        status: StatusSnapshot,
+        columns: int,
+        right_text: str,
+        prefix: str = "",
+    ) -> str:
+        mode_text = self._mode_text(status)
+        available = max(1, columns - len(right_text) - 1)
+        if prefix:
+            available = max(1, available - len(prefix))
+        base_text = self._truncate_text(mode_text, available)
+        working_dir = self._working_dir_text()
+        if not working_dir:
+            return f"{prefix}{base_text}"
+
+        separator = " · "
+        if available <= len(mode_text) + len(separator):
+            return f"{prefix}{base_text}"
+
+        path_width = available - len(mode_text) - len(separator)
+        path_text = self._shorten_footer_path(working_dir, path_width)
+        if not path_text:
+            return f"{prefix}{base_text}"
+        return f"{prefix}{mode_text}{separator}{path_text}"
+
     def _render_turn_footer(
         self,
         columns: int,
         *,
         status: StatusSnapshot,
     ) -> FormattedText:
-        mode_text = self._mode_text(status)
         right_text = self._render_right_span(status)
-        fragments: list[tuple[str, str]] = [("fg:#38bdf8 bold", mode_text)]
-        remaining = columns - len(mode_text) - len(right_text)
+        left_text = self._render_footer_left_text(
+            status=status,
+            columns=columns,
+            right_text=right_text,
+        )
+        fragments: list[tuple[str, str]] = [("fg:#38bdf8 bold", left_text)]
+        remaining = columns - len(left_text) - len(right_text)
         fragments.append(("", " " * max(1, remaining)))
         fragments.append(("fg:#9ca3af", right_text))
         return FormattedText(fragments)
@@ -1980,8 +2031,12 @@ class CustomPromptSession:
         right_text: str,
     ) -> FormattedText:
         _, border_style, _ = self._input_box_appearance(state)
-        mode_text = self._mode_text(status)
-        footer_text = f"╰─ {mode_text}"
+        footer_text = self._render_footer_left_text(
+            status=status,
+            columns=columns,
+            right_text=right_text,
+            prefix="╰─ ",
+        )
         padding = max(1, columns - len(footer_text) - len(right_text))
         return FormattedText(
             [
@@ -2005,9 +2060,13 @@ class CustomPromptSession:
         fragments.append(("fg:#4d4d4d", "─" * columns))
         fragments.append(("", "\n"))
 
-        mode_text = self._mode_text(status)
-        fragments.extend([("", mode_text), ("", "  ")])
-        columns -= len(mode_text) + 2
+        left_text = self._render_footer_left_text(
+            status=status,
+            columns=columns,
+            right_text=right_text,
+        )
+        fragments.extend([("", left_text), ("", "  ")])
+        columns -= len(left_text) + 2
 
         current_toast_left = _current_toast("left")
         if current_toast_left is not None:

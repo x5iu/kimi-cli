@@ -92,6 +92,7 @@ class Shell:
                 self.soul.runtime.config.default_editor if isinstance(self.soul, KimiSoul) else ""
             ),
             plan_mode_toggle_callback=_plan_mode_toggle,
+            working_dir_provider=self._working_dir_text,
         ) as prompt_session:
             try:
                 while True:
@@ -162,6 +163,11 @@ class Shell:
         keep_running = await self._run_interactive_turn(prompt_session, soul_input)
         console.print()
         return keep_running
+
+    def _working_dir_text(self) -> str:
+        if isinstance(self.soul, KimiSoul):
+            return str(self.soul.runtime.session.work_dir)
+        return "."
 
     def _initial_status_update(self) -> StatusUpdate:
         snap = self.soul.status
