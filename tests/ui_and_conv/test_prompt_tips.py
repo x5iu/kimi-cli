@@ -233,6 +233,7 @@ def test_custom_prompt_app_binds_ctrl_l_to_redraw(
     )
     app, _ = prompt_session._build_prompt_application()
 
+    assert app.key_bindings is not None
     bindings = app.key_bindings.get_bindings_for_keys((Keys.ControlL,))
     assert bindings
 
@@ -254,6 +255,7 @@ def test_custom_prompt_app_binds_ctrl_c_to_keyboard_interrupt(
     )
     app, _ = prompt_session._build_prompt_application()
 
+    assert app.key_bindings is not None
     bindings = app.key_bindings.get_bindings_for_keys((Keys.ControlC,))
     assert bindings
 

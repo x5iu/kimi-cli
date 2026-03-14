@@ -6,12 +6,12 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Literal
 
-from kaos import get_current_kaos
 from kaos.local import local_kaos
 from kaos.path import KaosPath
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
+from kaos import get_current_kaos
 from kimi_cli.skill.flow import Flow, FlowError
 from kimi_cli.skill.flow.d2 import parse_d2_flowchart
 from kimi_cli.skill.flow.mermaid import parse_mermaid_flowchart

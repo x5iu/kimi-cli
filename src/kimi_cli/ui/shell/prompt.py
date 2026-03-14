@@ -968,8 +968,6 @@ class CustomPromptSession:
                 if self._try_paste_media(event):
                     return
                 clipboard_data = event.app.clipboard.get_data()
-                if clipboard_data is None:  # type: ignore[reportUnnecessaryComparison]
-                    return
                 event.current_buffer.paste_clipboard_data(clipboard_data)
 
             clipboard = PyperclipClipboard()
@@ -1110,7 +1108,7 @@ class CustomPromptSession:
             return False
         return not buffer_text.strip()
 
-    def _render_hint_line(self, text_area: TextArea) -> FormattedText | str:
+    def _render_hint_line(self, text_area: Any) -> FormattedText | str:
         if self._mode != PromptMode.AGENT:
             return ""
         if text_area.buffer.text:
@@ -1141,7 +1139,7 @@ class CustomPromptSession:
         )
 
     @staticmethod
-    def _with_completion_menu(content):
+    def _with_completion_menu(content: Any) -> FloatContainer:
         return FloatContainer(
             content=content,
             floats=[
@@ -1352,12 +1350,12 @@ class CustomPromptSession:
         return frames[int(current * 10) % len(frames)]
 
     @staticmethod
-    def _force_turn_full_repaint(app: Application[Any]) -> None:
-        app.renderer._last_screen = None  # type: ignore[reportPrivateUsage]
+    def _force_turn_full_repaint(app: Any) -> None:
+        app.renderer._last_screen = None
         app.invalidate()
 
     @classmethod
-    def _hard_redraw(cls, app: Application[Any]) -> None:
+    def _hard_redraw(cls, app: Any) -> None:
         on_resize = getattr(app, "_on_resize", None)
         if callable(on_resize):
             on_resize()
@@ -1367,7 +1365,7 @@ class CustomPromptSession:
     @classmethod
     def _redraw_for_layout_change(
         cls,
-        app: Application[Any],
+        app: Any,
         *,
         signature: tuple[object, ...],
         last_signature: tuple[object, ...] | None,
@@ -1387,7 +1385,7 @@ class CustomPromptSession:
 
     @staticmethod
     def _target_turn_body_bottom_scroll(
-        body_window: Window,
+        body_window: Any,
         *,
         line_count: int,
         current_scroll: int,
@@ -1403,7 +1401,7 @@ class CustomPromptSession:
 
     @staticmethod
     def _refresh_turn_application(
-        app: Application[Any],
+        app: Any,
         *,
         live_view: Any,
     ) -> bool:
@@ -1641,7 +1639,7 @@ class CustomPromptSession:
             get_cache_revision=lambda: getattr(live_view, "render_revision", 0),
         )
 
-        def _turn_layout_signature() -> tuple[object, ...]:
+        def _turn_layout_signature() -> tuple[int, int, int, bool, bool, int]:
             body_width = (
                 body_window.render_info.window_width
                 if body_window is not None and body_window.render_info is not None
@@ -1780,8 +1778,6 @@ class CustomPromptSession:
                 if self._try_paste_media(event):
                     return
                 clipboard_data = event.app.clipboard.get_data()
-                if clipboard_data is None:  # type: ignore[reportUnnecessaryComparison]
-                    return
                 event.current_buffer.paste_clipboard_data(clipboard_data)
 
         @key_bindings.add("c-c", eager=True)
@@ -1847,7 +1843,7 @@ class CustomPromptSession:
         )
         last_layout_signature = _turn_layout_signature()
 
-        def _follow_turn_output(_: Application[None]) -> None:
+        def _follow_turn_output(_: object) -> None:
             nonlocal body_vertical_scroll, last_layout_signature
             signature = _turn_layout_signature()
             target_scroll = self._target_turn_body_bottom_scroll(
@@ -1864,7 +1860,7 @@ class CustomPromptSession:
                 last_layout_signature = signature
                 app.invalidate()
 
-        app.after_render += _follow_turn_output
+        app.after_render.add_handler(_follow_turn_output)
 
         async def _consume_wire() -> None:
             nonlocal feedback_message

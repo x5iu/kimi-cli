@@ -6,9 +6,10 @@ from contextlib import suppress
 from typing import Literal
 
 import acp
-from kaos import AsyncReadable, AsyncWritable, Kaos, KaosProcess, StatResult, StrOrKaosPath
 from kaos.local import local_kaos
 from kaos.path import KaosPath
+
+from kaos import AsyncReadable, AsyncWritable, Kaos, KaosProcess, StatResult, StrOrKaosPath
 
 _DEFAULT_TERMINAL_OUTPUT_LIMIT = 50_000
 _DEFAULT_POLL_INTERVAL = 0.2

@@ -52,7 +52,7 @@ def _collect_until_response(
         if msg.get("method") == "event":
             params = msg.get("params")
             if isinstance(params, dict):
-                events.append(params)
+                events.append(cast(dict[str, object], params))
     raise AssertionError(f"Missing response for id {response_id!r}")
 
 
@@ -63,11 +63,12 @@ def _turn_has_part_type(events: list[dict[str, object]], part_type: str) -> bool
         payload = event.get("payload", {})
         if not isinstance(payload, dict):
             continue
-        user_input = payload.get("user_input")
+        payload_dict = cast(dict[str, object], payload)
+        user_input = payload_dict.get("user_input")
         if not isinstance(user_input, list):
             continue
         for part in user_input:
-            if isinstance(part, dict) and part.get("type") == part_type:
+            if isinstance(part, dict) and cast(dict[str, object], part).get("type") == part_type:
                 return True
     return False
 
@@ -77,7 +78,7 @@ def _has_content_part(events: list[dict[str, object]], part_type: str) -> bool:
         if event.get("type") != "ContentPart":
             continue
         payload = event.get("payload", {})
-        if isinstance(payload, dict) and payload.get("type") == part_type:
+        if isinstance(payload, dict) and cast(dict[str, object], payload).get("type") == part_type:
             return True
     return False
 
@@ -89,7 +90,8 @@ def _has_text_content(events: list[dict[str, object]], text: str) -> bool:
         payload = event.get("payload", {})
         if not isinstance(payload, dict):
             continue
-        if payload.get("type") == "text" and text in str(payload.get("text", "")):
+        payload_dict = cast(dict[str, object], payload)
+        if payload_dict.get("type") == "text" and text in str(payload_dict.get("text", "")):
             return True
     return False
 
@@ -289,7 +291,8 @@ def test_scripted_echo_media_e2e(temp_work_dir: KaosPath, tmp_path: Path, mode: 
         resp1, events1 = _collect_until_response(process, "prompt-1")
         result1 = resp1.get("result")
         assert isinstance(result1, dict)
-        assert result1.get("status") == "finished"
+        result1_dict = cast(dict[str, object], result1)
+        assert result1_dict.get("status") == "finished"
         assert _turn_has_part_type(events1, "image_url")
         assert _has_content_part(events1, "think")
         assert _has_text_content(events1, "The image shows a simple scene.")
@@ -311,7 +314,8 @@ def test_scripted_echo_media_e2e(temp_work_dir: KaosPath, tmp_path: Path, mode: 
         resp2, events2 = _collect_until_response(process, "prompt-2")
         result2 = resp2.get("result")
         assert isinstance(result2, dict)
-        assert result2.get("status") == "finished"
+        result2_dict = cast(dict[str, object], result2)
+        assert result2_dict.get("status") == "finished"
         assert _turn_has_part_type(events2, "video_url")
         assert _has_content_part(events2, "think")
         assert _has_text_content(events2, "The video appears to be a short clip.")

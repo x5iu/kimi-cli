@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import importlib
+from typing import cast
 
 import pytest
 
 from kimi_cli.ui.shell.visualize import LiveView
 from kimi_cli.utils.aioqueue import QueueShutDown
+from kimi_cli.wire import WireUISide
 from kimi_cli.wire.types import StatusUpdate, TextPart
 
 
@@ -57,7 +59,7 @@ async def test_live_view_disables_auto_refresh(monkeypatch) -> None:
     monkeypatch.setattr(visualize_module, "Live", _fake_live)
 
     view = LiveView(StatusUpdate(context_usage=0.0))
-    await view.visualize_loop(_DummyWire())
+    await view.visualize_loop(cast(WireUISide, _DummyWire()))
 
     assert created
     assert created[0].kwargs["auto_refresh"] is False

@@ -99,6 +99,7 @@ async def test_consume_pending_steer_downgrades_unsupported_media_to_text(
     runtime: Runtime,
     tmp_path: Path,
 ) -> None:
+    assert runtime.llm is not None
     runtime.llm.capabilities = set()
     soul = KimiSoul(
         Agent(

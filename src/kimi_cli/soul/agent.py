@@ -201,7 +201,12 @@ class Runtime:
         # For openai_responses provider, pass KIMI_AGENTS_MD via the `instructions`
         # parameter instead of embedding it in the system prompt.
         agents_md_in_prompt = agents_md or ""
-        if llm and llm.provider_config and llm.provider_config.type == "openai_responses" and agents_md:
+        if (
+            llm
+            and llm.provider_config
+            and llm.provider_config.type == "openai_responses"
+            and agents_md
+        ):
             from kosong.contrib.chat_provider.openai_responses import OpenAIResponses
 
             if isinstance(llm.chat_provider, OpenAIResponses):

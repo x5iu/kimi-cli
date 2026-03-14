@@ -538,11 +538,7 @@ async def mcp(app: Shell, args: str):
         console.print(BulletColumns(Group(*lines), bullet_style=color))
 
 
-from . import (  # noqa: E402
-    debug,  # noqa: F401 # type: ignore[reportUnusedImport]
-    export_import,  # noqa: F401 # type: ignore[reportUnusedImport]
-    oauth,  # noqa: F401 # type: ignore[reportUnusedImport]
-    setup,  # noqa: F401 # type: ignore[reportUnusedImport]
-    update,  # noqa: F401 # type: ignore[reportUnusedImport]
-    usage,  # noqa: F401 # type: ignore[reportUnusedImport]
-)
+from importlib import import_module  # noqa: E402
+
+for _module_name in ("debug", "export_import", "oauth", "setup", "update", "usage"):
+    import_module(f"{__package__}.{_module_name}")

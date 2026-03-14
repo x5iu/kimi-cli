@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from prompt_toolkit.completion import CompleteEvent
+from prompt_toolkit.completion import CompleteEvent, Completer
 from prompt_toolkit.document import Document
 
 from kimi_cli.soul import StatusSnapshot
@@ -27,7 +27,7 @@ def _make_command(
     )
 
 
-def _completion_texts(completer: SlashCommandCompleter, text: str) -> list[str]:
+def _completion_texts(completer: Completer, text: str) -> list[str]:
     document = Document(text=text, cursor_position=len(text))
     event = CompleteEvent(completion_requested=True)
     return [completion.text for completion in completer.get_completions(document, event)]

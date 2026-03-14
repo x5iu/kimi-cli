@@ -3,19 +3,39 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from kosong.chat_provider import APIStatusError
 from kosong.tooling.empty import EmptyToolset
 from rich.console import Console
 
+from kimi_cli.soul import Soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
-from kimi_cli.ui.shell.prompt import PromptMode, TurnSubmitResult, UserInput
+from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, TurnSubmitResult, UserInput
 from kimi_cli.utils.slashcmd import parse_slash_command_call
 from kimi_cli.wire.types import ImageURLPart, TextPart
+
+
+def _fake_soul(**overrides: Any) -> Soul:
+    base: dict[str, Any] = {
+        "name": "Test",
+        "model_name": None,
+        "model_capabilities": set(),
+        "thinking": False,
+        "status": SimpleNamespace(context_usage=0.0, context_tokens=0, max_context_tokens=0),
+        "available_slash_commands": [],
+        "run": None,
+    }
+    base.update(overrides)
+    return cast(Soul, SimpleNamespace(**base))
+
+
+def _fake_prompt_session(**overrides: Any) -> CustomPromptSession:
+    return cast(CustomPromptSession, SimpleNamespace(**overrides))
 
 
 @pytest.mark.asyncio
@@ -66,7 +86,7 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
     monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
     monkeypatch.setattr(soul, "steer", fake_steer)
 
-    prompt_session = SimpleNamespace(run_turn_ui=fake_run_turn_ui)
+    prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
     keep_running = await shell._run_interactive_turn(prompt_session, "hello")
 
     assert keep_running is True
@@ -128,7 +148,7 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
     monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
     monkeypatch.setattr(soul, "steer", fake_steer)
 
-    prompt_session = SimpleNamespace(run_turn_ui=fake_run_turn_ui)
+    prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
     keep_running = await shell._run_interactive_turn(prompt_session, "hello")
 
     assert keep_running is True
@@ -140,7 +160,7 @@ def test_echo_agent_input_shows_image_marker(monkeypatch: pytest.MonkeyPatch) ->
     render_console = Console(record=True, width=80, highlight=False)
     monkeypatch.setattr(shell_module, "console", render_console)
 
-    shell = Shell(SimpleNamespace(available_slash_commands=[]))
+    shell = Shell(_fake_soul(available_slash_commands=[]))
     shell._echo_agent_input(
         UserInput(
             mode=PromptMode.AGENT,
@@ -169,16 +189,16 @@ async def test_top_level_slash_command_is_not_echoed_as_user_input(
         shell_module.console, "print", lambda text, *args, **kwargs: printed.append(text)
     )
 
-    shell = Shell(SimpleNamespace(available_slash_commands=[], status=SimpleNamespace()))
-    calls: list[str] = []
+    shell = Shell(_fake_soul(status=SimpleNamespace()))
+    calls: list[str | list[object]] = []
 
-    async def fake_run_slash_command(call) -> None:
-        calls.append(call.name)
+    async def fake_run_slash_command(command_call) -> None:
+        calls.append(command_call.name)
 
-    shell._run_slash_command = fake_run_slash_command
+    cast(Any, shell)._run_slash_command = fake_run_slash_command
 
     keep_running = await shell._handle_agent_input(
-        SimpleNamespace(),
+        _fake_prompt_session(),
         UserInput(mode=PromptMode.AGENT, command="/help", content=[TextPart(text="/help")]),
     )
 
@@ -197,20 +217,20 @@ async def test_top_level_soul_slash_command_uses_interactive_turn(
     monkeypatch.setattr(shell_module.shell_slash_registry, "find_command", lambda name: None)
 
     shell = Shell(
-        SimpleNamespace(
+        _fake_soul(
             available_slash_commands=[SimpleNamespace(name="clear", aliases=["reset"])],
             status=SimpleNamespace(),
         )
     )
-    prompt_session = SimpleNamespace()
+    prompt_session = _fake_prompt_session()
     received: list[object] = []
 
-    async def fake_run_interactive_turn(session, soul_input) -> bool:
-        assert session is prompt_session
-        received.append(soul_input)
+    async def fake_run_interactive_turn(prompt_session_arg, user_input) -> bool:
+        assert prompt_session_arg is prompt_session
+        received.append(user_input)
         return True
 
-    shell._run_interactive_turn = fake_run_interactive_turn
+    cast(Any, shell)._run_interactive_turn = fake_run_interactive_turn
 
     keep_running = await shell._handle_agent_input(
         prompt_session,
@@ -232,8 +252,7 @@ async def test_interactive_turn_keeps_shell_alive_on_provider_error(
     )
 
     shell = Shell(
-        SimpleNamespace(
-            available_slash_commands=[],
+        _fake_soul(
             status=SimpleNamespace(context_usage=0.0, context_tokens=0, max_context_tokens=0),
         )
     )
@@ -243,7 +262,7 @@ async def test_interactive_turn_keeps_shell_alive_on_provider_error(
 
     monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
 
-    keep_running = await shell._run_interactive_turn(SimpleNamespace(), "hello")
+    keep_running = await shell._run_interactive_turn(_fake_prompt_session(), "hello")
 
     assert keep_running is True
     assert any("LLM provider error" in line for line in printed)
@@ -258,19 +277,21 @@ async def test_run_slash_command_accepts_soul_alias(
     monkeypatch.setattr(shell_module.shell_slash_registry, "find_command", lambda name: None)
 
     shell = Shell(
-        SimpleNamespace(
+        _fake_soul(
             available_slash_commands=[SimpleNamespace(name="clear", aliases=["reset"])],
             status=SimpleNamespace(),
         )
     )
-    calls: list[str] = []
+    calls: list[str | list[object]] = []
 
-    async def fake_run_soul_command(raw_input: str) -> bool:
-        calls.append(raw_input)
+    async def fake_run_soul_command(user_input: str | list[object]) -> bool:
+        calls.append(user_input)
         return True
 
-    shell.run_soul_command = fake_run_soul_command
+    cast(Any, shell).run_soul_command = fake_run_soul_command
 
-    await shell._run_slash_command(parse_slash_command_call("/reset"))
+    command_call = parse_slash_command_call("/reset")
+    assert command_call is not None
+    await shell._run_slash_command(command_call)
 
     assert calls == ["/reset"]

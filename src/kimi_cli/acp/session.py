@@ -5,10 +5,10 @@ import uuid
 from contextvars import ContextVar
 
 import acp
-import streamingjson  # type: ignore[reportMissingTypeStubs]
-from kaos import Kaos, reset_current_kaos, set_current_kaos
+import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 from kosong.chat_provider import ChatProviderError
 
+from kaos import Kaos, reset_current_kaos, set_current_kaos
 from kimi_cli.acp.convert import (
     acp_blocks_to_content_parts,
     display_block_to_acp_content,
@@ -28,6 +28,7 @@ from kimi_cli.wire.types import (
     MCPLoadingBegin,
     MCPLoadingEnd,
     QuestionRequest,
+    SkillReminderNotice,
     StatusUpdate,
     StepBegin,
     StepInterrupted,
@@ -165,6 +166,8 @@ class ACPSession:
                     case MCPLoadingEnd():
                         pass
                     case StatusUpdate():
+                        pass
+                    case SkillReminderNotice():
                         pass
                     case ThinkPart(think=think):
                         await self._send_thinking(think)

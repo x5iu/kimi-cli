@@ -4,11 +4,14 @@ import importlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from rich.console import Console
 
 from kimi_cli.app import KimiCLI
+from kimi_cli.soul import Soul
+from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
 
 
@@ -32,7 +35,7 @@ async def test_run_shell_welcome_info_excludes_promotional_tips(
     monkeypatch.setattr(shell_module, "Shell", FakeShell)
 
     cli = KimiCLI(
-        SimpleNamespace(name="Test", model_name="gpt-4"),
+        cast(KimiSoul, SimpleNamespace(name="Test", model_name="gpt-4")),
         runtime,
         {},
     )
@@ -45,7 +48,7 @@ async def test_run_shell_welcome_info_excludes_promotional_tips(
 
     assert await cli.run_shell() is True
 
-    welcome_info = captured["welcome_info"]
+    welcome_info = cast(list[Any], captured["welcome_info"])
     values = [item.value for item in welcome_info]
 
     assert all("latest kimi-k2.5 model" not in value for value in values)
@@ -81,13 +84,16 @@ async def test_shell_run_does_not_start_background_update(monkeypatch: pytest.Mo
     monkeypatch.setattr(shell_module.asyncio, "create_task", fake_create_task)
 
     shell = Shell(
-        SimpleNamespace(
-            name="Test",
-            available_slash_commands=[],
-            status=SimpleNamespace(),
-            model_capabilities=set(),
-            model_name="kimi-code",
-            thinking=False,
+        cast(
+            Soul,
+            SimpleNamespace(
+                name="Test",
+                available_slash_commands=[],
+                status=SimpleNamespace(),
+                model_capabilities=set(),
+                model_name="kimi-code",
+                thinking=False,
+            ),
         )
     )
 

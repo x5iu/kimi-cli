@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import cast
 
 from kosong.message import Message
 
@@ -30,16 +30,16 @@ def _first_text_part_message(message: Message) -> str | None:
     return None
 
 
-def _first_text_part_record(record: Mapping[str, Any]) -> str | None:
+def _first_text_part_record(record: Mapping[str, object]) -> str | None:
     content = record.get("content")
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
         return None
-    for part in content:
+    for part in cast(list[object], content):
         if not isinstance(part, Mapping):
             continue
-        text = part.get("text")
+        text = cast(Mapping[str, object], part).get("text")
         if isinstance(text, str):
             return text
     return None
@@ -63,7 +63,7 @@ def is_internal_user_message(message: Message) -> bool:
     return first_text is not None and is_internal_user_text(first_text)
 
 
-def is_internal_user_record(record: Mapping[str, Any]) -> bool:
+def is_internal_user_record(record: Mapping[str, object]) -> bool:
     if record.get("role") != "user":
         return False
     if record.get("name") == INTERNAL_USER_NAME:
@@ -81,7 +81,7 @@ def is_real_user_turn_start_message(message: Message) -> bool:
     return not is_internal_user_message(message)
 
 
-def is_real_user_turn_start_record(record: Mapping[str, Any]) -> bool:
+def is_real_user_turn_start_record(record: Mapping[str, object]) -> bool:
     if record.get("role") != "user":
         return False
     first_text = _first_text_part_record(record)

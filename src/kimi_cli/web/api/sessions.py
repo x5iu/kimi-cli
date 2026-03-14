@@ -25,7 +25,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from kimi_cli.metadata import load_metadata, save_metadata
 from kimi_cli.session import Session as KimiCLISession
 from kimi_cli.utils.subprocess_env import get_clean_env
-from kimi_cli.utils.turns import is_checkpoint_user_text, is_real_user_turn_start_record
+from kimi_cli.utils.turns import is_real_user_turn_start_record
 from kimi_cli.web.auth import is_origin_allowed, is_private_ip, verify_token
 from kimi_cli.web.models import (
     GenerateTitleRequest,
@@ -92,6 +92,7 @@ SENSITIVE_HOME_PATHS = {
     ".aws",
     ".kube",
 }
+
 
 def sanitize_filename(filename: str) -> str:
     """Remove potentially dangerous characters from filename."""
@@ -228,7 +229,9 @@ def _read_wire_lines(wire_file: Path) -> list[str]:
                     # QuestionRequest.id).  Note: ``message_raw`` wraps data
                     # as ``{"type": ..., "payload": {...}}`` so the id lives
                     # on the deserialized object, not at the raw dict top level.
-                    event_msg["id"] = message.id
+                    request_id = getattr(message, "id", None)
+                    if request_id is not None:
+                        event_msg["id"] = request_id
                 result.append(json.dumps(event_msg, ensure_ascii=False))
             except (json.JSONDecodeError, KeyError, ValueError, TypeError):
                 continue
@@ -744,22 +747,6 @@ def truncate_wire_at_turn(wire_path: Path, turn_index: int) -> list[str]:
         raise ValueError(f"turn_index {turn_index} out of range (max turn: {current_turn})")
 
     return lines
-
-
-def _is_checkpoint_user_message(record: dict[str, Any]) -> bool:
-    """Whether a context line is the synthetic user checkpoint marker."""
-    if record.get("role") != "user":
-        return False
-
-    content = record.get("content")
-    if isinstance(content, str):
-        return is_checkpoint_user_text(content)
-
-    parts = cast(list[Any], content) if isinstance(content, list) else []
-    text_parts = [part.get("text") for part in parts if isinstance(part, dict)]
-    return len(text_parts) == 1 and isinstance(text_parts[0], str) and is_checkpoint_user_text(
-        text_parts[0]
-    )
 
 
 def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
@@ -1329,7 +1316,7 @@ async def get_session_git_diff(session_id: UUID) -> GitDiffStats:
                             path=parts[2],
                             additions=add,
                             deletions=dele,
-                            status=file_status,  # type: ignore[arg-type]
+                            status=file_status,
                         )
                     )
 

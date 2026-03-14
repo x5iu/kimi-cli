@@ -423,7 +423,7 @@ class KimiSoul:
 
     @classmethod
     def _build_steer_message(cls, content: str | list[ContentPart]) -> Message:
-        content_parts = [
+        content_parts: list[ContentPart] = [
             TextPart(
                 text=(
                     "<system-reminder>\n"
@@ -1283,7 +1283,7 @@ class FlowRunner:
         enable_skill_reminder: bool = False,
     ) -> TurnOutcome:
         wire_send(TurnBegin(user_input=prompt))
-        res = await soul._turn(  # type: ignore[reportPrivateUsage]
+        res = await soul._turn(  # pyright: ignore[reportPrivateUsage]
             Message(role="user", content=prompt),
             enable_skill_reminder=enable_skill_reminder,
         )

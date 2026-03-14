@@ -526,7 +526,9 @@ class TestGroupIntoTurns:
         ]
         turns = _group_into_turns(history)
         assert len(turns) == 1
-        assert turns[0][0].content[0].text == "Q1"
+        part = turns[0][0].content[0]
+        assert isinstance(part, TextPart)
+        assert part.text == "Q1"
 
 
 # ---------------------------------------------------------------------------

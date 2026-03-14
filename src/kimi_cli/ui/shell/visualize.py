@@ -8,7 +8,7 @@ from contextlib import suppress
 from io import StringIO
 from typing import Any, NamedTuple, cast
 
-import streamingjson  # type: ignore[reportMissingTypeStubs]
+import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 from kosong.tooling import ToolError, ToolOk
 from rich import box
 from rich.console import Console, Group, RenderableType
@@ -696,6 +696,29 @@ class _QuestionRequestPanel:
     def current_question_text(self) -> str:
         return self._current_question.question
 
+    @property
+    def options(self) -> Sequence[tuple[str, str]]:
+        return self._options
+
+    @property
+    def option_count(self) -> int:
+        return len(self._options)
+
+    @property
+    def selected_index(self) -> int:
+        return self._selected_index
+
+    @selected_index.setter
+    def selected_index(self, value: int) -> None:
+        self._selected_index = value
+
+    @property
+    def multi_selected(self) -> set[int]:
+        return self._multi_selected
+
+    def set_multi_selected(self, indices: set[int]) -> None:
+        self._multi_selected = set(indices)
+
     def should_prompt_other_input(self) -> bool:
         """Whether pressing ENTER should open free-text input for the current question."""
         if not self.is_multi_select:
@@ -972,7 +995,7 @@ class LiveView:
         # Rich doesn't expose a public API to clear Live's cached render height.
         # After leaving the pager, stale height causes cursor restores to jump,
         # so we reset the private _shape to re-anchor the next refresh.
-        live._live_render._shape = None  # type: ignore[reportPrivateUsage]
+        cast(Any, live)._live_render._shape = None
 
     async def visualize_loop(self, wire: WireUISide):
         with Live(
@@ -1234,7 +1257,7 @@ class LiveView:
     @staticmethod
     def _find_question_option_index(panel: _QuestionRequestPanel, text: str) -> int | None:
         normalized = text.casefold()
-        for i, (label, _) in enumerate(panel._options):
+        for i, (label, _) in enumerate(panel.options):
             if label.casefold() == normalized:
                 return i
         return None
@@ -1316,7 +1339,7 @@ class LiveView:
         if not tokens:
             return False
 
-        other_idx = len(panel._options) - 1
+        other_idx = panel.option_count - 1
         selected_indices: set[int] = set()
         custom_tokens: list[str] = []
         wants_other = False
@@ -1327,7 +1350,7 @@ class LiveView:
                 idx = self._find_question_option_index(panel, token)
             if idx is None:
                 custom_tokens.append(token)
-            elif not (0 <= idx < len(panel._options)):
+            elif not (0 <= idx < panel.option_count):
                 return False
             elif idx == other_idx:
                 wants_other = True
@@ -1335,14 +1358,14 @@ class LiveView:
                 selected_indices.add(idx)
 
         if custom_tokens:
-            panel._multi_selected = set(selected_indices)
+            panel.set_multi_selected(set(selected_indices))
             all_done = panel.submit_other(", ".join(custom_tokens))
             self._resolve_question_submission(panel, all_done=all_done)
             return True
 
         if wants_other:
-            panel._selected_index = other_idx
-            panel._multi_selected = set(selected_indices) | {other_idx}
+            panel.selected_index = other_idx
+            panel.set_multi_selected(set(selected_indices) | {other_idx})
             self._question_waiting_for_other_text = True
             self.refresh_soon()
             return True
@@ -1350,7 +1373,7 @@ class LiveView:
         if not selected_indices:
             return False
 
-        panel._multi_selected = set(selected_indices)
+        panel.set_multi_selected(set(selected_indices))
         all_done = panel.submit()
         self._resolve_question_submission(panel, all_done=all_done)
         return True
@@ -1507,7 +1530,7 @@ class LiveView:
         if panel is None:
             return
         if panel.is_multi_select and panel.is_other_selected:
-            panel._multi_selected.add(len(panel._options) - 1)
+            panel.multi_selected.add(panel.option_count - 1)
         if panel.should_prompt_other_input():
             self._question_waiting_for_other_text = True
             self.refresh_soon()
@@ -1537,14 +1560,12 @@ class LiveView:
                         self._try_submit_question()
                 case KeyEvent.ENTER:
                     panel = self._current_question_panel
-                    if panel is None:
-                        return
                     if panel.is_multi_select:
-                        other_idx = len(panel._options) - 1
-                        if panel._selected_index == other_idx:
-                            panel._multi_selected.add(other_idx)
+                        other_idx = panel.option_count - 1
+                        if panel.selected_index == other_idx:
+                            panel.multi_selected.add(other_idx)
                             self._try_submit_question()
-                        elif panel._selected_index in panel._multi_selected:
+                        elif panel.selected_index in panel.multi_selected:
                             self._try_submit_question()
                         else:
                             panel.toggle_select()
