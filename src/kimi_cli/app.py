@@ -250,9 +250,11 @@ class KimiCLI:
 
     async def run_shell(self, command: str | None = None) -> bool:
         """Run the Kimi Code CLI instance with shell UI."""
+        from kimi_cli.constant import VERSION
         from kimi_cli.ui.shell import Shell, WelcomeInfoItem
 
         welcome_info = [
+            WelcomeInfoItem(name="Version", value=f"v{VERSION}"),
             WelcomeInfoItem(
                 name="Directory", value=str(shorten_home(self._runtime.session.work_dir))
             ),
