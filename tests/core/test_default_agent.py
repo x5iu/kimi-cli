@@ -10,7 +10,7 @@ from kosong.tooling import Tool
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.soul.agent import load_agent
 from kimi_cli.soul.agent import Runtime
-from kimi_cli.tools.file.replace import Edit
+from kimi_cli.tools.file.replace import EditTool
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
@@ -397,7 +397,7 @@ Read text content from a file.
 - Content will be returned with a line number before each line like `cat -n` format.
 - Use `line_offset` and `n_lines` parameters when you only need to read a part of the file.
 - `line_offset` can be negative to count backward from the end of the file. For example, `line_offset=-200` reads the last 200 lines.
-- The tool result message includes the file's total line count.
+- The tool result message includes the file's total line count when it is known.
 - The maximum number of lines that can be read at once is 1000.
 - Any lines longer than 2000 characters will be truncated, ending with "...".
 """,
@@ -410,6 +410,7 @@ Read text content from a file.
                         "line_offset": {
                             "default": 1,
                             "description": "The line number to start reading from. Positive values count from the beginning of the file. Negative values count backward from the end of the file, where -1 is the last line. By default read from the beginning of the file. Set this when the file is too large to read at once or when you want to read the tail of a file.",
+                            "not": {"const": 0},
                             "type": "integer",
                         },
                         "n_lines": {
@@ -601,7 +602,7 @@ Write content to a file.
             ),
             Tool(
                 name="Edit",
-                description=Edit.description,
+                description=EditTool.description,
                 parameters={
                     "properties": {
                         "path": {
@@ -976,7 +977,7 @@ Write content to a file.
                                     "type": "array",
                                 },
                             ],
-                            "description": "The edit operation(s) to apply to the file. You can provide a single operation or a list of operations here. Supported kinds are `replace`, `append`, `prepend`, `delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`. For backward compatibility, replace operations may omit `kind`.",
+                            "description": "The edit operation(s) to apply to the file. You can provide a single operation or a list of operations here. Supported kinds are `replace`, `append`, `prepend`, `delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`.",
                         },
                     },
                     "required": ["path", "edit"],

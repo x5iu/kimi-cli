@@ -11,7 +11,7 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
-from kimi_cli.tools.file.replace import Edit
+from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.think import Think
@@ -165,6 +165,7 @@ def test_read_file_params_schema(read_file_tool: ReadFile):
                 "line_offset": {
                     "default": 1,
                     "description": "The line number to start reading from. Positive values count from the beginning of the file. Negative values count backward from the end of the file, where -1 is the last line. By default read from the beginning of the file. Set this when the file is too large to read at once or when you want to read the tail of a file.",
+                    "not": {"const": 0},
                     "type": "integer",
                 },
                 "n_lines": {
@@ -319,7 +320,7 @@ def test_write_file_params_schema(write_file_tool: WriteFile):
     )
 
 
-def test_edit_params_schema(edit_tool: Edit):
+def test_edit_params_schema(edit_tool: EditTool):
     """Test the schema of Edit tool parameters."""
     parameters = edit_tool.base.parameters
 

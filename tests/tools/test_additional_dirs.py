@@ -16,8 +16,9 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.glob import Params as GlobParams
 from kimi_cli.tools.file.read import Params as ReadParams
 from kimi_cli.tools.file.read import ReadFile
+from kimi_cli.tools.file.replace import Edit as ReplaceEdit
 from kimi_cli.tools.file.replace import Params as ReplaceParams
-from kimi_cli.tools.file.replace import ReplaceOp, StrReplaceFile
+from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import Params as WriteParams
 from kimi_cli.tools.file.write import WriteFile
 from tests.conftest import tool_call_context
@@ -153,7 +154,7 @@ async def test_replace_in_additional_dir(
         result = await replace_tool(
             ReplaceParams(
                 path=str(target),
-                edit=ReplaceOp(old="old_value", new="new_value"),
+                edit=ReplaceEdit(old="old_value", new="new_value"),
             )
         )
         assert not result.is_error

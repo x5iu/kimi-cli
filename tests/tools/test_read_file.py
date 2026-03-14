@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from inline_snapshot import snapshot
@@ -89,9 +90,7 @@ async def test_read_with_n_lines(read_file_tool: ReadFile, sample_file: KaosPath
      2	Line 2: This is a test file
 """
     )
-    assert result.message == snapshot(
-        "2 lines read from file starting from line 1. File has 5 total lines."
-    )
+    assert result.message == snapshot("2 lines read from file starting from line 1.")
 
 
 async def test_read_with_line_offset_and_n_lines(read_file_tool: ReadFile, sample_file: KaosPath):
@@ -104,9 +103,7 @@ async def test_read_with_line_offset_and_n_lines(read_file_tool: ReadFile, sampl
      3	Line 3: With multiple lines
 """
     )
-    assert result.message == snapshot(
-        "2 lines read from file starting from line 2. File has 5 total lines."
-    )
+    assert result.message == snapshot("2 lines read from file starting from line 2.")
 
 
 async def test_read_nonexistent_file(read_file_tool: ReadFile, temp_work_dir: KaosPath):
@@ -275,9 +272,7 @@ async def test_read_edge_cases(read_file_tool: ReadFile, sample_file: KaosPath):
     result = await read_file_tool(Params(path=str(sample_file), line_offset=2, n_lines=1))
     assert not result.is_error
     assert result.output == snapshot("     2\tLine 2: This is a test file\n")
-    assert result.message == snapshot(
-        "1 lines read from file starting from line 2. File has 5 total lines."
-    )
+    assert result.message == snapshot("1 lines read from file starting from line 2.")
 
 
 async def test_line_truncation_and_messaging(read_file_tool: ReadFile, temp_work_dir: KaosPath):
@@ -380,6 +375,59 @@ async def test_max_bytes_boundary(read_file_tool: ReadFile, temp_work_dir: KaosP
 
     assert not result.is_error
     assert f"Max {MAX_BYTES} bytes reached" in result.message
+
+
+async def test_max_bytes_takes_precedence_over_max_lines(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """Byte limits should be reported instead of line limits when they trigger first."""
+    large_file = temp_work_dir / "large_bytes_and_lines.txt"
+    line_content = "A" * MAX_LINE_LENGTH
+    content = "\n".join([line_content] * (MAX_LINES + 10))
+    await large_file.write_text(content)
+
+    result = await read_file_tool(Params(path=str(large_file), n_lines=MAX_LINES + 5))
+
+    assert not result.is_error
+    assert f"Max {MAX_BYTES} bytes reached" in result.message
+    assert f"Max {MAX_LINES} lines reached" not in result.message
+
+
+async def test_small_read_does_not_scan_entire_file(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath, monkeypatch: pytest.MonkeyPatch
+):
+    """Small forward reads should stop quickly instead of scanning the whole file."""
+    large_file = temp_work_dir / "streaming.txt"
+    content = "\n".join(f"Line {i}" for i in range(1, 2001))
+    await large_file.write_text(content)
+
+    original_read_lines = KaosPath.read_lines
+    yielded = 0
+
+    def counted_read_lines(
+        self,
+        *,
+        encoding: str = "utf-8",
+        errors: Literal["strict", "ignore", "replace"] = "strict",
+    ):
+        source = original_read_lines(self, encoding=encoding, errors=errors)
+
+        async def generator():
+            nonlocal yielded
+            async for line in source:
+                yielded += 1
+                if yielded > 5:
+                    raise AssertionError("ReadFile read too many lines")
+                yield line
+
+        return generator()
+
+    monkeypatch.setattr(KaosPath, "read_lines", counted_read_lines)
+
+    result = await read_file_tool(Params(path=str(large_file), n_lines=2))
+
+    assert not result.is_error
+    assert yielded == 3
 
 
 async def test_read_with_tilde_path_expansion(read_file_tool: ReadFile, temp_work_dir: KaosPath):

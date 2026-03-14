@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import pytest
 from kaos.path import KaosPath
 
 from kimi_cli.tools.file.replace import (
     AppendOp,
     DeleteOp,
+    EditParams,
     InsertAfterOp,
     InsertBeforeOp,
-    Params,
     PatchOp,
     PrependOp,
     ReplaceLinesOp,
@@ -18,7 +19,7 @@ async def test_append_operation(edit_tool, temp_work_dir: KaosPath):
     file_path = temp_work_dir / "append.txt"
     await file_path.write_text("hello")
 
-    result = await edit_tool(Params(path=str(file_path), edit=AppendOp(content=" world")))
+    result = await edit_tool(EditParams(path=str(file_path), edit=AppendOp(content=" world")))
 
     assert not result.is_error
     assert await file_path.read_text() == "hello world"
@@ -28,7 +29,7 @@ async def test_prepend_operation(edit_tool, temp_work_dir: KaosPath):
     file_path = temp_work_dir / "prepend.txt"
     await file_path.write_text("world")
 
-    result = await edit_tool(Params(path=str(file_path), edit=PrependOp(content="hello ")))
+    result = await edit_tool(EditParams(path=str(file_path), edit=PrependOp(content="hello ")))
 
     assert not result.is_error
     assert await file_path.read_text() == "hello world"
@@ -38,7 +39,7 @@ async def test_delete_operation(edit_tool, temp_work_dir: KaosPath):
     file_path = temp_work_dir / "delete.txt"
     await file_path.write_text("alpha beta gamma")
 
-    result = await edit_tool(Params(path=str(file_path), edit=DeleteOp(old=" beta")))
+    result = await edit_tool(EditParams(path=str(file_path), edit=DeleteOp(old=" beta")))
 
     assert not result.is_error
     assert await file_path.read_text() == "alpha gamma"
@@ -49,7 +50,7 @@ async def test_insert_before_operation(edit_tool, temp_work_dir: KaosPath):
     await file_path.write_text("a\nb\nc\n")
 
     result = await edit_tool(
-        Params(
+        EditParams(
             path=str(file_path),
             edit=InsertBeforeOp(anchor="b\n", content="before-b\n"),
         )
@@ -64,7 +65,7 @@ async def test_insert_after_negative_occurrence(edit_tool, temp_work_dir: KaosPa
     await file_path.write_text("tag\nbody\ntag\n")
 
     result = await edit_tool(
-        Params(
+        EditParams(
             path=str(file_path),
             edit=InsertAfterOp(anchor="tag\n", content="after-last\n", occurrence=-1),
         )
@@ -79,7 +80,7 @@ async def test_replace_lines_negative_indices(edit_tool, temp_work_dir: KaosPath
     await file_path.write_text("1\n2\n3\n4\n")
 
     result = await edit_tool(
-        Params(
+        EditParams(
             path=str(file_path),
             edit=ReplaceLinesOp(
                 start_line=-2,
@@ -103,19 +104,20 @@ async def test_patch_operation(edit_tool, temp_work_dir: KaosPath):
 +two-and-half
  three
 """
-    result = await edit_tool(Params(path=str(file_path), edit=PatchOp(patch=patch)))
+    result = await edit_tool(EditParams(path=str(file_path), edit=PatchOp(patch=patch)))
 
     assert not result.is_error
     assert await file_path.read_text() == "one\ntwo\ntwo-and-half\nthree\n"
 
 
-async def test_edit_accepts_legacy_replace_payload(edit_tool, temp_work_dir: KaosPath):
+async def test_edit_requires_explicit_kind(temp_work_dir: KaosPath):
     file_path = temp_work_dir / "legacy.txt"
     await file_path.write_text("hello world")
 
-    result = await edit_tool(
-        Params.model_validate({"path": str(file_path), "edit": {"old": "world", "new": "there"}})
-    )
-
-    assert not result.is_error
-    assert await file_path.read_text() == "hello there"
+    with pytest.raises(ValueError, match="kind"):
+        EditParams.model_validate(
+            {
+                "path": str(file_path),
+                "edit": {"old": "world", "new": "there"},
+            }
+        )

@@ -5,7 +5,7 @@ from typing import Annotated, Literal, override
 
 from kaos.path import KaosPath
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
@@ -16,6 +16,34 @@ from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import is_within_workspace
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+class Edit(BaseModel):
+    old: str = Field(description="The old string to replace. Can be multi-line.")
+    new: str = Field(description="The new string to replace with. Can be multi-line.")
+    replace_all: bool = Field(description="Whether to replace all occurrences.", default=False)
+
+    @field_validator("old")
+    @classmethod
+    def validate_old(cls, value: str) -> str:
+        if not value:
+            raise ValueError("old cannot be empty")
+        return value
+
+
+class Params(BaseModel):
+    path: str = Field(
+        description=(
+            "The path to the file to edit. Absolute paths are required when editing files "
+            "outside the working directory."
+        )
+    )
+    edit: Edit | list[Edit] = Field(
+        description=(
+            "The edit(s) to apply to the file. "
+            "You can provide a single edit or a list of edits here."
+        )
+    )
 
 
 class ReplaceOp(BaseModel):
@@ -83,7 +111,7 @@ class InsertBeforeOp(BaseModel):
 
     @field_validator("anchor", "content")
     @classmethod
-    def validate_strings(cls, value: str, info) -> str:
+    def validate_strings(cls, value: str, info: ValidationInfo) -> str:
         if not value:
             raise ValueError(f"{info.field_name} cannot be empty")
         return value
@@ -110,7 +138,7 @@ class InsertAfterOp(BaseModel):
 
     @field_validator("anchor", "content")
     @classmethod
-    def validate_strings(cls, value: str, info) -> str:
+    def validate_strings(cls, value: str, info: ValidationInfo) -> str:
         if not value:
             raise ValueError(f"{info.field_name} cannot be empty")
         return value
@@ -141,7 +169,7 @@ class ReplaceLinesOp(BaseModel):
 
     @field_validator("start_line", "end_line")
     @classmethod
-    def validate_line_numbers(cls, value: int, info) -> int:
+    def validate_line_numbers(cls, value: int, info: ValidationInfo) -> int:
         if value == 0:
             raise ValueError(f"{info.field_name} cannot be 0")
         return value
@@ -177,7 +205,7 @@ EditOperation = Annotated[
 ]
 
 
-class Params(BaseModel):
+class EditParams(BaseModel):
     path: str = Field(
         description=(
             "The path to the file to edit. Absolute paths are required when editing files "
@@ -188,22 +216,9 @@ class Params(BaseModel):
         description=(
             "The edit operation(s) to apply to the file. You can provide a single operation or "
             "a list of operations here. Supported kinds are `replace`, `append`, `prepend`, "
-            "`delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`. For "
-            "backward compatibility, replace operations may omit `kind`."
+            "`delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`."
         )
     )
-
-    @field_validator("edit", mode="before")
-    @classmethod
-    def normalize_legacy_replace_ops(cls, value):
-        def normalize(item):
-            if isinstance(item, dict) and "kind" not in item and "old" in item and "new" in item:
-                return {"kind": "replace", **item}
-            return item
-
-        if isinstance(value, list):
-            return [normalize(item) for item in value]
-        return normalize(value)
 
     @field_validator("edit")
     @classmethod
@@ -232,10 +247,10 @@ class _PatchHunk:
     lines: list[_PatchLine]
 
 
-class _BaseEditTool(CallableTool2[Params]):
-    params: type[Params] = Params
+class _BaseStructuredEditTool(CallableTool2[EditParams]):
+    params: type[EditParams] = EditParams
 
-    def __init__(self, runtime: Runtime, approval: Approval):
+    def __init__(self, runtime: Runtime, approval: Approval) -> None:
         super().__init__()
         self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
         self._additional_dirs = runtime.additional_dirs
@@ -456,13 +471,10 @@ class _BaseEditTool(CallableTool2[Params]):
                 )
             return "".join(lines[: start_line - 1]) + op.content + "".join(lines[end_line:])
 
-        if isinstance(op, PatchOp):
-            return self._apply_patch(content, op)
-
-        raise _EditError(f"Unsupported edit operation at index {index}.")
+        return self._apply_patch(content, op)
 
     @override
-    async def __call__(self, params: Params) -> ToolReturnValue:
+    async def __call__(self, params: EditParams) -> ToolReturnValue:
         if not params.path:
             return ToolError(
                 message="File path cannot be empty.",
@@ -535,17 +547,126 @@ class _BaseEditTool(CallableTool2[Params]):
             )
 
 
-class Edit(_BaseEditTool):
+class EditTool(_BaseStructuredEditTool):
     name: str = "Edit"
-    description: str = load_desc(Path(__file__).parent / "replace.md")
+    description: str = load_desc(Path(__file__).parent / "edit.md")
 
     def __init__(self, runtime: Runtime, approval: Approval):
         super().__init__(runtime, approval)
 
 
-class StrReplaceFile(_BaseEditTool):
+class StrReplaceFile(CallableTool2[Params]):
     name: str = "StrReplaceFile"
     description: str = load_desc(Path(__file__).parent / "replace.md")
+    params: type[Params] = Params
 
     def __init__(self, runtime: Runtime, approval: Approval):
-        super().__init__(runtime, approval)
+        super().__init__()
+        self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
+        self._additional_dirs = runtime.additional_dirs
+        self._approval = approval
+
+    async def _validate_path(self, path: KaosPath) -> ToolError | None:
+        """Validate that the path is safe to edit."""
+        resolved_path = path.canonical()
+
+        if (
+            not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
+            and not path.is_absolute()
+        ):
+            return ToolError(
+                message=(
+                    f"`{path}` is not an absolute path. "
+                    "You must provide an absolute path to edit a file "
+                    "outside the working directory."
+                ),
+                brief="Invalid path",
+            )
+        return None
+
+    @staticmethod
+    def _apply_edit(content: str, edit: Edit) -> str:
+        if edit.replace_all:
+            return content.replace(edit.old, edit.new)
+        return content.replace(edit.old, edit.new, 1)
+
+    @override
+    async def __call__(self, params: Params) -> ToolReturnValue:
+        if not params.path:
+            return ToolError(
+                message="File path cannot be empty.",
+                brief="Empty file path",
+            )
+
+        try:
+            p = KaosPath(params.path).expanduser()
+            if err := await self._validate_path(p):
+                return err
+            p = p.canonical()
+
+            if not await p.exists():
+                return ToolError(
+                    message=f"`{params.path}` does not exist.",
+                    brief="File not found",
+                )
+            if not await p.is_file():
+                return ToolError(
+                    message=f"`{params.path}` is not a file.",
+                    brief="Invalid path",
+                )
+
+            content = await p.read_text(errors="replace")
+            original_content = content
+            edits = [params.edit] if isinstance(params.edit, Edit) else params.edit
+
+            for edit in edits:
+                content = self._apply_edit(content, edit)
+
+            if content == original_content:
+                return ToolError(
+                    message="No replacements were made. The old string was not found in the file.",
+                    brief="No replacements made",
+                )
+
+            diff_blocks: list[DisplayBlock] = list(
+                build_diff_blocks(str(p), original_content, content)
+            )
+
+            action = (
+                FileActions.EDIT
+                if is_within_workspace(p, self._work_dir, self._additional_dirs)
+                else FileActions.EDIT_OUTSIDE
+            )
+
+            if not await self._approval.request(
+                self.name,
+                action,
+                f"Edit file `{p}`",
+                display=diff_blocks,
+            ):
+                return ToolRejectedError()
+
+            await p.write_text(content, errors="replace")
+
+            total_replacements = 0
+            for edit in edits:
+                if edit.replace_all:
+                    total_replacements += original_content.count(edit.old)
+                else:
+                    total_replacements += 1 if edit.old in original_content else 0
+
+            return ToolReturnValue(
+                is_error=False,
+                output="",
+                message=(
+                    "File successfully edited. "
+                    f"Applied {len(edits)} edit(s) with {total_replacements} total replacement(s)."
+                ),
+                display=diff_blocks,
+            )
+
+        except Exception as e:
+            return ToolError(
+                message=f"Failed to edit. Error: {e}",
+                brief="Failed to edit file",
+            )

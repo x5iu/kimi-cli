@@ -32,7 +32,7 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
-from kimi_cli.tools.file.replace import Edit, StrReplaceFile
+from kimi_cli.tools.file.replace import EditTool, StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.multiagent.create import CreateSubagent
 from kimi_cli.tools.multiagent.task import Task
@@ -282,10 +282,10 @@ def write_file_tool(runtime: Runtime, approval: Approval) -> Generator[WriteFile
 
 
 @pytest.fixture
-def edit_tool(runtime: Runtime, approval: Approval) -> Generator[Edit]:
+def edit_tool(runtime: Runtime, approval: Approval) -> Generator[EditTool]:
     """Create an Edit tool instance."""
     with tool_call_context("Edit"):
-        yield Edit(runtime, approval)
+        yield EditTool(runtime, approval)
 
 
 @pytest.fixture

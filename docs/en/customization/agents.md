@@ -281,7 +281,7 @@ The following are all built-in tools in Kimi Code CLI.
 | `edit` | object/array | Single edit operation or list of operations |
 | `edit.kind` | string | `replace`, `append`, `prepend`, `delete`, `insert_before`, `insert_after`, `replace_lines`, or `patch` |
 
-`StrReplaceFile` remains available as a backward-compatible alias of `Edit`.
+`StrReplaceFile` remains available as the backward-compatible legacy string-replace tool. It only supports replace operations.
 
 ### `SearchWeb`
 

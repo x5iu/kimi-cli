@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from kaos.path import KaosPath
 
-from kimi_cli.tools.file.replace import Params, ReplaceOp, StrReplaceFile
+from kimi_cli.tools.file.replace import Edit as ReplaceEdit
+from kimi_cli.tools.file.replace import Params, StrReplaceFile
 from kimi_cli.wire.types import DiffDisplayBlock
 
 
@@ -19,7 +21,7 @@ async def test_replace_single_occurrence(
     await file_path.write_text(original_content)
 
     result = await str_replace_file_tool(
-        Params(path=str(file_path), edit=ReplaceOp(old="world", new="universe"))
+        Params(path=str(file_path), edit=ReplaceEdit(old="world", new="universe"))
     )
 
     assert not result.is_error
@@ -43,7 +45,7 @@ async def test_replace_all_occurrences(
     result = await str_replace_file_tool(
         Params(
             path=str(file_path),
-            edit=ReplaceOp(old="apple", new="fruit", replace_all=True),
+            edit=ReplaceEdit(old="apple", new="fruit", replace_all=True),
         )
     )
 
@@ -64,8 +66,8 @@ async def test_replace_multiple_edits(
         Params(
             path=str(file_path),
             edit=[
-                ReplaceOp(old="Hello", new="Hi"),
-                ReplaceOp(old="Goodbye", new="See you"),
+                ReplaceEdit(old="Hello", new="Hi"),
+                ReplaceEdit(old="Goodbye", new="See you"),
             ],
         )
     )
@@ -86,7 +88,7 @@ async def test_replace_multiline_content(
     result = await str_replace_file_tool(
         Params(
             path=str(file_path),
-            edit=ReplaceOp(old="Line 2\nLine 3", new="Modified line 2\nModified line 3"),
+            edit=ReplaceEdit(old="Line 2\nLine 3", new="Modified line 2\nModified line 3"),
         )
     )
 
@@ -104,7 +106,7 @@ async def test_replace_unicode_content(
     await file_path.write_text(original_content)
 
     result = await str_replace_file_tool(
-        Params(path=str(file_path), edit=ReplaceOp(old="世界", new="地球"))
+        Params(path=str(file_path), edit=ReplaceEdit(old="世界", new="地球"))
     )
 
     assert not result.is_error
@@ -119,7 +121,7 @@ async def test_replace_no_match(str_replace_file_tool: StrReplaceFile, temp_work
     await file_path.write_text(original_content)
 
     result = await str_replace_file_tool(
-        Params(path=str(file_path), edit=ReplaceOp(old="notfound", new="replacement"))
+        Params(path=str(file_path), edit=ReplaceEdit(old="notfound", new="replacement"))
     )
 
     assert result.is_error
@@ -137,7 +139,7 @@ async def test_replace_with_relative_path(
     await file_path.write_text("old content")
 
     result = await str_replace_file_tool(
-        Params(path="relative/path/file.txt", edit=ReplaceOp(old="old", new="new"))
+        Params(path="relative/path/file.txt", edit=ReplaceEdit(old="old", new="new"))
     )
 
     assert not result.is_error
@@ -151,7 +153,7 @@ async def test_replace_outside_work_directory(
     outside_file.write_text("old content", encoding="utf-8")
 
     result = await str_replace_file_tool(
-        Params(path=str(outside_file), edit=ReplaceOp(old="old", new="new"))
+        Params(path=str(outside_file), edit=ReplaceEdit(old="old", new="new"))
     )
 
     assert not result.is_error
@@ -170,7 +172,7 @@ async def test_replace_outside_work_directory_with_prefix(
     sneaky_file.write_text("content", encoding="utf-8")
 
     result = await str_replace_file_tool(
-        Params(path=str(sneaky_file), edit=ReplaceOp(old="content", new="new"))
+        Params(path=str(sneaky_file), edit=ReplaceEdit(old="content", new="new"))
     )
 
     assert not result.is_error
@@ -184,7 +186,7 @@ async def test_replace_nonexistent_file(
     file_path = temp_work_dir / "nonexistent.txt"
 
     result = await str_replace_file_tool(
-        Params(path=str(file_path), edit=ReplaceOp(old="old", new="new"))
+        Params(path=str(file_path), edit=ReplaceEdit(old="old", new="new"))
     )
 
     assert result.is_error
@@ -199,7 +201,7 @@ async def test_replace_directory_instead_of_file(
     await dir_path.mkdir()
 
     result = await str_replace_file_tool(
-        Params(path=str(dir_path), edit=ReplaceOp(old="old", new="new"))
+        Params(path=str(dir_path), edit=ReplaceEdit(old="old", new="new"))
     )
 
     assert result.is_error
@@ -218,8 +220,8 @@ async def test_replace_mixed_multiple_edits(
         Params(
             path=str(file_path),
             edit=[
-                ReplaceOp(old="apple", new="fruit", replace_all=False),  # Only first occurrence
-                ReplaceOp(
+                ReplaceEdit(old="apple", new="fruit", replace_all=False),  # Only first occurrence
+                ReplaceEdit(
                     old="banana", new="tasty", replace_all=True
                 ),  # All occurrences (though only one)
             ],
@@ -240,9 +242,22 @@ async def test_replace_empty_strings(
     await file_path.write_text(original_content)
 
     result = await str_replace_file_tool(
-        Params(path=str(file_path), edit=ReplaceOp(old="world", new=""))
+        Params(path=str(file_path), edit=ReplaceEdit(old="world", new=""))
     )
 
     assert not result.is_error
     assert "successfully edited" in result.message
     assert await file_path.read_text() == "Hello !"
+
+
+async def test_replace_rejects_non_replace_payload(temp_work_dir: KaosPath):
+    file_path = temp_work_dir / "invalid.txt"
+    await file_path.write_text("hello")
+
+    with pytest.raises(ValueError):
+        Params.model_validate(
+            {
+                "path": str(file_path),
+                "edit": {"kind": "append", "content": " world"},
+            }
+        )

@@ -13,7 +13,7 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
-from kimi_cli.tools.file.replace import Edit
+from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.think import Think
@@ -186,7 +186,7 @@ Read text content from a file.
 - Content will be returned with a line number before each line like `cat -n` format.
 - Use `line_offset` and `n_lines` parameters when you only need to read a part of the file.
 - `line_offset` can be negative to count backward from the end of the file. For example, `line_offset=-200` reads the last 200 lines.
-- The tool result message includes the file's total line count.
+- The tool result message includes the file's total line count when it is known.
 - The maximum number of lines that can be read at once is 1000.
 - Any lines longer than 2000 characters will be truncated, ending with "...".
 """
@@ -266,7 +266,7 @@ Write content to a file.
     )
 
 
-def test_edit_description(edit_tool: Edit):
+def test_edit_description(edit_tool: EditTool):
     """Test the description of Edit tool."""
     assert edit_tool.base.description == snapshot(
         """\
@@ -276,7 +276,7 @@ Edit a text file using structured edit operations.
 - Only use this tool on text files.
 - You can provide a single edit operation or a list of operations in one call.
 - Supported edit kinds are `replace`, `append`, `prepend`, `delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`.
-- Replace operations may omit `kind` for backward compatibility.
+- Replace operations must use `kind: "replace"`.
 - `replace_lines` uses 1-based inclusive line numbers; negative values count backward from the end of the file.
 - `patch` accepts unified diff or hunk-only patch text and must apply cleanly to the current file.
 - You should prefer this tool over WriteFile tool and Shell `sed` command when you want focused edits instead of rewriting the whole file.

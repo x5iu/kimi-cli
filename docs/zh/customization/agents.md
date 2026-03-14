@@ -281,7 +281,7 @@ agent:
 | `edit` | object/array | 单个编辑操作或编辑操作列表 |
 | `edit.kind` | string | `replace`、`append`、`prepend`、`delete`、`insert_before`、`insert_after`、`replace_lines` 或 `patch` |
 
-`StrReplaceFile` 仍然保留，作为 `Edit` 的向后兼容别名。
+`StrReplaceFile` 仍然保留，作为向后兼容的旧版字符串替换工具。它只支持 replace 操作。
 
 ### `SearchWeb`
 
