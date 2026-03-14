@@ -1,9 +1,11 @@
+import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import override
+from typing import Annotated, Literal, override
 
 from kaos.path import KaosPath
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
@@ -13,11 +15,166 @@ from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import is_within_workspace
 
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
-class Edit(BaseModel):
+
+class ReplaceOp(BaseModel):
+    kind: Literal["replace"] = "replace"
     old: str = Field(description="The old string to replace. Can be multi-line.")
     new: str = Field(description="The new string to replace with. Can be multi-line.")
     replace_all: bool = Field(description="Whether to replace all occurrences.", default=False)
+
+    @field_validator("old")
+    @classmethod
+    def validate_old(cls, value: str) -> str:
+        if not value:
+            raise ValueError("old cannot be empty")
+        return value
+
+
+class AppendOp(BaseModel):
+    kind: Literal["append"] = "append"
+    content: str = Field(description="The content to append to the end of the file.")
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        if not value:
+            raise ValueError("content cannot be empty")
+        return value
+
+
+class PrependOp(BaseModel):
+    kind: Literal["prepend"] = "prepend"
+    content: str = Field(description="The content to insert at the beginning of the file.")
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        if not value:
+            raise ValueError("content cannot be empty")
+        return value
+
+
+class DeleteOp(BaseModel):
+    kind: Literal["delete"] = "delete"
+    old: str = Field(description="The string to delete from the file. Can be multi-line.")
+    replace_all: bool = Field(description="Whether to delete all occurrences.", default=False)
+
+    @field_validator("old")
+    @classmethod
+    def validate_old(cls, value: str) -> str:
+        if not value:
+            raise ValueError("old cannot be empty")
+        return value
+
+
+class InsertBeforeOp(BaseModel):
+    kind: Literal["insert_before"] = "insert_before"
+    anchor: str = Field(description="Insert the content before this anchor string.")
+    content: str = Field(description="The content to insert.")
+    occurrence: int = Field(
+        description=(
+            "Which anchor occurrence to target. Positive values count from the beginning; "
+            "negative values count backward from the end."
+        ),
+        default=1,
+    )
+
+    @field_validator("anchor", "content")
+    @classmethod
+    def validate_strings(cls, value: str, info) -> str:
+        if not value:
+            raise ValueError(f"{info.field_name} cannot be empty")
+        return value
+
+    @field_validator("occurrence")
+    @classmethod
+    def validate_occurrence(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("occurrence cannot be 0")
+        return value
+
+
+class InsertAfterOp(BaseModel):
+    kind: Literal["insert_after"] = "insert_after"
+    anchor: str = Field(description="Insert the content after this anchor string.")
+    content: str = Field(description="The content to insert.")
+    occurrence: int = Field(
+        description=(
+            "Which anchor occurrence to target. Positive values count from the beginning; "
+            "negative values count backward from the end."
+        ),
+        default=1,
+    )
+
+    @field_validator("anchor", "content")
+    @classmethod
+    def validate_strings(cls, value: str, info) -> str:
+        if not value:
+            raise ValueError(f"{info.field_name} cannot be empty")
+        return value
+
+    @field_validator("occurrence")
+    @classmethod
+    def validate_occurrence(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("occurrence cannot be 0")
+        return value
+
+
+class ReplaceLinesOp(BaseModel):
+    kind: Literal["replace_lines"] = "replace_lines"
+    start_line: int = Field(
+        description=(
+            "The first line in the inclusive line range to replace. Positive values count from "
+            "the beginning; negative values count backward from the end."
+        )
+    )
+    end_line: int = Field(
+        description=(
+            "The last line in the inclusive line range to replace. Positive values count from "
+            "the beginning; negative values count backward from the end."
+        )
+    )
+    content: str = Field(description="The replacement content for the selected line range.")
+
+    @field_validator("start_line", "end_line")
+    @classmethod
+    def validate_line_numbers(cls, value: int, info) -> int:
+        if value == 0:
+            raise ValueError(f"{info.field_name} cannot be 0")
+        return value
+
+
+class PatchOp(BaseModel):
+    kind: Literal["patch"] = "patch"
+    patch: str = Field(
+        description=(
+            "A unified diff patch or hunk-only patch to apply to the target file. The patch "
+            "must apply cleanly to the current file content."
+        )
+    )
+
+    @field_validator("patch")
+    @classmethod
+    def validate_patch(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("patch cannot be empty")
+        return value
+
+
+EditOperation = Annotated[
+    ReplaceOp
+    | AppendOp
+    | PrependOp
+    | DeleteOp
+    | InsertBeforeOp
+    | InsertAfterOp
+    | ReplaceLinesOp
+    | PatchOp,
+    Field(discriminator="kind"),
+]
 
 
 class Params(BaseModel):
@@ -27,17 +184,55 @@ class Params(BaseModel):
             "outside the working directory."
         )
     )
-    edit: Edit | list[Edit] = Field(
+    edit: EditOperation | list[EditOperation] = Field(
         description=(
-            "The edit(s) to apply to the file. "
-            "You can provide a single edit or a list of edits here."
+            "The edit operation(s) to apply to the file. You can provide a single operation or "
+            "a list of operations here. Supported kinds are `replace`, `append`, `prepend`, "
+            "`delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`. For "
+            "backward compatibility, replace operations may omit `kind`."
         )
     )
 
+    @field_validator("edit", mode="before")
+    @classmethod
+    def normalize_legacy_replace_ops(cls, value):
+        def normalize(item):
+            if isinstance(item, dict) and "kind" not in item and "old" in item and "new" in item:
+                return {"kind": "replace", **item}
+            return item
 
-class StrReplaceFile(CallableTool2[Params]):
-    name: str = "StrReplaceFile"
-    description: str = load_desc(Path(__file__).parent / "replace.md")
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        return normalize(value)
+
+    @field_validator("edit")
+    @classmethod
+    def validate_non_empty_edit_list(cls, value: EditOperation | list[EditOperation]):
+        if isinstance(value, list) and not value:
+            raise ValueError("edit list cannot be empty")
+        return value
+
+
+class _EditError(ValueError):
+    pass
+
+
+@dataclass(slots=True)
+class _PatchLine:
+    prefix: str
+    text: str
+
+
+@dataclass(slots=True)
+class _PatchHunk:
+    old_start: int
+    old_count: int
+    new_start: int
+    new_count: int
+    lines: list[_PatchLine]
+
+
+class _BaseEditTool(CallableTool2[Params]):
     params: type[Params] = Params
 
     def __init__(self, runtime: Runtime, approval: Approval):
@@ -64,12 +259,207 @@ class StrReplaceFile(CallableTool2[Params]):
             )
         return None
 
-    def _apply_edit(self, content: str, edit: Edit) -> str:
-        """Apply a single edit to the content."""
-        if edit.replace_all:
-            return content.replace(edit.old, edit.new)
-        else:
-            return content.replace(edit.old, edit.new, 1)
+    @staticmethod
+    def _find_occurrences(content: str, needle: str) -> list[int]:
+        positions: list[int] = []
+        start = 0
+        while True:
+            idx = content.find(needle, start)
+            if idx == -1:
+                return positions
+            positions.append(idx)
+            start = idx + len(needle)
+
+    @staticmethod
+    def _resolve_occurrence(positions: list[int], occurrence: int, *, label: str) -> int:
+        if not positions:
+            raise _EditError(f"{label} was not found in the file.")
+        index = occurrence - 1 if occurrence > 0 else len(positions) + occurrence
+        if index < 0 or index >= len(positions):
+            raise _EditError(
+                f"{label} occurrence {occurrence} is out of range; "
+                f"found {len(positions)} match(es)."
+            )
+        return positions[index]
+
+    @staticmethod
+    def _normalize_line_number(value: int, total_lines: int, *, field_name: str) -> int:
+        if total_lines == 0:
+            raise _EditError("Cannot use replace_lines on an empty file.")
+        normalized = value if value > 0 else total_lines + value + 1
+        if normalized < 1 or normalized > total_lines:
+            raise _EditError(
+                f"{field_name} {value} is out of range for a file with {total_lines} line(s)."
+            )
+        return normalized
+
+    @classmethod
+    def _parse_patch_hunks(cls, patch_text: str) -> list[_PatchHunk]:
+        raw_lines = patch_text.splitlines(keepends=True)
+        hunks: list[_PatchHunk] = []
+        i = 0
+        while i < len(raw_lines):
+            line = raw_lines[i]
+            match = _HUNK_RE.match(line)
+            if match is None:
+                i += 1
+                continue
+
+            old_start = int(match.group(1))
+            old_count = int(match.group(2) or "1")
+            new_start = int(match.group(3))
+            new_count = int(match.group(4) or "1")
+            i += 1
+
+            patch_lines: list[_PatchLine] = []
+            while i < len(raw_lines):
+                current = raw_lines[i]
+                if _HUNK_RE.match(current):
+                    break
+                if current.startswith("\\ No newline at end of file"):
+                    if not patch_lines:
+                        raise _EditError(
+                            "Patch marker 'No newline at end of file' has no preceding patch line."
+                        )
+                    previous = patch_lines[-1]
+                    if previous.text.endswith("\n"):
+                        previous.text = previous.text[:-1]
+                    i += 1
+                    continue
+                if current[:1] in {" ", "+", "-"}:
+                    patch_lines.append(_PatchLine(prefix=current[0], text=current[1:]))
+                    i += 1
+                    continue
+                raise _EditError(f"Unsupported patch line: {current.rstrip()}.")
+
+            hunks.append(
+                _PatchHunk(
+                    old_start=old_start,
+                    old_count=old_count,
+                    new_start=new_start,
+                    new_count=new_count,
+                    lines=patch_lines,
+                )
+            )
+
+        if not hunks:
+            raise _EditError("Patch does not contain any hunks.")
+        return hunks
+
+    @classmethod
+    def _apply_patch(cls, content: str, op: PatchOp) -> str:
+        original_lines = content.splitlines(keepends=True)
+        result_lines: list[str] = []
+        source_index = 0
+
+        for hunk_number, hunk in enumerate(cls._parse_patch_hunks(op.patch), start=1):
+            hunk_start = max(hunk.old_start - 1, 0)
+            if hunk_start < source_index:
+                raise _EditError(f"Patch hunk {hunk_number} is out of order or overlaps.")
+
+            result_lines.extend(original_lines[source_index:hunk_start])
+            source_index = hunk_start
+            old_consumed = 0
+            new_produced = 0
+
+            for patch_line in hunk.lines:
+                if patch_line.prefix == " ":
+                    if (
+                        source_index >= len(original_lines)
+                        or original_lines[source_index] != patch_line.text
+                    ):
+                        raise _EditError(
+                            f"Patch hunk {hunk_number} context did not match the file."
+                        )
+                    result_lines.append(original_lines[source_index])
+                    source_index += 1
+                    old_consumed += 1
+                    new_produced += 1
+                elif patch_line.prefix == "-":
+                    if (
+                        source_index >= len(original_lines)
+                        or original_lines[source_index] != patch_line.text
+                    ):
+                        raise _EditError(
+                            f"Patch hunk {hunk_number} deletion did not match the file."
+                        )
+                    source_index += 1
+                    old_consumed += 1
+                else:
+                    result_lines.append(patch_line.text)
+                    new_produced += 1
+
+            if old_consumed != hunk.old_count:
+                raise _EditError(
+                    f"Patch hunk {hunk_number} expected {hunk.old_count} old line(s) "
+                    f"but used {old_consumed}."
+                )
+            if new_produced != hunk.new_count:
+                raise _EditError(
+                    f"Patch hunk {hunk_number} expected {hunk.new_count} new line(s) "
+                    f"but produced {new_produced}."
+                )
+
+        result_lines.extend(original_lines[source_index:])
+        return "".join(result_lines)
+
+    def _apply_operation(self, content: str, op: EditOperation, *, index: int) -> str:
+        if isinstance(op, ReplaceOp):
+            if op.old not in content:
+                raise _EditError(
+                    "No replacements were made. "
+                    f"Replace operation {index} could not find the target string."
+                )
+            if op.replace_all:
+                return content.replace(op.old, op.new)
+            return content.replace(op.old, op.new, 1)
+
+        if isinstance(op, AppendOp):
+            return content + op.content
+
+        if isinstance(op, PrependOp):
+            return op.content + content
+
+        if isinstance(op, DeleteOp):
+            if op.old not in content:
+                raise _EditError(f"Delete operation {index} could not find the target string.")
+            if op.replace_all:
+                return content.replace(op.old, "")
+            return content.replace(op.old, "", 1)
+
+        if isinstance(op, InsertBeforeOp):
+            positions = self._find_occurrences(content, op.anchor)
+            insert_at = self._resolve_occurrence(positions, op.occurrence, label="Anchor")
+            return content[:insert_at] + op.content + content[insert_at:]
+
+        if isinstance(op, InsertAfterOp):
+            positions = self._find_occurrences(content, op.anchor)
+            anchor_at = self._resolve_occurrence(positions, op.occurrence, label="Anchor")
+            insert_at = anchor_at + len(op.anchor)
+            return content[:insert_at] + op.content + content[insert_at:]
+
+        if isinstance(op, ReplaceLinesOp):
+            lines = content.splitlines(keepends=True)
+            start_line = self._normalize_line_number(
+                op.start_line,
+                len(lines),
+                field_name="start_line",
+            )
+            end_line = self._normalize_line_number(
+                op.end_line,
+                len(lines),
+                field_name="end_line",
+            )
+            if start_line > end_line:
+                raise _EditError(
+                    f"Replace_lines operation {index} has start_line greater than end_line."
+                )
+            return "".join(lines[: start_line - 1]) + op.content + "".join(lines[end_line:])
+
+        if isinstance(op, PatchOp):
+            return self._apply_patch(content, op)
+
+        raise _EditError(f"Unsupported edit operation at index {index}.")
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
@@ -96,22 +486,15 @@ class StrReplaceFile(CallableTool2[Params]):
                     brief="Invalid path",
                 )
 
-            # Read the file content
             content = await p.read_text(errors="replace")
-
             original_content = content
-            edits = [params.edit] if isinstance(params.edit, Edit) else params.edit
+            operations = [params.edit] if not isinstance(params.edit, list) else params.edit
 
-            # Apply all edits
-            for edit in edits:
-                content = self._apply_edit(content, edit)
-
-            # Check if any changes were made
-            if content == original_content:
-                return ToolError(
-                    message="No replacements were made. The old string was not found in the file.",
-                    brief="No replacements made",
-                )
+            for index, operation in enumerate(operations, start=1):
+                updated_content = self._apply_operation(content, operation, index=index)
+                if updated_content == content:
+                    raise _EditError(f"Edit operation {index} made no changes.")
+                content = updated_content
 
             diff_blocks: list[DisplayBlock] = list(
                 build_diff_blocks(str(p), original_content, content)
@@ -123,7 +506,6 @@ class StrReplaceFile(CallableTool2[Params]):
                 else FileActions.EDIT_OUTSIDE
             )
 
-            # Request approval
             if not await self._approval.request(
                 self.name,
                 action,
@@ -132,29 +514,38 @@ class StrReplaceFile(CallableTool2[Params]):
             ):
                 return ToolRejectedError()
 
-            # Write the modified content back to the file
             await p.write_text(content, errors="replace")
-
-            # Count changes for success message
-            total_replacements = 0
-            for edit in edits:
-                if edit.replace_all:
-                    total_replacements += original_content.count(edit.old)
-                else:
-                    total_replacements += 1 if edit.old in original_content else 0
 
             return ToolReturnValue(
                 is_error=False,
                 output="",
-                message=(
-                    f"File successfully edited. "
-                    f"Applied {len(edits)} edit(s) with {total_replacements} total replacement(s)."
-                ),
+                message=(f"File successfully edited. Applied {len(operations)} edit operation(s)."),
                 display=diff_blocks,
             )
 
+        except _EditError as e:
+            return ToolError(
+                message=str(e),
+                brief="Invalid edit",
+            )
         except Exception as e:
             return ToolError(
                 message=f"Failed to edit. Error: {e}",
                 brief="Failed to edit file",
             )
+
+
+class Edit(_BaseEditTool):
+    name: str = "Edit"
+    description: str = load_desc(Path(__file__).parent / "replace.md")
+
+    def __init__(self, runtime: Runtime, approval: Approval):
+        super().__init__(runtime, approval)
+
+
+class StrReplaceFile(_BaseEditTool):
+    name: str = "StrReplaceFile"
+    description: str = load_desc(Path(__file__).parent / "replace.md")
+
+    def __init__(self, runtime: Runtime, approval: Approval):
+        super().__init__(runtime, approval)

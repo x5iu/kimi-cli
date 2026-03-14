@@ -14,7 +14,7 @@ kimi --agent okabe
 
 默认 Agent，适合通常情况使用。启用的工具：
 
-`Task`、`AskUserQuestion`、`SetTodoList`、`Shell`、`ReadFile`、`ReadMediaFile`、`Glob`、`Grep`、`WriteFile`、`StrReplaceFile`、`SearchWeb`、`FetchURL`
+`Task`、`AskUserQuestion`、`SetTodoList`、`Shell`、`ReadFile`、`ReadMediaFile`、`Glob`、`Grep`、`WriteFile`、`Edit`、`SearchWeb`、`FetchURL`
 
 ### `okabe`
 
@@ -270,18 +270,18 @@ agent:
 | `content` | string | 文件内容 |
 | `mode` | string | `overwrite`（默认）或 `append` |
 
-### `StrReplaceFile`
+### `Edit`
 
-- **路径**：`kimi_cli.tools.file:StrReplaceFile`
-- **描述**：使用字符串替换编辑文件。编辑操作需要用户审批。编辑工作目录外文件时，必须使用绝对路径。
+- **路径**：`kimi_cli.tools.file:Edit`
+- **描述**：使用结构化编辑操作修改文本文件。编辑操作需要用户审批。编辑工作目录外文件时，必须使用绝对路径。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `path` | string | 绝对路径 |
-| `edit` | object/array | 单个编辑或编辑列表 |
-| `edit.old` | string | 要替换的原字符串 |
-| `edit.new` | string | 替换后的字符串 |
-| `edit.replace_all` | bool | 是否替换所有匹配项，默认 false |
+| `edit` | object/array | 单个编辑操作或编辑操作列表 |
+| `edit.kind` | string | `replace`、`append`、`prepend`、`delete`、`insert_before`、`insert_after`、`replace_lines` 或 `patch` |
+
+`StrReplaceFile` 仍然保留，作为 `Edit` 的向后兼容别名。
 
 ### `SearchWeb`
 

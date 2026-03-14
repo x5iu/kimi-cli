@@ -10,6 +10,7 @@ from kosong.tooling import Tool
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.soul.agent import load_agent
 from kimi_cli.soul.agent import Runtime
+from kimi_cli.tools.file.replace import Edit
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
@@ -108,7 +109,7 @@ Markdown files named `AGENTS.md` usually contain the background, structure, codi
 > - Keep `README`s concise and focused on human contributors.
 > - Provide precise, agent-focused guidance that complements existing `README` and docs.
 
-The project level `/path/to/work/dir/AGENTS.md`:
+The AGENTS.md instructions loaded for this run (from the global share dir and `/path/to/work/dir`, if present):
 
 `````````
 Test agents content
@@ -599,16 +600,8 @@ Write content to a file.
                 },
             ),
             Tool(
-                name="StrReplaceFile",
-                description="""\
-Replace specific strings within a specified file.
-
-**Tips:**
-- Only use this tool on text files.
-- Multi-line strings are supported.
-- Can specify a single edit or a list of edits in one call.
-- You should prefer this tool over WriteFile tool and Shell `sed` command.
-""",
+                name="Edit",
+                description=Edit.description,
                 parameters={
                     "properties": {
                         "path": {
@@ -618,48 +611,372 @@ Replace specific strings within a specified file.
                         "edit": {
                             "anyOf": [
                                 {
-                                    "properties": {
-                                        "old": {
-                                            "description": "The old string to replace. Can be multi-line.",
-                                            "type": "string",
+                                    "discriminator": {
+                                        "mapping": {
+                                            "append": "#/$defs/AppendOp",
+                                            "delete": "#/$defs/DeleteOp",
+                                            "insert_after": "#/$defs/InsertAfterOp",
+                                            "insert_before": "#/$defs/InsertBeforeOp",
+                                            "patch": "#/$defs/PatchOp",
+                                            "prepend": "#/$defs/PrependOp",
+                                            "replace": "#/$defs/ReplaceOp",
+                                            "replace_lines": "#/$defs/ReplaceLinesOp",
                                         },
-                                        "new": {
-                                            "description": "The new string to replace with. Can be multi-line.",
-                                            "type": "string",
-                                        },
-                                        "replace_all": {
-                                            "default": False,
-                                            "description": "Whether to replace all occurrences.",
-                                            "type": "boolean",
-                                        },
+                                        "propertyName": "kind",
                                     },
-                                    "required": ["old", "new"],
-                                    "type": "object",
+                                    "oneOf": [
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "replace",
+                                                    "default": "replace",
+                                                    "type": "string",
+                                                },
+                                                "old": {
+                                                    "description": "The old string to replace. Can be multi-line.",
+                                                    "type": "string",
+                                                },
+                                                "new": {
+                                                    "description": "The new string to replace with. Can be multi-line.",
+                                                    "type": "string",
+                                                },
+                                                "replace_all": {
+                                                    "default": False,
+                                                    "description": "Whether to replace all occurrences.",
+                                                    "type": "boolean",
+                                                },
+                                            },
+                                            "required": ["old", "new"],
+                                            "type": "object",
+                                        },
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "append",
+                                                    "default": "append",
+                                                    "type": "string",
+                                                },
+                                                "content": {
+                                                    "description": "The content to append to the end of the file.",
+                                                    "type": "string",
+                                                },
+                                            },
+                                            "required": ["content"],
+                                            "type": "object",
+                                        },
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "prepend",
+                                                    "default": "prepend",
+                                                    "type": "string",
+                                                },
+                                                "content": {
+                                                    "description": "The content to insert at the beginning of the file.",
+                                                    "type": "string",
+                                                },
+                                            },
+                                            "required": ["content"],
+                                            "type": "object",
+                                        },
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "delete",
+                                                    "default": "delete",
+                                                    "type": "string",
+                                                },
+                                                "old": {
+                                                    "description": "The string to delete from the file. Can be multi-line.",
+                                                    "type": "string",
+                                                },
+                                                "replace_all": {
+                                                    "default": False,
+                                                    "description": "Whether to delete all occurrences.",
+                                                    "type": "boolean",
+                                                },
+                                            },
+                                            "required": ["old"],
+                                            "type": "object",
+                                        },
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "insert_before",
+                                                    "default": "insert_before",
+                                                    "type": "string",
+                                                },
+                                                "anchor": {
+                                                    "description": "Insert the content before this anchor string.",
+                                                    "type": "string",
+                                                },
+                                                "content": {
+                                                    "description": "The content to insert.",
+                                                    "type": "string",
+                                                },
+                                                "occurrence": {
+                                                    "default": 1,
+                                                    "description": "Which anchor occurrence to target. Positive values count from the beginning; negative values count backward from the end.",
+                                                    "type": "integer",
+                                                },
+                                            },
+                                            "required": ["anchor", "content"],
+                                            "type": "object",
+                                        },
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "insert_after",
+                                                    "default": "insert_after",
+                                                    "type": "string",
+                                                },
+                                                "anchor": {
+                                                    "description": "Insert the content after this anchor string.",
+                                                    "type": "string",
+                                                },
+                                                "content": {
+                                                    "description": "The content to insert.",
+                                                    "type": "string",
+                                                },
+                                                "occurrence": {
+                                                    "default": 1,
+                                                    "description": "Which anchor occurrence to target. Positive values count from the beginning; negative values count backward from the end.",
+                                                    "type": "integer",
+                                                },
+                                            },
+                                            "required": ["anchor", "content"],
+                                            "type": "object",
+                                        },
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "replace_lines",
+                                                    "default": "replace_lines",
+                                                    "type": "string",
+                                                },
+                                                "start_line": {
+                                                    "description": "The first line in the inclusive line range to replace. Positive values count from the beginning; negative values count backward from the end.",
+                                                    "type": "integer",
+                                                },
+                                                "end_line": {
+                                                    "description": "The last line in the inclusive line range to replace. Positive values count from the beginning; negative values count backward from the end.",
+                                                    "type": "integer",
+                                                },
+                                                "content": {
+                                                    "description": "The replacement content for the selected line range.",
+                                                    "type": "string",
+                                                },
+                                            },
+                                            "required": [
+                                                "start_line",
+                                                "end_line",
+                                                "content",
+                                            ],
+                                            "type": "object",
+                                        },
+                                        {
+                                            "properties": {
+                                                "kind": {
+                                                    "const": "patch",
+                                                    "default": "patch",
+                                                    "type": "string",
+                                                },
+                                                "patch": {
+                                                    "description": "A unified diff patch or hunk-only patch to apply to the target file. The patch must apply cleanly to the current file content.",
+                                                    "type": "string",
+                                                },
+                                            },
+                                            "required": ["patch"],
+                                            "type": "object",
+                                        },
+                                    ],
                                 },
                                 {
                                     "items": {
-                                        "properties": {
-                                            "old": {
-                                                "description": "The old string to replace. Can be multi-line.",
-                                                "type": "string",
+                                        "discriminator": {
+                                            "mapping": {
+                                                "append": "#/$defs/AppendOp",
+                                                "delete": "#/$defs/DeleteOp",
+                                                "insert_after": "#/$defs/InsertAfterOp",
+                                                "insert_before": "#/$defs/InsertBeforeOp",
+                                                "patch": "#/$defs/PatchOp",
+                                                "prepend": "#/$defs/PrependOp",
+                                                "replace": "#/$defs/ReplaceOp",
+                                                "replace_lines": "#/$defs/ReplaceLinesOp",
                                             },
-                                            "new": {
-                                                "description": "The new string to replace with. Can be multi-line.",
-                                                "type": "string",
-                                            },
-                                            "replace_all": {
-                                                "default": False,
-                                                "description": "Whether to replace all occurrences.",
-                                                "type": "boolean",
-                                            },
+                                            "propertyName": "kind",
                                         },
-                                        "required": ["old", "new"],
-                                        "type": "object",
+                                        "oneOf": [
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "replace",
+                                                        "default": "replace",
+                                                        "type": "string",
+                                                    },
+                                                    "old": {
+                                                        "description": "The old string to replace. Can be multi-line.",
+                                                        "type": "string",
+                                                    },
+                                                    "new": {
+                                                        "description": "The new string to replace with. Can be multi-line.",
+                                                        "type": "string",
+                                                    },
+                                                    "replace_all": {
+                                                        "default": False,
+                                                        "description": "Whether to replace all occurrences.",
+                                                        "type": "boolean",
+                                                    },
+                                                },
+                                                "required": ["old", "new"],
+                                                "type": "object",
+                                            },
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "append",
+                                                        "default": "append",
+                                                        "type": "string",
+                                                    },
+                                                    "content": {
+                                                        "description": "The content to append to the end of the file.",
+                                                        "type": "string",
+                                                    },
+                                                },
+                                                "required": ["content"],
+                                                "type": "object",
+                                            },
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "prepend",
+                                                        "default": "prepend",
+                                                        "type": "string",
+                                                    },
+                                                    "content": {
+                                                        "description": "The content to insert at the beginning of the file.",
+                                                        "type": "string",
+                                                    },
+                                                },
+                                                "required": ["content"],
+                                                "type": "object",
+                                            },
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "delete",
+                                                        "default": "delete",
+                                                        "type": "string",
+                                                    },
+                                                    "old": {
+                                                        "description": "The string to delete from the file. Can be multi-line.",
+                                                        "type": "string",
+                                                    },
+                                                    "replace_all": {
+                                                        "default": False,
+                                                        "description": "Whether to delete all occurrences.",
+                                                        "type": "boolean",
+                                                    },
+                                                },
+                                                "required": ["old"],
+                                                "type": "object",
+                                            },
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "insert_before",
+                                                        "default": "insert_before",
+                                                        "type": "string",
+                                                    },
+                                                    "anchor": {
+                                                        "description": "Insert the content before this anchor string.",
+                                                        "type": "string",
+                                                    },
+                                                    "content": {
+                                                        "description": "The content to insert.",
+                                                        "type": "string",
+                                                    },
+                                                    "occurrence": {
+                                                        "default": 1,
+                                                        "description": "Which anchor occurrence to target. Positive values count from the beginning; negative values count backward from the end.",
+                                                        "type": "integer",
+                                                    },
+                                                },
+                                                "required": ["anchor", "content"],
+                                                "type": "object",
+                                            },
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "insert_after",
+                                                        "default": "insert_after",
+                                                        "type": "string",
+                                                    },
+                                                    "anchor": {
+                                                        "description": "Insert the content after this anchor string.",
+                                                        "type": "string",
+                                                    },
+                                                    "content": {
+                                                        "description": "The content to insert.",
+                                                        "type": "string",
+                                                    },
+                                                    "occurrence": {
+                                                        "default": 1,
+                                                        "description": "Which anchor occurrence to target. Positive values count from the beginning; negative values count backward from the end.",
+                                                        "type": "integer",
+                                                    },
+                                                },
+                                                "required": ["anchor", "content"],
+                                                "type": "object",
+                                            },
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "replace_lines",
+                                                        "default": "replace_lines",
+                                                        "type": "string",
+                                                    },
+                                                    "start_line": {
+                                                        "description": "The first line in the inclusive line range to replace. Positive values count from the beginning; negative values count backward from the end.",
+                                                        "type": "integer",
+                                                    },
+                                                    "end_line": {
+                                                        "description": "The last line in the inclusive line range to replace. Positive values count from the beginning; negative values count backward from the end.",
+                                                        "type": "integer",
+                                                    },
+                                                    "content": {
+                                                        "description": "The replacement content for the selected line range.",
+                                                        "type": "string",
+                                                    },
+                                                },
+                                                "required": [
+                                                    "start_line",
+                                                    "end_line",
+                                                    "content",
+                                                ],
+                                                "type": "object",
+                                            },
+                                            {
+                                                "properties": {
+                                                    "kind": {
+                                                        "const": "patch",
+                                                        "default": "patch",
+                                                        "type": "string",
+                                                    },
+                                                    "patch": {
+                                                        "description": "A unified diff patch or hunk-only patch to apply to the target file. The patch must apply cleanly to the current file content.",
+                                                        "type": "string",
+                                                    },
+                                                },
+                                                "required": ["patch"],
+                                                "type": "object",
+                                            },
+                                        ],
                                     },
                                     "type": "array",
                                 },
                             ],
-                            "description": "The edit(s) to apply to the file. You can provide a single edit or a list of edits here.",
+                            "description": "The edit operation(s) to apply to the file. You can provide a single operation or a list of operations here. Supported kinds are `replace`, `append`, `prepend`, `delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`. For backward compatibility, replace operations may omit `kind`.",
                         },
                     },
                     "required": ["path", "edit"],
@@ -880,7 +1197,7 @@ Markdown files named `AGENTS.md` usually contain the background, structure, codi
 > - Keep `README`s concise and focused on human contributors.
 > - Provide precise, agent-focused guidance that complements existing `README` and docs.
 
-The project level `/path/to/work/dir/AGENTS.md`:
+The AGENTS.md instructions loaded for this run (from the global share dir and `/path/to/work/dir`, if present):
 
 `````````
 Test agents content
@@ -932,7 +1249,7 @@ At any time, you should be HELPFUL and POLITE, CONCISE and ACCURATE, PATIENT and
                     "Glob",
                     "Grep",
                     "WriteFile",
-                    "StrReplaceFile",
+                    "Edit",
                     "SearchWeb",
                     "FetchURL",
                 ],

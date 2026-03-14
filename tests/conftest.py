@@ -10,13 +10,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from kaos import get_current_kaos, reset_current_kaos, set_current_kaos
 from kaos.local import LocalKaos
 from kaos.path import KaosPath
 from kosong.chat_provider.mock import MockChatProvider
 from kosong.tooling.empty import EmptyToolset
 from pydantic import SecretStr
 
+from kaos import get_current_kaos, reset_current_kaos, set_current_kaos
 from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
 from kimi_cli.llm import ALL_MODEL_CAPABILITIES, LLM
@@ -32,7 +32,7 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
-from kimi_cli.tools.file.replace import StrReplaceFile
+from kimi_cli.tools.file.replace import Edit, StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.multiagent.create import CreateSubagent
 from kimi_cli.tools.multiagent.task import Task
@@ -279,6 +279,13 @@ def write_file_tool(runtime: Runtime, approval: Approval) -> Generator[WriteFile
     """Create a WriteFile tool instance."""
     with tool_call_context("WriteFile"):
         yield WriteFile(runtime, approval)
+
+
+@pytest.fixture
+def edit_tool(runtime: Runtime, approval: Approval) -> Generator[Edit]:
+    """Create an Edit tool instance."""
+    with tool_call_context("Edit"):
+        yield Edit(runtime, approval)
 
 
 @pytest.fixture

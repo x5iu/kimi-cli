@@ -11,7 +11,7 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
-from kimi_cli.tools.file.replace import StrReplaceFile
+from kimi_cli.tools.file.replace import Edit
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.think import Think
@@ -319,66 +319,44 @@ def test_write_file_params_schema(write_file_tool: WriteFile):
     )
 
 
-def test_str_replace_file_params_schema(str_replace_file_tool: StrReplaceFile):
-    """Test the schema of StrReplaceFile tool parameters."""
-    assert str_replace_file_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "path": {
-                    "description": "The path to the file to edit. Absolute paths are required when editing files outside the working directory.",
-                    "type": "string",
-                },
-                "edit": {
-                    "anyOf": [
-                        {
-                            "properties": {
-                                "old": {
-                                    "description": "The old string to replace. Can be multi-line.",
-                                    "type": "string",
-                                },
-                                "new": {
-                                    "description": "The new string to replace with. Can be multi-line.",
-                                    "type": "string",
-                                },
-                                "replace_all": {
-                                    "default": False,
-                                    "description": "Whether to replace all occurrences.",
-                                    "type": "boolean",
-                                },
-                            },
-                            "required": ["old", "new"],
-                            "type": "object",
-                        },
-                        {
-                            "items": {
-                                "properties": {
-                                    "old": {
-                                        "description": "The old string to replace. Can be multi-line.",
-                                        "type": "string",
-                                    },
-                                    "new": {
-                                        "description": "The new string to replace with. Can be multi-line.",
-                                        "type": "string",
-                                    },
-                                    "replace_all": {
-                                        "default": False,
-                                        "description": "Whether to replace all occurrences.",
-                                        "type": "boolean",
-                                    },
-                                },
-                                "required": ["old", "new"],
-                                "type": "object",
-                            },
-                            "type": "array",
-                        },
-                    ],
-                    "description": "The edit(s) to apply to the file. You can provide a single edit or a list of edits here.",
-                },
-            },
-            "required": ["path", "edit"],
-            "type": "object",
-        }
+def test_edit_params_schema(edit_tool: Edit):
+    """Test the schema of Edit tool parameters."""
+    parameters = edit_tool.base.parameters
+
+    assert parameters["type"] == "object"
+    assert parameters["required"] == ["path", "edit"]
+    assert parameters["properties"]["path"] == {
+        "description": "The path to the file to edit. Absolute paths are required when editing files outside the working directory.",
+        "type": "string",
+    }
+
+    edit_property = parameters["properties"]["edit"]
+    assert (
+        "Supported kinds are `replace`, `append`, `prepend`, `delete`"
+        in edit_property["description"]
     )
+    assert len(edit_property["anyOf"]) == 2
+
+    single_edit_schema, multi_edit_schema = edit_property["anyOf"]
+    expected_mapping = {
+        "append": "#/$defs/AppendOp",
+        "delete": "#/$defs/DeleteOp",
+        "insert_after": "#/$defs/InsertAfterOp",
+        "insert_before": "#/$defs/InsertBeforeOp",
+        "patch": "#/$defs/PatchOp",
+        "prepend": "#/$defs/PrependOp",
+        "replace": "#/$defs/ReplaceOp",
+        "replace_lines": "#/$defs/ReplaceLinesOp",
+    }
+    assert single_edit_schema["discriminator"] == {
+        "mapping": expected_mapping,
+        "propertyName": "kind",
+    }
+    assert multi_edit_schema["type"] == "array"
+    assert multi_edit_schema["items"]["discriminator"] == {
+        "mapping": expected_mapping,
+        "propertyName": "kind",
+    }
 
 
 def test_search_web_params_schema(search_web_tool: SearchWeb):

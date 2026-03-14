@@ -182,7 +182,7 @@ See [Agent Skills](../customization/skills.md#flow-skills) for details.
 
 ### `/add-dir`
 
-Add an additional directory to the workspace scope. Once added, the directory is accessible to all file tools (`ReadFile`, `WriteFile`, `Glob`, `Grep`, `StrReplaceFile`, etc.) and its directory listing is shown in the system prompt. Added directories are persisted with the session state and automatically restored when resuming.
+Add an additional directory to the workspace scope. Once added, the directory is accessible to all file tools (`ReadFile`, `WriteFile`, `Glob`, `Grep`, `Edit`, etc.) and its directory listing is shown in the system prompt. Added directories are persisted with the session state and automatically restored when resuming.
 
 Usage:
 

@@ -13,7 +13,7 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
-from kimi_cli.tools.file.replace import StrReplaceFile
+from kimi_cli.tools.file.replace import Edit
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.think import Think
@@ -266,17 +266,20 @@ Write content to a file.
     )
 
 
-def test_str_replace_file_description(str_replace_file_tool: StrReplaceFile):
-    """Test the description of StrReplaceFile tool."""
-    assert str_replace_file_tool.base.description == snapshot(
+def test_edit_description(edit_tool: Edit):
+    """Test the description of Edit tool."""
+    assert edit_tool.base.description == snapshot(
         """\
-Replace specific strings within a specified file.
+Edit a text file using structured edit operations.
 
 **Tips:**
 - Only use this tool on text files.
-- Multi-line strings are supported.
-- Can specify a single edit or a list of edits in one call.
-- You should prefer this tool over WriteFile tool and Shell `sed` command.
+- You can provide a single edit operation or a list of operations in one call.
+- Supported edit kinds are `replace`, `append`, `prepend`, `delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`.
+- Replace operations may omit `kind` for backward compatibility.
+- `replace_lines` uses 1-based inclusive line numbers; negative values count backward from the end of the file.
+- `patch` accepts unified diff or hunk-only patch text and must apply cleanly to the current file.
+- You should prefer this tool over WriteFile tool and Shell `sed` command when you want focused edits instead of rewriting the whole file.
 """
     )
 

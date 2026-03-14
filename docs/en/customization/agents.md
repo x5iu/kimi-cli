@@ -14,7 +14,7 @@ kimi --agent okabe
 
 The default agent, suitable for general use. Enabled tools:
 
-`Task`, `AskUserQuestion`, `SetTodoList`, `Shell`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `StrReplaceFile`, `SearchWeb`, `FetchURL`
+`Task`, `AskUserQuestion`, `SetTodoList`, `Shell`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `Edit`, `SearchWeb`, `FetchURL`
 
 ### `okabe`
 
@@ -270,18 +270,18 @@ The following are all built-in tools in Kimi Code CLI.
 | `content` | string | File content |
 | `mode` | string | `overwrite` (default) or `append` |
 
-### `StrReplaceFile`
+### `Edit`
 
-- **Path**: `kimi_cli.tools.file:StrReplaceFile`
-- **Description**: Edit files using string replacement. Requires user approval. Absolute paths are required when editing files outside the working directory.
+- **Path**: `kimi_cli.tools.file:Edit`
+- **Description**: Edit text files with structured edit operations. Requires user approval. Absolute paths are required when editing files outside the working directory.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `path` | string | Absolute path |
-| `edit` | object/array | Single edit or list of edits |
-| `edit.old` | string | Original string to replace |
-| `edit.new` | string | Replacement string |
-| `edit.replace_all` | bool | Replace all matches, default false |
+| `edit` | object/array | Single edit operation or list of operations |
+| `edit.kind` | string | `replace`, `append`, `prepend`, `delete`, `insert_before`, `insert_after`, `replace_lines`, or `patch` |
+
+`StrReplaceFile` remains available as a backward-compatible alias of `Edit`.
 
 ### `SearchWeb`
 
