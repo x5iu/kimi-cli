@@ -117,8 +117,7 @@ def test_shell_approval_approve(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "request",
@@ -165,8 +164,7 @@ def test_shell_approval_approve(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -239,8 +237,7 @@ def test_shell_approval_reject(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "request",
@@ -363,8 +360,7 @@ def test_approve_for_session(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "request",
@@ -411,8 +407,7 @@ def test_approve_for_session(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
                 {
@@ -444,8 +439,7 @@ def test_approve_for_session(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "event",
@@ -475,8 +469,7 @@ def test_approve_for_session(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -546,8 +539,7 @@ def test_yolo_skips_approval(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "event",
@@ -577,8 +569,7 @@ def test_yolo_skips_approval(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -704,13 +695,13 @@ def test_display_block_diff_write_file(tmp_path) -> None:
 def test_display_block_diff_str_replace(tmp_path) -> None:
     replace_args = {
         "path": "file.txt",
-        "edit": {"old": "hello", "new": "hi", "replace_all": False},
+        "edit": {"kind": "replace", "old": "hello", "new": "hi", "replace_all": False},
     }
     scripts = [
         "\n".join(
             [
                 "text: replace",
-                _tool_call_line("tc-1", "StrReplaceFile", replace_args),
+                _tool_call_line("tc-1", "Edit", replace_args),
             ]
         ),
         "text: done",
@@ -749,7 +740,7 @@ def test_display_block_diff_str_replace(tmp_path) -> None:
             {
                 "id": "<uuid>",
                 "tool_call_id": "tc-1",
-                "sender": "StrReplaceFile",
+                "sender": "Edit",
                 "action": "edit file",
                 "description": "Edit file `<work_dir>/file.txt`",
                 "display": [
@@ -824,8 +815,7 @@ def test_display_block_todo(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "event",
@@ -857,8 +847,7 @@ def test_display_block_todo(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -938,8 +927,7 @@ def test_tool_call_part_streaming(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "event",
@@ -971,8 +959,7 @@ def test_tool_call_part_streaming(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -1042,8 +1029,7 @@ def test_default_agent_missing_tool(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "event",
@@ -1073,8 +1059,7 @@ def test_default_agent_missing_tool(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -1158,8 +1143,7 @@ def test_custom_agent_exclude_tool(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {
                     "method": "event",
@@ -1189,8 +1173,7 @@ def test_custom_agent_exclude_tool(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None,
-                    },
+                        "message_id": None, "plan_mode": False},
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
