@@ -89,14 +89,17 @@ DEFAULT_MAX_FLOW_MOVES = 1000
 MAX_SKILL_RECOMMENDATIONS = 3
 
 TURN_END_QUESTION_DETECTOR_PROMPT = (
-    "You are a background assistant message analyzer.\n"
-    "Given the assistant's last response, determine whether it ends with a question that\n"
-    "asks the user to choose between specific options or make a decision.\n"
-    "Examples of such questions:\n"
+    "You are a background analyzer that inspects an AI assistant's message.\n"
+    "The user will provide the assistant's latest message. Your job is to determine\n"
+    "whether that message ends with a question asking the user to choose between\n"
+    "specific options or make a decision.\n"
+    "\n"
+    "Examples of choice questions:\n"
     '- "Do you want me to proceed with option A or option B?"\n'
     '- "Should I use approach 1, approach 2, or approach 3?"\n'
     '- "Would you like to continue, start over, or stop?"\n'
     '- "Which framework do you prefer: React, Vue, or Angular?"\n'
+    '- "请选择 A 还是 B？"\n'
     "\n"
     "Do NOT consider these as choice questions:\n"
     "- General clarifying questions without specific options\n"
@@ -109,7 +112,7 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     '{"has_question": true/false, "questions": '
     '[{"question": "...", "options": [{"label": "...", "description": "..."}]}]}\n'
     "- If has_question is false, questions should be an empty array.\n"
-    "- Each question should have 2-4 options extracted from the assistant's message.\n"
+    "- Each question should have 2-4 options extracted from the message.\n"
     "- Option labels should be concise (1-5 words).\n"
     "- Option descriptions should briefly explain the trade-offs if mentioned.\n"
     "- Do not include markdown or any extra text.\n"
@@ -849,8 +852,15 @@ class KimiSoul:
 
         # Strip thinking/reasoning content – only send text parts to the
         # side-channel so the detector sees the actual reply, not chain-of-thought.
+        # Wrap in a user message so the detector model clearly sees it as content
+        # to analyze, not as its own prior output.
         text_only = assistant_message.extract_text(" ")
-        history: list[Message] = [Message(role="assistant", content=text_only)]
+        history: list[Message] = [
+            Message(
+                role="user",
+                content=f"Analyze the following assistant message:\n\n{text_only}",
+            )
+        ]
 
         for attempt in range(1, self._TURN_END_DETECT_MAX_ATTEMPTS + 1):
             async def _run_once():

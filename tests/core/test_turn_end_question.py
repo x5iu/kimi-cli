@@ -138,8 +138,13 @@ async def test_detect_turn_end_question_calls_generate(
     assert result.has_question is True
     assert len(result.questions) == 1
     assert result.questions[0].question == "A or B?"
-    # The side-channel should receive a text-only message (no thinking parts)
-    assert captured["history"] == [Message(role="assistant", content="Should I do A or B?")]
+    # The side-channel should wrap text in a user message for the detector
+    assert captured["history"] == [
+        Message(
+            role="user",
+            content="Analyze the following assistant message:\n\nShould I do A or B?",
+        )
+    ]
 
 
 # -- Integration: _maybe_ask_turn_end_question --
@@ -185,10 +190,12 @@ async def test_detect_turn_end_question_strips_thinking_parts(
     )
     await soul._detect_turn_end_question(assistant_msg)
 
-    # The side-channel should only see the text content, not the thinking
+    # The side-channel should only see the text content, not the thinking,
+    # wrapped in a user message for the detector.
     history = captured["history"]
     assert len(history) == 1
-    assert history[0].extract_text() == "Should I do A or B?"
+    assert history[0].role == "user"
+    assert "Should I do A or B?" in history[0].extract_text()
     # Ensure no ThinkPart in the sent message
     for part in history[0].content:
         assert not isinstance(part, KosongThinkPart)
