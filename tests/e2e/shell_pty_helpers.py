@@ -25,6 +25,7 @@ from tests_e2e.wire_helpers import write_scripted_config as write_scripted_confi
 
 DEFAULT_TIMEOUT = 10.0
 PROMPT_SYMBOL = "✨"
+PROMPT_BADGE = "PROMPT"
 OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 OTHER_ESCAPE_RE = re.compile(r"\x1b[@-_]")
@@ -366,6 +367,12 @@ def read_until_prompt_ready(
     timeout: float = DEFAULT_TIMEOUT,
     quiet_period: float = 0.2,
 ) -> str:
-    shell.read_until_contains(PROMPT_SYMBOL, after=after, timeout=timeout)
+    # The allstar branch renders the idle prompt inside a TUI frame box
+    # labelled "PROMPT" instead of showing the bare ✨ symbol in the PTY
+    # output stream.  Accept either marker so the helper works on both.
+    normalized = shell.normalized_text()
+    remaining = normalized[after:]
+    if PROMPT_BADGE not in remaining and PROMPT_SYMBOL not in remaining:
+        shell.read_until_contains(PROMPT_BADGE, after=after, timeout=timeout)
     shell.wait_for_quiet(timeout=timeout, quiet_period=quiet_period, after=after)
     return shell.normalized_text()

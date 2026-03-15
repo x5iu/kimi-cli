@@ -85,6 +85,9 @@ def test_pyinstaller_datas():
             "kimi_cli/tools/dmail",
         ),
         (
+            "src/kimi_cli/tools/file/edit.md",
+            "kimi_cli/tools/file",
+        ),        (
             "src/kimi_cli/tools/file/glob.md",
             "kimi_cli/tools/file",
         ),
