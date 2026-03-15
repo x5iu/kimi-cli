@@ -60,6 +60,7 @@ from kimi_cli.wire.types import (
     CompactionBegin,
     CompactionEnd,
     ContentPart,
+    FollowUpInput,
     MCPLoadingBegin,
     MCPLoadingEnd,
     QuestionItem,
@@ -572,8 +573,9 @@ class KimiSoul:
             if outcome is not None and self._loop_control.turn_end_question_detection:
                 answer = await self._maybe_ask_turn_end_question(outcome)
                 if answer:
-                    # The user chose an option — run a follow-up turn with their
-                    # answer as the prompt.
+                    # The user chose an option — echo their selection in the TUI
+                    # and run a follow-up turn with their answer as the prompt.
+                    wire_send(FollowUpInput(text=answer))
                     await self._turn(
                         Message(role="user", content=answer),
                     )
@@ -845,7 +847,10 @@ class KimiSoul:
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider.with_thinking("off")
 
-        history: list[Message] = [assistant_message]
+        # Strip thinking/reasoning content – only send text parts to the
+        # side-channel so the detector sees the actual reply, not chain-of-thought.
+        text_only = assistant_message.extract_text(" ")
+        history: list[Message] = [Message(role="assistant", content=text_only)]
 
         for attempt in range(1, self._TURN_END_DETECT_MAX_ATTEMPTS + 1):
             async def _run_once():

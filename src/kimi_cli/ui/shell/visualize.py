@@ -39,6 +39,7 @@ from kimi_cli.wire.types import (
     CompactionEnd,
     ContentPart,
     DiffDisplayBlock,
+    FollowUpInput,
     MCPLoadingBegin,
     MCPLoadingEnd,
     QuestionRequest,
@@ -1093,6 +1094,18 @@ class LiveView:
             self._flushed_blocks.append(reminder)
         self.refresh_soon()
 
+    def echo_user_choice(self, text: str) -> None:
+        stripped = text.strip()
+        if not stripped:
+            return
+        self.flush_content()
+        block = render_user_prompt_block(stripped)
+        if self._flush_to_console:
+            console.print(block)
+        else:
+            self._flushed_blocks.append(block)
+        self.refresh_soon()
+
     def finish_turn(self) -> None:
         if self._turn_spinner is None:
             return
@@ -1520,6 +1533,8 @@ class LiveView:
                 self.refresh_soon()
             case TurnEnd():
                 self.finish_turn()
+            case FollowUpInput(text=text):
+                self.echo_user_choice(text)
             case CompactionBegin():
                 self._compacting_spinner = Spinner("balloon", "Compacting...")
                 self.refresh_soon()

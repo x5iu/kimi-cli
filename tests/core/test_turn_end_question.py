@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 from kosong.message import Message
+from kosong.message import TextPart as KosongTextPart
+from kosong.message import ThinkPart as KosongThinkPart
 from kosong.tooling.empty import EmptyToolset
 
 import kimi_cli.soul as soul_module
@@ -21,7 +23,7 @@ from kimi_cli.soul.kimisoul import (
     TurnOutcome,
 )
 from kimi_cli.wire import Wire
-from kimi_cli.wire.types import QuestionRequest
+from kimi_cli.wire.types import FollowUpInput, QuestionRequest
 
 # -- Payload parsing tests --
 
@@ -136,10 +138,61 @@ async def test_detect_turn_end_question_calls_generate(
     assert result.has_question is True
     assert len(result.questions) == 1
     assert result.questions[0].question == "A or B?"
-    assert captured["history"] == [assistant_msg]
+    # The side-channel should receive a text-only message (no thinking parts)
+    assert captured["history"] == [Message(role="assistant", content="Should I do A or B?")]
 
 
 # -- Integration: _maybe_ask_turn_end_question --
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_strips_thinking_parts(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Thinking/reasoning parts should be stripped before sending to the
+    side-channel LLM; only text content should be included."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    captured: dict[str, object] = {}
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        captured["history"] = history
+        return SimpleNamespace(
+            message=Message(
+                role="assistant",
+                content='{"has_question": false, "questions": []}',
+            )
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    # Build a message with both ThinkPart and TextPart
+    assistant_msg = Message(
+        role="assistant",
+        content=[
+            KosongThinkPart(think="Let me reason about this..."),
+            KosongTextPart(text="Should I do A or B?"),
+        ],
+    )
+    await soul._detect_turn_end_question(assistant_msg)
+
+    # The side-channel should only see the text content, not the thinking
+    history = captured["history"]
+    assert len(history) == 1
+    assert history[0].extract_text() == "Should I do A or B?"
+    # Ensure no ThinkPart in the sent message
+    for part in history[0].content:
+        assert not isinstance(part, KosongThinkPart)
+
 
 
 @pytest.mark.asyncio
@@ -370,6 +423,55 @@ async def test_run_skips_detection_when_disabled(
     await soul.run("hello")
 
     assert not detection_called
+
+
+
+@pytest.mark.asyncio
+async def test_run_sends_follow_up_input_on_user_choice(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the user selects an option from a turn-end question, a FollowUpInput
+    message is sent via wire so the TUI can display the user's choice."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    turn_call_count = 0
+
+    async def fake_turn(self, msg, *, enable_skill_reminder=False):
+        nonlocal turn_call_count
+        turn_call_count += 1
+        return TurnOutcome(
+            stop_reason="no_tool_calls",
+            final_message=Message(role="assistant", content="Pick A or B?"),
+            step_count=1,
+        )
+
+    async def fake_maybe_ask(self, outcome):
+        return "A"
+
+    sent_messages: list[object] = []
+
+    monkeypatch.setattr(KimiSoul, "_turn", fake_turn)
+    monkeypatch.setattr(KimiSoul, "_maybe_ask_turn_end_question", fake_maybe_ask)
+    monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: sent_messages.append(msg))
+
+    await soul.run("hello")
+
+    # A FollowUpInput should have been sent with the user's answer
+    follow_ups = [m for m in sent_messages if isinstance(m, FollowUpInput)]
+    assert len(follow_ups) == 1
+    assert follow_ups[0].text == "A"
+    # Two turns should have been run: the original + the follow-up
+    assert turn_call_count == 2
 
 
 # -- Retry on unparseable output test --

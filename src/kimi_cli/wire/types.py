@@ -51,6 +51,12 @@ class TurnEnd(BaseModel):
 
     pass
 
+class FollowUpInput(BaseModel):
+    """Echo a follow-up user input (e.g. from turn-end question selection)
+    into the TUI so the user can see what was sent on their behalf."""
+
+    text: str
+
 
 class StepBegin(BaseModel):
     """
@@ -375,6 +381,7 @@ class ToolCallRequest(BaseModel):
 type Event = (
     TurnBegin
     | TurnEnd
+    | FollowUpInput
     | StepBegin
     | StepInterrupted
     | CompactionBegin
@@ -460,6 +467,7 @@ class WireMessageEnvelope(BaseModel):
 __all__ = [
     # `WireMessage` variants
     "TurnBegin",
+    "FollowUpInput",
     "StepBegin",
     "StepInterrupted",
     "CompactionBegin",

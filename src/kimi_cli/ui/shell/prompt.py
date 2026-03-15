@@ -30,10 +30,10 @@ from prompt_toolkit.completion import (
     merge_completers,
 )
 from prompt_toolkit.cursor_shapes import CursorShape, SimpleCursorShapeConfig
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition, has_completions, has_focus, is_done
-from prompt_toolkit.data_structures import Point
-from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText, to_formatted_text
+from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent, merge_key_bindings
 from prompt_toolkit.keys import Keys
@@ -49,8 +49,8 @@ from prompt_toolkit.layout.controls import FormattedTextControl, UIContent, UICo
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.styles import Style
+from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame, TextArea
 from pydantic import BaseModel, ValidationError
 from rich.console import Console as RichConsole
@@ -62,8 +62,14 @@ from rich.text import Text as RichText
 from kimi_cli.llm import ModelCapability
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import StatusSnapshot, format_context_status
+from kimi_cli.ui.shell import placeholders as prompt_placeholders
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.keyboard import KeyEvent
+from kimi_cli.ui.shell.placeholders import (
+    PromptPlaceholderManager,
+    normalize_pasted_text,
+    sanitize_surrogates,
+)
 from kimi_cli.ui.shell.visualize import (
     MAX_ACTIVE_TURN_CONTENT_CHARS,
     MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
@@ -77,13 +83,6 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.slashcmd import SlashCommand
 from kimi_cli.utils.string import shorten_middle
 from kimi_cli.wire.types import ContentPart, StepInterrupted
-
-from kimi_cli.ui.shell import placeholders as prompt_placeholders
-from kimi_cli.ui.shell.placeholders import (
-    PromptPlaceholderManager,
-    normalize_pasted_text,
-    sanitize_surrogates,
-)
 
 AttachmentCache = prompt_placeholders.AttachmentCache
 CachedAttachment = prompt_placeholders.CachedAttachment
