@@ -1,0 +1,459 @@
+"""Tests for turn-end question detection."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from kosong.message import Message
+from kosong.tooling.empty import EmptyToolset
+
+import kimi_cli.soul as soul_module
+import kimi_cli.soul.kimisoul as kimisoul_module
+from kimi_cli.soul.agent import Agent, Runtime
+from kimi_cli.soul.context import Context
+from kimi_cli.soul.kimisoul import (
+    KimiSoul,
+    TurnEndQuestionDetection,
+    TurnEndQuestionItem,
+    TurnEndQuestionOption,
+    TurnOutcome,
+)
+from kimi_cli.wire import Wire
+from kimi_cli.wire.types import QuestionRequest
+
+# -- Payload parsing tests --
+
+
+class TestParseTurnEndQuestionPayload:
+    def _make_soul(self, runtime: Runtime, tmp_path: Path) -> KimiSoul:
+        return KimiSoul(
+            Agent(
+                name="Test",
+                system_prompt="Test",
+                toolset=EmptyToolset(),
+                runtime=runtime,
+            ),
+            context=Context(file_backend=tmp_path / "history.jsonl"),
+        )
+
+    def test_parse_no_question(self, runtime: Runtime, tmp_path: Path) -> None:
+        soul = self._make_soul(runtime, tmp_path)
+        result = soul._parse_turn_end_question_payload('{"has_question": false, "questions": []}')
+        assert result == TurnEndQuestionDetection(has_question=False, questions=())
+
+    def test_parse_with_question(self, runtime: Runtime, tmp_path: Path) -> None:
+        soul = self._make_soul(runtime, tmp_path)
+        result = soul._parse_turn_end_question_payload(
+            '{"has_question": true, "questions": [{"question": "Pick A or B?",'
+            ' "options": [{"label": "A", "description": "Option A"},'
+            ' {"label": "B", "description": "Option B"}]}]}'
+        )
+        assert result == TurnEndQuestionDetection(
+            has_question=True,
+            questions=(
+                TurnEndQuestionItem(
+                    question="Pick A or B?",
+                    options=(
+                        TurnEndQuestionOption(label="A", description="Option A"),
+                        TurnEndQuestionOption(label="B", description="Option B"),
+                    ),
+                ),
+            ),
+        )
+
+    def test_parse_malformed_json(self, runtime: Runtime, tmp_path: Path) -> None:
+        soul = self._make_soul(runtime, tmp_path)
+        assert soul._parse_turn_end_question_payload("not json") is None
+
+    def test_parse_question_with_too_few_options_ignored(
+        self, runtime: Runtime, tmp_path: Path
+    ) -> None:
+        soul = self._make_soul(runtime, tmp_path)
+        result = soul._parse_turn_end_question_payload(
+            '{"has_question": true, "questions": [{"question": "Pick?",'
+            ' "options": [{"label": "Only one"}]}]}'
+        )
+        # question with < 2 options is dropped → no questions → has_question=false
+        assert result is not None
+        assert result.has_question is False
+
+    def test_parse_json_wrapped_in_markdown(self, runtime: Runtime, tmp_path: Path) -> None:
+        soul = self._make_soul(runtime, tmp_path)
+        text = (
+            "```json\n"
+            '{"has_question": true, "questions": [{"question": "A or B?",'
+            ' "options": [{"label": "A"}, {"label": "B"}]}]}\n'
+            "```"
+        )
+        result = soul._parse_turn_end_question_payload(text)
+        assert result is not None
+        assert result.has_question is True
+        assert len(result.questions) == 1
+
+
+# -- Detection LLM call test --
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_calls_generate(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    captured: dict[str, object] = {}
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        captured["system_prompt"] = system_prompt
+        captured["history"] = history
+        return SimpleNamespace(
+            message=Message(
+                role="assistant",
+                content=(
+                    '{"has_question": true, "questions": [{"question": "A or B?",'
+                    ' "options": [{"label": "A"}, {"label": "B"}]}]}'
+                ),
+            )
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    assistant_msg = Message(role="assistant", content="Should I do A or B?")
+    result = await soul._detect_turn_end_question(assistant_msg)
+
+    assert result is not None
+    assert result.has_question is True
+    assert len(result.questions) == 1
+    assert result.questions[0].question == "A or B?"
+    assert captured["history"] == [assistant_msg]
+
+
+# -- Integration: _maybe_ask_turn_end_question --
+
+
+@pytest.mark.asyncio
+async def test_maybe_ask_turn_end_question_no_question(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When detection says no question, _maybe_ask_turn_end_question returns None."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    async def fake_detect(self, msg):
+        return TurnEndQuestionDetection(has_question=False, questions=())
+
+    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+
+    outcome = TurnOutcome(
+        stop_reason="no_tool_calls",
+        final_message=Message(role="assistant", content="All done."),
+        step_count=1,
+    )
+    result = await soul._maybe_ask_turn_end_question(outcome)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_ask_turn_end_question_tool_rejected(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the turn stopped due to tool rejection, skip detection."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    detect_called = False
+
+    async def fake_detect(self, msg):
+        nonlocal detect_called
+        detect_called = True
+        return TurnEndQuestionDetection(has_question=False, questions=())
+
+    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+
+    outcome = TurnOutcome(
+        stop_reason="tool_rejected",
+        final_message=None,
+        step_count=1,
+    )
+    result = await soul._maybe_ask_turn_end_question(outcome)
+    assert result is None
+    assert not detect_called
+
+
+@pytest.mark.asyncio
+async def test_maybe_ask_turn_end_question_sends_question_request(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When a question is detected, a QuestionRequest is sent via wire
+    and user answer is returned."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    async def fake_detect(self, msg):
+        return TurnEndQuestionDetection(
+            has_question=True,
+            questions=(
+                TurnEndQuestionItem(
+                    question="Pick A or B?",
+                    options=(
+                        TurnEndQuestionOption(label="A"),
+                        TurnEndQuestionOption(label="B"),
+                    ),
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+
+    sent_messages: list[object] = []
+
+    def capturing_wire_send(msg):
+        sent_messages.append(msg)
+        # Auto-resolve question requests with an answer
+        if isinstance(msg, QuestionRequest):
+            msg.resolve({"Pick A or B?": "A"})
+
+    monkeypatch.setattr(kimisoul_module, "wire_send", capturing_wire_send)
+
+    # Set up wire context so get_wire_or_none() returns a wire
+    wire = Wire()
+    token = soul_module._current_wire.set(wire)
+    try:
+        outcome = TurnOutcome(
+            stop_reason="no_tool_calls",
+            final_message=Message(role="assistant", content="Should I do A or B?"),
+            step_count=1,
+        )
+        result = await soul._maybe_ask_turn_end_question(outcome)
+    finally:
+        soul_module._current_wire.reset(token)
+
+    assert result == "A"
+    question_requests = [m for m in sent_messages if isinstance(m, QuestionRequest)]
+    assert len(question_requests) == 1
+    assert question_requests[0].questions[0].question == "Pick A or B?"
+
+
+@pytest.mark.asyncio
+async def test_maybe_ask_turn_end_question_dismissed(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the user dismisses the question, returns None."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    async def fake_detect(self, msg):
+        return TurnEndQuestionDetection(
+            has_question=True,
+            questions=(
+                TurnEndQuestionItem(
+                    question="Pick?",
+                    options=(
+                        TurnEndQuestionOption(label="A"),
+                        TurnEndQuestionOption(label="B"),
+                    ),
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+
+    def capturing_wire_send(msg):
+        if isinstance(msg, QuestionRequest):
+            # Resolve with empty answers = dismissed
+            msg.resolve({})
+
+    monkeypatch.setattr(kimisoul_module, "wire_send", capturing_wire_send)
+
+    wire = Wire()
+    token = soul_module._current_wire.set(wire)
+    try:
+        outcome = TurnOutcome(
+            stop_reason="no_tool_calls",
+            final_message=Message(role="assistant", content="Pick?"),
+            step_count=1,
+        )
+        result = await soul._maybe_ask_turn_end_question(outcome)
+    finally:
+        soul_module._current_wire.reset(token)
+
+    assert result is None
+
+
+# -- Config toggle test --
+
+
+@pytest.mark.asyncio
+async def test_run_skips_detection_when_disabled(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When turn_end_question_detection is disabled, _maybe_ask_turn_end_question is not called."""
+    runtime.config.loop_control.turn_end_question_detection = False
+
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    detection_called = False
+
+    async def fake_maybe_ask(self, outcome):
+        nonlocal detection_called
+        detection_called = True
+        return None
+
+    async def fake_turn(self, msg, *, enable_skill_reminder=False):
+        return TurnOutcome(
+            stop_reason="no_tool_calls",
+            final_message=Message(role="assistant", content="Done."),
+            step_count=1,
+        )
+
+    monkeypatch.setattr(KimiSoul, "_turn", fake_turn)
+    monkeypatch.setattr(KimiSoul, "_maybe_ask_turn_end_question", fake_maybe_ask)
+    monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: None)
+
+    await soul.run("hello")
+
+    assert not detection_called
+
+
+# -- Retry on unparseable output test --
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_retries_on_bad_json(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the first LLM response is not valid JSON, the detector retries
+    and succeeds on the second attempt."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    call_count = 0
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # First attempt: garbage output
+            return SimpleNamespace(
+                message=Message(role="assistant", content="Sure, here is...")
+            )
+        # Second attempt: valid JSON
+        return SimpleNamespace(
+            message=Message(
+                role="assistant",
+                content=(
+                    '{"has_question": true, "questions": [{"question": "A or B?",'
+                    ' "options": [{"label": "A"}, {"label": "B"}]}]}'
+                ),
+            )
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    assistant_msg = Message(role="assistant", content="Pick A or B?")
+    result = await soul._detect_turn_end_question(assistant_msg)
+
+    assert call_count == 2
+    assert result is not None
+    assert result.has_question is True
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_gives_up_after_max_attempts(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When all retry attempts return unparseable output, detection returns None."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    call_count = 0
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        nonlocal call_count
+        call_count += 1
+        return SimpleNamespace(
+            message=Message(role="assistant", content="I don't know")
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    assistant_msg = Message(role="assistant", content="Pick A or B?")
+    result = await soul._detect_turn_end_question(assistant_msg)
+
+    assert call_count == soul._TURN_END_DETECT_MAX_ATTEMPTS
+    assert result is None

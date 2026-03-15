@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
+from uuid import uuid4
 
 import kosong
 import tenacity
@@ -31,6 +32,7 @@ from kimi_cli.soul import (
     MaxStepsReached,
     Soul,
     StatusSnapshot,
+    get_wire_or_none,
     wire_send,
 )
 from kimi_cli.soul.agent import Agent, Runtime
@@ -60,6 +62,10 @@ from kimi_cli.wire.types import (
     ContentPart,
     MCPLoadingBegin,
     MCPLoadingEnd,
+    QuestionItem,
+    QuestionNotSupported,
+    QuestionOption,
+    QuestionRequest,
     SkillReminderNotice,
     StatusUpdate,
     StepBegin,
@@ -80,6 +86,33 @@ SKILL_COMMAND_PREFIX = "skill:"
 FLOW_COMMAND_PREFIX = "flow:"
 DEFAULT_MAX_FLOW_MOVES = 1000
 MAX_SKILL_RECOMMENDATIONS = 3
+
+TURN_END_QUESTION_DETECTOR_PROMPT = (
+    "You are a background assistant message analyzer.\n"
+    "Given the assistant's last response, determine whether it ends with a question that\n"
+    "asks the user to choose between specific options or make a decision.\n"
+    "Examples of such questions:\n"
+    '- "Do you want me to proceed with option A or option B?"\n'
+    '- "Should I use approach 1, approach 2, or approach 3?"\n'
+    '- "Would you like to continue, start over, or stop?"\n'
+    '- "Which framework do you prefer: React, Vue, or Angular?"\n'
+    "\n"
+    "Do NOT consider these as choice questions:\n"
+    "- General clarifying questions without specific options\n"
+    '- Rhetorical questions like "Does that make sense?"\n'
+    '- Simple yes/no confirmations like "Should I proceed?"'
+    " (unless there are distinct alternatives)\n"
+    "- Questions embedded in the middle of the response that were already addressed\n"
+    "\n"
+    "Return strict JSON with this exact shape:\n"
+    '{"has_question": true/false, "questions": '
+    '[{"question": "...", "options": [{"label": "...", "description": "..."}]}]}\n'
+    "- If has_question is false, questions should be an empty array.\n"
+    "- Each question should have 2-4 options extracted from the assistant's message.\n"
+    "- Option labels should be concise (1-5 words).\n"
+    "- Option descriptions should briefly explain the trade-offs if mentioned.\n"
+    "- Do not include markdown or any extra text.\n"
+)
 SKILL_RECOMMENDER_PROMPT = (
     "You are a background skill recommender for Kimi Code CLI.\n"
     "Given the ongoing conversation and the available skills below, decide whether "
@@ -124,6 +157,24 @@ class SkillRecommendationItem:
 @dataclass(frozen=True, slots=True)
 class SkillRecommendation:
     skills: tuple[SkillRecommendationItem, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TurnEndQuestionOption:
+    label: str
+    description: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TurnEndQuestionItem:
+    question: str
+    options: tuple[TurnEndQuestionOption, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TurnEndQuestionDetection:
+    has_question: bool
+    questions: tuple[TurnEndQuestionItem, ...]
 
 
 @dataclass(slots=True)
@@ -487,6 +538,7 @@ class KimiSoul:
             user_message = Message(role="user", content=user_input)
             text_input = user_message.extract_text(" ").strip()
 
+            outcome: TurnOutcome | None = None
             if command_call := parse_slash_command_call(text_input):
                 command = self._find_slash_command(command_call.name)
                 if command is None:
@@ -503,7 +555,18 @@ class KimiSoul:
                 )
                 await runner.run(self, "", enable_skill_reminder=True)
             else:
-                await self._turn(user_message, enable_skill_reminder=True)
+                outcome = await self._turn(user_message, enable_skill_reminder=True)
+
+            # Turn-end question detection: if enabled and the turn produced a final
+            # message, check whether it asks the user to pick between options.
+            if outcome is not None and self._loop_control.turn_end_question_detection:
+                answer = await self._maybe_ask_turn_end_question(outcome)
+                if answer:
+                    # The user chose an option — run a follow-up turn with their
+                    # answer as the prompt.
+                    await self._turn(
+                        Message(role="user", content=answer),
+                    )
 
             wire_send(TurnEnd())
         finally:
@@ -756,6 +819,176 @@ class KimiSoul:
                 "  Consider reading this skill's SKILL.md before continuing if it seems useful."
             )
         return internal_user_message([system("\n".join(lines))])
+
+    # -- Turn-end question detection --------------------------------------------------
+
+    _TURN_END_DETECT_MAX_ATTEMPTS = 2
+
+    async def _detect_turn_end_question(
+        self,
+        assistant_message: Message,
+    ) -> TurnEndQuestionDetection | None:
+        """Use a side-channel LLM call to check if *assistant_message* asks the user
+        to choose between options.  Returns the parsed detection or ``None`` on
+        failure.  Retries up to ``_TURN_END_DETECT_MAX_ATTEMPTS`` when the LLM
+        returns unparseable output."""
+        assert self._runtime.llm is not None
+        chat_provider = self._runtime.llm.chat_provider.with_thinking("off")
+
+        history: list[Message] = [assistant_message]
+
+        for attempt in range(1, self._TURN_END_DETECT_MAX_ATTEMPTS + 1):
+            async def _run_once():
+                return await kosong.generate(
+                    chat_provider=chat_provider,
+                    system_prompt=TURN_END_QUESTION_DETECTOR_PROMPT,
+                    tools=[],
+                    history=history,
+                )
+
+            try:
+                result = await self._run_with_connection_recovery(
+                    "turn-end question detection",
+                    _run_once,
+                    chat_provider=chat_provider,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Turn-end question detection failed: {error}", error=exc)
+                return None
+
+            raw_text = result.message.extract_text(" ")
+            detection = self._parse_turn_end_question_payload(raw_text)
+            if detection is not None:
+                return detection
+
+            if attempt < self._TURN_END_DETECT_MAX_ATTEMPTS:
+                logger.debug(
+                    "Turn-end question detection returned unparseable output "
+                    "(attempt {attempt}), retrying",
+                    attempt=attempt,
+                )
+            else:
+                logger.warning(
+                    "Turn-end question detection returned unparseable output "
+                    "after {attempts} attempts; giving up",
+                    attempts=self._TURN_END_DETECT_MAX_ATTEMPTS,
+                )
+
+        return None
+
+    def _parse_turn_end_question_payload(self, text: str) -> TurnEndQuestionDetection | None:
+        payload_text = self._extract_json_payload(text)
+        try:
+            payload_obj: object = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload_obj, dict):
+            return None
+        payload = cast(dict[str, object], payload_obj)
+
+        has_question = payload.get("has_question", False)
+        if not isinstance(has_question, bool):
+            return None
+        if not has_question:
+            return TurnEndQuestionDetection(has_question=False, questions=())
+
+        raw_questions = payload.get("questions", [])
+        if not isinstance(raw_questions, list):
+            return None
+
+        questions: list[TurnEndQuestionItem] = []
+        for raw_q in cast(list[object], raw_questions)[:4]:
+            if not isinstance(raw_q, dict):
+                continue
+            q = cast(dict[str, object], raw_q)
+            question_text = q.get("question")
+            if not isinstance(question_text, str) or not question_text.strip():
+                continue
+            raw_options = q.get("options", [])
+            if not isinstance(raw_options, list):
+                continue
+            options: list[TurnEndQuestionOption] = []
+            for raw_opt in cast(list[object], raw_options)[:4]:
+                if not isinstance(raw_opt, dict):
+                    continue
+                opt = cast(dict[str, object], raw_opt)
+                label = opt.get("label")
+                if not isinstance(label, str) or not label.strip():
+                    continue
+                desc = opt.get("description", "")
+                desc = desc.strip() if isinstance(desc, str) else ""
+                options.append(TurnEndQuestionOption(label=label.strip(), description=desc))
+            if len(options) >= 2:
+                questions.append(
+                    TurnEndQuestionItem(
+                        question=question_text.strip(),
+                        options=tuple(options),
+                    )
+                )
+        if not questions:
+            return TurnEndQuestionDetection(has_question=False, questions=())
+        return TurnEndQuestionDetection(has_question=True, questions=tuple(questions))
+
+    async def _maybe_ask_turn_end_question(
+        self,
+        outcome: TurnOutcome,
+    ) -> str | None:
+        """Detect choice questions in the turn's final message and present them
+        to the user via a structured ``QuestionRequest``.
+
+        Returns the user's answer text to be used as the next turn prompt,
+        or ``None`` if no question was detected / the user dismissed it.
+        """
+        if outcome.stop_reason != "no_tool_calls" or outcome.final_message is None:
+            return None
+
+        detection = await self._detect_turn_end_question(outcome.final_message)
+        if detection is None or not detection.has_question:
+            return None
+
+        wire = get_wire_or_none()
+        if wire is None:
+            return None
+
+        questions = [
+            QuestionItem(
+                question=q.question,
+                options=[
+                    QuestionOption(label=o.label, description=o.description) for o in q.options
+                ],
+            )
+            for q in detection.questions
+        ]
+
+        request = QuestionRequest(
+            id=str(uuid4()),
+            tool_call_id=f"turn-end-{uuid4().hex[:8]}",
+            questions=questions,
+        )
+
+        wire_send(request)
+
+        try:
+            answers = await request.wait()
+        except QuestionNotSupported:
+            logger.debug("Client does not support interactive questions; skipping")
+            return None
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Failed to get user response for turn-end question")
+            return None
+
+        if not answers:
+            return None
+
+        # Build a concise textual summary of the answers for the next turn.
+        parts: list[str] = []
+        for _question_text, answer_text in answers.items():
+            parts.append(f"{answer_text}")
+        return "\n".join(parts) if parts else None
 
     async def _agent_loop(self, skill_reminder: SkillReminderState | None = None) -> TurnOutcome:
         """The main agent loop for one run."""

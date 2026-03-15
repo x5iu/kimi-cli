@@ -32,8 +32,7 @@ def test_default_config_dump():
                 "max_retries_per_step": 3,
                 "max_ralph_iterations": 0,
                 "reserved_context_size": 50000,
-                "compaction_trigger_ratio": 0.85,
-            },
+                "compaction_trigger_ratio": 0.85, "turn_end_question_detection": True},
             "services": {"moonshot_search": None, "moonshot_fetch": None},
             "mcp": {"client": {"tool_call_timeout_ms": 60000}},
         }

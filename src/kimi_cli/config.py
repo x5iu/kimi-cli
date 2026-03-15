@@ -86,6 +86,11 @@ class LoopControl(BaseModel):
     """Context usage ratio threshold for auto-compaction. Default is 0.85 (85%).
     Auto-compaction triggers when context_tokens >= max_context_size * compaction_trigger_ratio
     or when context_tokens + reserved_context_size >= max_context_size."""
+    turn_end_question_detection: bool = Field(default=True)
+    """When enabled, an extra LLM call is made at the end of each turn to detect
+    whether the assistant's response asks the user to choose between options. If a
+    question is detected, a structured QuestionRequest is sent to the UI so the user
+    can answer interactively, and the answer starts a new turn."""
 
 
 class MoonshotSearchConfig(BaseModel):
