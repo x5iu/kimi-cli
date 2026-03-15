@@ -19,7 +19,7 @@ async def test_append_operation(edit_tool, temp_work_dir: KaosPath):
     file_path = temp_work_dir / "append.txt"
     await file_path.write_text("hello")
 
-    result = await edit_tool(EditParams(path=str(file_path), edit=AppendOp(content=" world")))
+    result = await edit_tool(EditParams(path=str(file_path), edit=[AppendOp(content=" world")]))
 
     assert not result.is_error
     assert await file_path.read_text() == "hello world"
@@ -29,7 +29,7 @@ async def test_prepend_operation(edit_tool, temp_work_dir: KaosPath):
     file_path = temp_work_dir / "prepend.txt"
     await file_path.write_text("world")
 
-    result = await edit_tool(EditParams(path=str(file_path), edit=PrependOp(content="hello ")))
+    result = await edit_tool(EditParams(path=str(file_path), edit=[PrependOp(content="hello ")]))
 
     assert not result.is_error
     assert await file_path.read_text() == "hello world"
@@ -39,7 +39,7 @@ async def test_delete_operation(edit_tool, temp_work_dir: KaosPath):
     file_path = temp_work_dir / "delete.txt"
     await file_path.write_text("alpha beta gamma")
 
-    result = await edit_tool(EditParams(path=str(file_path), edit=DeleteOp(old=" beta")))
+    result = await edit_tool(EditParams(path=str(file_path), edit=[DeleteOp(old=" beta")]))
 
     assert not result.is_error
     assert await file_path.read_text() == "alpha gamma"
@@ -52,7 +52,7 @@ async def test_insert_before_operation(edit_tool, temp_work_dir: KaosPath):
     result = await edit_tool(
         EditParams(
             path=str(file_path),
-            edit=InsertBeforeOp(anchor="b\n", content="before-b\n"),
+            edit=[InsertBeforeOp(anchor="b\n", content="before-b\n")],
         )
     )
 
@@ -67,7 +67,7 @@ async def test_insert_after_negative_occurrence(edit_tool, temp_work_dir: KaosPa
     result = await edit_tool(
         EditParams(
             path=str(file_path),
-            edit=InsertAfterOp(anchor="tag\n", content="after-last\n", occurrence=-1),
+            edit=[InsertAfterOp(anchor="tag\n", content="after-last\n", occurrence=-1)],
         )
     )
 
@@ -82,11 +82,11 @@ async def test_replace_lines_negative_indices(edit_tool, temp_work_dir: KaosPath
     result = await edit_tool(
         EditParams(
             path=str(file_path),
-            edit=ReplaceLinesOp(
+            edit=[ReplaceLinesOp(
                 start_line=-2,
                 end_line=-1,
                 content="three\nfour\n",
-            ),
+            )],
         )
     )
 
@@ -104,7 +104,7 @@ async def test_patch_operation(edit_tool, temp_work_dir: KaosPath):
 +two-and-half
  three
 """
-    result = await edit_tool(EditParams(path=str(file_path), edit=PatchOp(patch=patch)))
+    result = await edit_tool(EditParams(path=str(file_path), edit=[PatchOp(patch=patch)]))
 
     assert not result.is_error
     assert await file_path.read_text() == "one\ntwo\ntwo-and-half\nthree\n"

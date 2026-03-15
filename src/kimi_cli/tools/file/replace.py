@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, override
+from typing import Annotated, Any, Literal, override
 
 from kaos.path import KaosPath
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
@@ -212,19 +212,23 @@ class EditParams(BaseModel):
             "outside the working directory."
         )
     )
-    edit: EditOperation | list[EditOperation] = Field(
+    edit: list[EditOperation] = Field(
         description=(
             "The edit operation(s) to apply to the file. You can provide a single operation or "
             "a list of operations here. Supported kinds are `replace`, `append`, `prepend`, "
             "`delete`, `insert_before`, `insert_after`, `replace_lines`, and `patch`."
-        )
+        ),
+        min_length=1,
     )
 
-    @field_validator("edit")
+    @field_validator("edit", mode="before")
     @classmethod
-    def validate_non_empty_edit_list(cls, value: EditOperation | list[EditOperation]):
-        if isinstance(value, list) and not value:
-            raise ValueError("edit list cannot be empty")
+    def wrap_single_edit(cls, value: Any) -> Any:
+        """Accept a single operation dict and wrap it into a list."""
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, BaseModel):
+            return [value]
         return value
 
 
@@ -500,7 +504,7 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
 
             content = await p.read_text(errors="replace")
             original_content = content
-            operations = [params.edit] if not isinstance(params.edit, list) else params.edit
+            operations = params.edit
 
             for index, operation in enumerate(operations, start=1):
                 updated_content = self._apply_operation(content, operation, index=index)

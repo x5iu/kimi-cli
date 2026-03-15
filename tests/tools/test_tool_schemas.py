@@ -336,28 +336,20 @@ def test_edit_params_schema(edit_tool: EditTool):
         "Supported kinds are `replace`, `append`, `prepend`, `delete`"
         in edit_property["description"]
     )
-    assert len(edit_property["anyOf"]) == 2
-
-    single_edit_schema, multi_edit_schema = edit_property["anyOf"]
-    expected_mapping = {
-        "append": "#/$defs/AppendOp",
-        "delete": "#/$defs/DeleteOp",
-        "insert_after": "#/$defs/InsertAfterOp",
-        "insert_before": "#/$defs/InsertBeforeOp",
-        "patch": "#/$defs/PatchOp",
-        "prepend": "#/$defs/PrependOp",
-        "replace": "#/$defs/ReplaceOp",
-        "replace_lines": "#/$defs/ReplaceLinesOp",
-    }
-    assert single_edit_schema["discriminator"] == {
-        "mapping": expected_mapping,
-        "propertyName": "kind",
-    }
-    assert multi_edit_schema["type"] == "array"
-    assert multi_edit_schema["items"]["discriminator"] == {
-        "mapping": expected_mapping,
-        "propertyName": "kind",
-    }
+    # edit is now always an array — no anyOf, no oneOf
+    assert edit_property["type"] == "array"
+    assert edit_property["minItems"] == 1
+    assert "anyOf" not in edit_property
+    # items should be a flat object with kind as enum (oneOf flattened)
+    items = edit_property["items"]
+    assert "oneOf" not in items
+    assert items["type"] == "object"
+    kind_prop = items["properties"]["kind"]
+    assert kind_prop["enum"] == [
+        "replace", "append", "prepend", "delete",
+        "insert_before", "insert_after", "replace_lines", "patch",
+    ]
+    assert "kind" in items["required"]
 
 
 def test_search_web_params_schema(search_web_tool: SearchWeb):
