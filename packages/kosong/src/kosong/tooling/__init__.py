@@ -1,3 +1,4 @@
+import json
 from abc import ABC, abstractmethod
 from asyncio import Future
 from typing import Any, ClassVar, Protocol, Self, cast, override, runtime_checkable
@@ -229,6 +230,30 @@ class _GenerateJsonSchemaNoTitles(GenerateJsonSchema):
         json_schema.pop("title", None)
 
 
+
+def _try_parse_json_strings(arguments: JsonType) -> JsonType:
+    """Attempt to parse string values that look like JSON objects or arrays.
+
+    LLMs sometimes double-encode nested parameters, producing
+    ``{"edit": "{\\"kind\\": ...}"}`` instead of ``{"edit": {"kind": ...}}``.
+    This helper detects such cases and transparently decodes them so that
+    Pydantic validation succeeds.
+    """
+    if not isinstance(arguments, dict):
+        return arguments
+    result = dict(arguments)
+    for key, value in result.items():
+        if isinstance(value, str):
+            stripped = value.strip()
+            if (stripped.startswith("{") and stripped.endswith("}")) or (
+                stripped.startswith("[") and stripped.endswith("]")
+            ):
+                try:
+                    result[key] = json.loads(value)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+    return result
+
 class CallableTool2[Params: BaseModel](ABC):
     """
     The abstract base class of tools that can be called as callables, with typed parameters.
@@ -293,7 +318,7 @@ class CallableTool2[Params: BaseModel](ABC):
         from kosong.tooling.error import ToolValidateError
 
         try:
-            params = self.params.model_validate(arguments)
+            params = self.params.model_validate(_try_parse_json_strings(arguments))
         except pydantic.ValidationError as e:
             return ToolValidateError(str(e))
 

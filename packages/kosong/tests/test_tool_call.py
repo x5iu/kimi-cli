@@ -466,3 +466,47 @@ def test_simple_toolset_with_string_annotation_handle():
     """Test that tools with string annotations can be called correctly."""
     result = asyncio.run(_test_handle_async_with_string_annotation())
     assert result.return_value == ToolOk(output="5")
+
+
+def test_callable_tool_2_double_encoded_json_string():
+    """Test that double-encoded JSON string arguments are transparently parsed."""
+
+    class NestedObj(BaseModel):
+        kind: str
+        value: int
+
+    class TestParams(BaseModel):
+        name: str
+        config: NestedObj | list[NestedObj]
+
+    class TestTool(CallableTool2[TestParams]):
+        name: str = "test_json_parse"
+        description: str = "Test tool with nested JSON"
+        params: type[TestParams] = TestParams
+
+        @override
+        async def __call__(self, params: TestParams) -> ToolReturnValue:
+            if isinstance(params.config, list):
+                return ToolOk(output=f"{params.name}:{len(params.config)}")
+            return ToolOk(output=f"{params.name}:{params.config.kind}:{params.config.value}")
+
+    tool = TestTool()
+
+    # Normal dict — should work as before
+    assert asyncio.run(tool.call({"name": "a", "config": {"kind": "x", "value": 1}})) == ToolOk(
+        output="a:x:1"
+    )
+
+    # Double-encoded JSON object string — should be transparently parsed
+    assert asyncio.run(
+        tool.call({"name": "a", "config": '{"kind": "x", "value": 1}'})
+    ) == ToolOk(output="a:x:1")
+
+    # Double-encoded JSON array string — should be transparently parsed
+    assert asyncio.run(
+        tool.call({"name": "b", "config": '[{"kind": "y", "value": 2}]'})
+    ) == ToolOk(output="b:1")
+
+    # Plain string that is not JSON — should remain a string (and fail validation)
+    result = asyncio.run(tool.call({"name": "c", "config": "not json"}))
+    assert isinstance(result, ToolValidateError)
