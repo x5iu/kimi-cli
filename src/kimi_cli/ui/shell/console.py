@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from rich.console import Console
+from rich.console import Console, ConsoleDimensions
 from rich.theme import Theme
+
+# Reserve 1 column on the right so wide characters (e.g. CJK) never get
+# clipped by the terminal's right edge.
+_RIGHT_PADDING = 1
 
 _NEUTRAL_MARKDOWN_THEME = Theme(
     {
@@ -28,4 +32,17 @@ _NEUTRAL_MARKDOWN_THEME = Theme(
     inherit=True,
 )
 
-console = Console(highlight=False, theme=_NEUTRAL_MARKDOWN_THEME)
+
+class _PaddedConsole(Console):
+    """Console subclass that reserves a right-side padding column."""
+
+    @property
+    def size(self) -> ConsoleDimensions:  # type: ignore[override]
+        dims = super().size
+        return ConsoleDimensions(
+            max(1, dims.width - _RIGHT_PADDING),
+            dims.height,
+        )
+
+
+console = _PaddedConsole(highlight=False, theme=_NEUTRAL_MARKDOWN_THEME)
