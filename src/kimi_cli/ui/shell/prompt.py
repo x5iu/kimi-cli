@@ -2320,13 +2320,11 @@ class CustomPromptSession:
             with suppress(asyncio.CancelledError):
                 await animate_task
 
-        final_output = live_view.render_ansi(
-            app.output.get_size().columns,
+        final_renderable = live_view.compose(
             include_status=False,
             include_running_indicators=False,
-        ).strip()
-        if final_output:
-            console.print(_rich_from_ansi(final_output), end="")
+        )
+        console.print(final_renderable, end="")
 
     def _append_history_entry(self, text: str) -> None:
         safe_history_text = self._get_placeholder_manager().serialize_for_history(text).strip()
