@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
-import mimetypes
 import os
 import re
 import shlex
@@ -13,13 +11,11 @@ from collections.abc import Awaitable, Callable, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
-from hashlib import md5, sha256
-from io import BytesIO
+from hashlib import md5
 from pathlib import Path
 from typing import Any, Literal, cast, override
 
 from kaos.path import KaosPath
-from PIL import Image
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
 from prompt_toolkit.application.current import get_app_or_none
@@ -40,6 +36,7 @@ from prompt_toolkit.data_structures import Point
 from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText, to_formatted_text
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent, merge_key_bindings
+from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import HSplit, Layout
 from prompt_toolkit.layout.containers import (
     ConditionalContainer,
@@ -77,10 +74,21 @@ from kimi_cli.utils.clipboard import (
     is_clipboard_available,
 )
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.media_tags import wrap_media_part
 from kimi_cli.utils.slashcmd import SlashCommand
-from kimi_cli.utils.string import random_string, shorten_middle
-from kimi_cli.wire.types import ContentPart, ImageURLPart, StepInterrupted, TextPart
+from kimi_cli.utils.string import shorten_middle
+from kimi_cli.wire.types import ContentPart, StepInterrupted
+
+from kimi_cli.ui.shell import placeholders as prompt_placeholders
+from kimi_cli.ui.shell.placeholders import (
+    PromptPlaceholderManager,
+    normalize_pasted_text,
+    sanitize_surrogates,
+)
+
+AttachmentCache = prompt_placeholders.AttachmentCache
+CachedAttachment = prompt_placeholders.CachedAttachment
+_parse_attachment_kind = prompt_placeholders.parse_attachment_kind
+_sanitize_surrogates = sanitize_surrogates  # backward compat re-export
 
 PROMPT_SYMBOL = "✨"
 PROMPT_SYMBOL_SHELL = "$"
@@ -1007,6 +1015,13 @@ class UserInput(BaseModel):
     mode: PromptMode
     command: str
     """The plain text representation of the user input."""
+    resolved_command: str = ""
+    """The text command after UI-only placeholders are expanded.
+    Defaults to `command` when not explicitly set."""
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.resolved_command:
+            self.resolved_command = self.command
     content: list[ContentPart]
     """The rich content parts."""
 
@@ -1102,153 +1117,12 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
         "ctrl-l: redraw",
     ]
     if clipboard_available:
-        tips.append("ctrl-v: paste media")
+        tips.append("ctrl-v: paste clipboard")
     tips.append("@: mention files")
     return tips
 
 
 _TIP_SEPARATOR = " | "
-
-
-_ATTACHMENT_PLACEHOLDER_RE = re.compile(
-    r"\[(?P<type>[a-zA-Z0-9_\-]+):(?P<id>[a-zA-Z0-9_\-\.]+)"
-    r"(?:,(?P<width>\d+)x(?P<height>\d+))?\]"
-)
-
-
-def _guess_image_mime(path: Path) -> str:
-    mime, _ = mimetypes.guess_type(path.name)
-    if mime:
-        return mime
-    # fallback to PNG
-    return "image/png"
-
-
-def _build_image_part(image_bytes: bytes, mime_type: str) -> ImageURLPart:
-    image_base64 = base64.b64encode(image_bytes).decode("ascii")
-    return ImageURLPart(
-        image_url=ImageURLPart.ImageURL(
-            url=f"data:{mime_type};base64,{image_base64}",
-        )
-    )
-
-
-type CachedAttachmentKind = Literal["image"]
-
-
-@dataclass(slots=True)
-class CachedAttachment:
-    kind: CachedAttachmentKind
-    attachment_id: str
-    path: Path
-
-
-class AttachmentCache:
-    def __init__(self, root: Path | None = None) -> None:
-        self._root = root or Path("/tmp/kimi")
-        self._dir_map: dict[CachedAttachmentKind, str] = {"image": "images"}
-        self._payload_map: dict[tuple[CachedAttachmentKind, str, str], CachedAttachment] = {}
-
-    def _dir_for(self, kind: CachedAttachmentKind) -> Path:
-        return self._root / self._dir_map[kind]
-
-    def _ensure_dir(self, kind: CachedAttachmentKind) -> Path | None:
-        path = self._dir_for(kind)
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            logger.warning(
-                "Failed to create attachment cache dir: {dir} ({error})",
-                dir=path,
-                error=exc,
-            )
-            return None
-        return path
-
-    def _reserve_id(self, dir_path: Path, suffix: str) -> str:
-        for _ in range(5):
-            candidate = f"{random_string(8)}{suffix}"
-            if not (dir_path / candidate).exists():
-                return candidate
-        return f"{random_string(12)}{suffix}"
-
-    def store_bytes(
-        self, kind: CachedAttachmentKind, suffix: str, payload: bytes
-    ) -> CachedAttachment | None:
-        dir_path = self._ensure_dir(kind)
-        if dir_path is None:
-            return None
-        payload_hash = sha256(payload).hexdigest()
-        cache_key = (kind, suffix, payload_hash)
-        cached = self._payload_map.get(cache_key)
-        if cached is not None:
-            if cached.path.exists():
-                return cached
-            self._payload_map.pop(cache_key, None)
-
-        attachment_id = self._reserve_id(dir_path, suffix)
-        path = dir_path / attachment_id
-        try:
-            path.write_bytes(payload)
-        except OSError as exc:
-            logger.warning(
-                "Failed to write cached attachment: {file} ({error})",
-                file=path,
-                error=exc,
-            )
-            return None
-        cached = CachedAttachment(kind=kind, attachment_id=attachment_id, path=path)
-        self._payload_map[cache_key] = cached
-        return cached
-
-    def store_image(self, image: Image.Image) -> CachedAttachment | None:
-        png_bytes = BytesIO()
-        image.save(png_bytes, format="PNG")
-        return self.store_bytes("image", ".png", png_bytes.getvalue())
-
-    def load_bytes(
-        self, kind: CachedAttachmentKind, attachment_id: str
-    ) -> tuple[Path, bytes] | None:
-        path = self._dir_for(kind) / attachment_id
-        if not path.exists():
-            return None
-        try:
-            return path, path.read_bytes()
-        except OSError as exc:
-            logger.warning(
-                "Failed to read cached attachment: {file} ({error})",
-                file=path,
-                error=exc,
-            )
-            return None
-
-    def load_content_parts(
-        self, kind: CachedAttachmentKind, attachment_id: str
-    ) -> list[ContentPart] | None:
-        if kind == "image":
-            payload = self.load_bytes(kind, attachment_id)
-            if payload is None:
-                return None
-            path, image_bytes = payload
-            mime_type = _guess_image_mime(path)
-            part = _build_image_part(image_bytes, mime_type)
-            return wrap_media_part(part, tag="image", attrs={"path": str(path)})
-        return None
-
-
-def _parse_attachment_kind(raw_kind: str) -> CachedAttachmentKind | None:
-    if raw_kind == "image":
-        return "image"
-    return None
-
-
-def _sanitize_surrogates(text: str) -> str:
-    """Sanitize UTF-16 surrogate characters that cannot be encoded to UTF-8.
-
-    This is particularly common on Windows when copying text from applications
-    that use UTF-16 internally and don't properly convert surrogate pairs.
-    """
-    return text.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="replace")
 
 
 class CustomPromptSession:
@@ -1280,7 +1154,9 @@ class CustomPromptSession:
         self._last_history_content: str | None = None
         self._mode: PromptMode = PromptMode.AGENT
         self._thinking = thinking
-        self._attachment_cache = AttachmentCache()
+        self._placeholder_manager = PromptPlaceholderManager()
+        # Keep the old attribute for test compatibility and for any external imports.
+        self._attachment_cache = self._placeholder_manager.attachment_cache
         self._tip_rotation_index: int = 0
         clipboard_available = is_clipboard_available()
         self._tips = _build_toolbar_tips(clipboard_available)
@@ -1367,6 +1243,10 @@ class CustomPromptSession:
         def _(event: KeyPressEvent) -> None:
             self._hard_redraw(event.app)
 
+        @_kb.add(Keys.BracketedPaste, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            self._handle_bracketed_paste(event)
+
         if clipboard_available:
 
             @_kb.add("c-v", eager=True)
@@ -1374,7 +1254,8 @@ class CustomPromptSession:
                 if self._try_paste_media(event):
                     return
                 clipboard_data = event.app.clipboard.get_data()
-                event.current_buffer.paste_clipboard_data(clipboard_data)
+                self._insert_pasted_text(event.current_buffer, clipboard_data.text)
+                event.app.invalidate()
 
             clipboard = PyperclipClipboard()
         else:
@@ -1771,13 +1652,17 @@ class CustomPromptSession:
 
         buff = event.current_buffer
         original_text = buff.text
+        editor_text = self._get_placeholder_manager().expand_for_editor(original_text)
 
         async def _run_editor() -> None:
             result = await run_in_terminal(
-                lambda: edit_text_in_editor(original_text, configured), in_executor=True
+                lambda: edit_text_in_editor(editor_text, configured), in_executor=True
             )
             if result is not None:
-                buff.document = Document(text=result, cursor_position=len(result))
+                refolded = self._get_placeholder_manager().refold_after_editor(
+                    result, original_text
+                )
+                buff.document = Document(text=refolded, cursor_position=len(refolded))
 
         event.app.create_background_task(_run_editor())
 
@@ -2010,6 +1895,27 @@ class CustomPromptSession:
             self._status_refresh_task.cancel()
         self._status_refresh_task = None
 
+    def _get_placeholder_manager(self) -> PromptPlaceholderManager:
+        manager = getattr(self, "_placeholder_manager", None)
+        if manager is None:
+            attachment_cache = getattr(self, "_attachment_cache", None)
+            manager = PromptPlaceholderManager(attachment_cache=attachment_cache)
+            self._placeholder_manager = manager
+            self._attachment_cache = manager.attachment_cache
+        return manager
+
+    def _insert_pasted_text(self, buffer: Buffer, text: str) -> None:
+        normalized = normalize_pasted_text(text)
+        if self._mode != PromptMode.AGENT:
+            buffer.insert_text(normalized)
+            return
+        token_or_text = self._get_placeholder_manager().maybe_placeholderize_pasted_text(normalized)
+        buffer.insert_text(token_or_text)
+
+    def _handle_bracketed_paste(self, event: KeyPressEvent) -> None:
+        self._insert_pasted_text(event.current_buffer, event.data)
+        event.app.invalidate()
+
     def _try_paste_media(self, event: KeyPressEvent) -> bool:
         """Try to paste media from the clipboard.
 
@@ -2041,50 +1947,30 @@ class CustomPromptSession:
                 )
             else:
                 for image in result.images:
-                    cached = self._attachment_cache.store_image(image)
-                    if cached is None:
+                    token = self._get_placeholder_manager().create_image_placeholder(image)
+                    if token is None:
                         continue
                     logger.debug(
-                        "Pasted image from clipboard: {attachment_id}, {image_size}",
-                        attachment_id=cached.attachment_id,
+                        "Pasted image from clipboard placeholder: {token}, {image_size}",
+                        token=token,
                         image_size=image.size,
                     )
-                    parts.append(f"[image:{cached.attachment_id},{image.width}x{image.height}]")
+                    parts.append(token)
 
         if parts:
             event.current_buffer.insert_text(" ".join(parts))
         event.app.invalidate()
         return bool(parts)
 
-    def parse_user_input(self, command: str) -> UserInput:
-        command = command.replace("\x00", "")
-        command = _sanitize_surrogates(command)
+    def _build_user_input(self, command: str) -> UserInput:
+        resolved = self._get_placeholder_manager().resolve_command(command)
 
-        content: list[ContentPart] = []
-        remaining_command = command
-        while match := _ATTACHMENT_PLACEHOLDER_RE.search(remaining_command):
-            start, end = match.span()
-            if start > 0:
-                content.append(TextPart(text=remaining_command[:start]))
-            attachment_id = match.group("id")
-            attachment_kind = _parse_attachment_kind(match.group("type"))
-            part = None
-            if attachment_kind is not None:
-                part = self._attachment_cache.load_content_parts(attachment_kind, attachment_id)
-            if part is not None:
-                content.extend(part)
-            else:
-                logger.warning(
-                    "Attachment placeholder found but no matching attachment part: {placeholder}",
-                    placeholder=match.group(0),
-                )
-                content.append(TextPart(text=match.group(0)))
-            remaining_command = remaining_command[end:]
-
-        if remaining_command:
-            content.append(TextPart(text=remaining_command))
-
-        return UserInput(mode=self._mode, content=content, command=command)
+        return UserInput(
+            mode=self._mode,
+            command=resolved.display_command,
+            resolved_command=resolved.resolved_text,
+            content=resolved.content,
+        )
 
     async def prompt(self) -> UserInput:
         app, _ = self._build_prompt_application()
@@ -2092,7 +1978,7 @@ class CustomPromptSession:
             command = str(await app.run_async()).strip()
         self._append_history_entry(command)
         self._tip_rotation_index += 1
-        return self.parse_user_input(command)
+        return self._build_user_input(command)
 
     async def run_turn_ui(
         self,
@@ -2273,7 +2159,7 @@ class CustomPromptSession:
                     feedback_message = live_view.input_hint
                     _refresh_turn_view(event.app)
                 return
-            user_input = self.parse_user_input(command)
+            user_input = self._build_user_input(command)
             submit_result = submit_handler(user_input)
             if submit_result.accepted:
                 if submit_result.persist_history:
@@ -2305,7 +2191,8 @@ class CustomPromptSession:
                 if self._try_paste_media(event):
                     return
                 clipboard_data = event.app.clipboard.get_data()
-                event.current_buffer.paste_clipboard_data(clipboard_data)
+                self._insert_pasted_text(event.current_buffer, clipboard_data.text)
+                event.app.invalidate()
 
         @key_bindings.add("c-c", eager=True)
         def _(event: KeyPressEvent) -> None:
@@ -2442,7 +2329,8 @@ class CustomPromptSession:
             console.print(_rich_from_ansi(final_output), end="")
 
     def _append_history_entry(self, text: str) -> None:
-        entry = _HistoryEntry(content=text.strip())
+        safe_history_text = self._get_placeholder_manager().serialize_for_history(text).strip()
+        entry = _HistoryEntry(content=safe_history_text)
         if not entry.content:
             return
 

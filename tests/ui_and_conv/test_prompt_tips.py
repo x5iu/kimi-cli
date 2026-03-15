@@ -34,7 +34,7 @@ def test_build_toolbar_tips_with_clipboard():
         "ctrl-o: editor",
         "ctrl-j: newline",
         "ctrl-l: redraw",
-        "ctrl-v: paste media",
+        "ctrl-v: paste clipboard",
         "@: mention files",
     ]
 
