@@ -248,7 +248,7 @@ class Shell:
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
-                console.print("[red]Authorization failed, please check your login status[/red]")
+                console.print(f"[red]Authorization failed, please check your login status: {e}[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 402:
                 console.print("[red]Membership expired, please renew your plan[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 403:
@@ -310,7 +310,7 @@ class Shell:
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
-                console.print("[red]Authorization failed, please check your login status[/red]")
+                console.print(f"[red]Authorization failed, please check your login status: {e}[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 402:
                 console.print("[red]Membership expired, please renew your plan[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 403:
