@@ -12,6 +12,7 @@ from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
+from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
@@ -189,6 +190,31 @@ Read text content from a file.
 - The tool result message includes the file's total line count when it is known.
 - The maximum number of lines that can be read at once is 1000.
 - Any lines longer than 2000 characters will be truncated, ending with "...".
+"""
+    )
+
+
+def test_recall_compacted_context_description(
+    recall_compacted_context_tool: RecallCompactedContext,
+):
+    """Test the description of RecallCompactedContext tool."""
+    assert recall_compacted_context_tool.base.description == snapshot(
+        """\
+Recall details from previously compacted conversation context for the current conversation trajectory.
+
+Use this tool when the compaction summary is not enough and you need older context details without reading raw archive files directly.
+
+What it does:
+- Lists available compacted-context archives for the current trajectory
+- Searches archived pre-compaction messages by targeted keywords
+- Returns small, relevant excerpts instead of the whole archive
+
+Guidelines:
+- Prefer specific queries such as file paths, function names, error strings, IDs, or distinctive keywords
+- Leave `query` empty to list available archives and their short summaries first
+- Use `archive_id` to narrow the search when you already know which archive is relevant
+- This tool only reads archives created by compaction for the current trajectory
+- Returned excerpts are sanitized and may omit hidden thinking content
 """
     )
 

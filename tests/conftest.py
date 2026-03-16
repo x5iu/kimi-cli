@@ -27,6 +27,7 @@ from kimi_cli.soul.agent import Agent, BuiltinSystemPromptArgs, LaborMarket, Run
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
@@ -254,6 +255,12 @@ def shell_tool(approval: Approval, environment: Environment) -> Generator[Shell]
 def read_file_tool(runtime: Runtime) -> ReadFile:
     """Create a ReadFile tool instance."""
     return ReadFile(runtime)
+
+
+@pytest.fixture
+def recall_compacted_context_tool(runtime: Runtime) -> RecallCompactedContext:
+    """Create a RecallCompactedContext tool instance."""
+    return RecallCompactedContext(runtime)
 
 
 @pytest.fixture

@@ -39,6 +39,11 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.attachment import Attachment, AttachmentProvider, normalize_history
 from kimi_cli.soul.attachments.plan_mode import PlanModeAttachmentProvider
 from kimi_cli.soul.compaction import CompactionResult, SimpleCompaction, should_auto_compact
+from kimi_cli.soul.compaction_archive import (
+    build_compaction_summary,
+    load_compaction_archives,
+    register_compaction_archive,
+)
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.message import (
     check_message,
@@ -237,8 +242,9 @@ class KimiSoul:
             PlanModeAttachmentProvider(),
         ]
 
-        # Bind plan mode state to tools that support it
+        # Bind tool state that depends on the live soul/context
         self._bind_plan_mode_tools()
+        self._bind_context_recall_tools()
 
         self._slash_commands = self._build_slash_commands()
         self._slash_command_map = self._index_slash_commands(self._slash_commands)
@@ -316,6 +322,32 @@ class KimiSoul:
         ask_tool = self._agent.toolset.find("AskUserQuestion")
         if isinstance(ask_tool, AskUserQuestion):
             ask_tool.bind_plan_mode(checker)
+
+    def _bind_context_recall_tools(self) -> None:
+        """Bind current context file accessors to tools that need trajectory-local state."""
+        if not isinstance(self._agent.toolset, KimiToolset):
+            return
+
+        from kimi_cli.tools.context import RecallCompactedContext
+
+        recall_tool = self._agent.toolset.find("RecallCompactedContext")
+        if isinstance(recall_tool, RecallCompactedContext):
+            recall_tool.bind_context_file(lambda: self._context.file_backend)
+            self._sync_context_recall_tool_visibility()
+
+    def _sync_context_recall_tool_visibility(self) -> None:
+        """Show RecallCompactedContext only when trajectory archives actually exist."""
+        if not isinstance(self._agent.toolset, KimiToolset):
+            return
+
+        recall_tool = self._agent.toolset.find("RecallCompactedContext")
+        if recall_tool is None:
+            return
+
+        if load_compaction_archives(self._context.file_backend):
+            self._agent.toolset.unhide("RecallCompactedContext")
+        else:
+            self._agent.toolset.hide("RecallCompactedContext")
 
     def _ensure_plan_session_id(self) -> None:
         """Allocate a stable plan session ID on first activation."""
@@ -855,7 +887,7 @@ class KimiSoul:
                 self._detect_turn_end_question_inner(assistant_message),
                 timeout=self._TURN_END_DETECT_TIMEOUT,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Turn-end question detection timed out after {timeout}s",
                 timeout=self._TURN_END_DETECT_TIMEOUT,
@@ -883,6 +915,7 @@ class KimiSoul:
         ]
 
         for attempt in range(1, self._TURN_END_DETECT_MAX_ATTEMPTS + 1):
+
             async def _run_once():
                 return await kosong.generate(
                     chat_provider=chat_provider,
@@ -1297,13 +1330,45 @@ class KimiSoul:
             )
 
         wire_send(CompactionBegin())
+        original_message_count = len(self._context.history)
         compaction_result = await _compact_with_retry()
-        await self._context.clear()
-        await self._checkpoint()
-        await self._context.append_message(compaction_result.messages)
+        rotated_path = await self._context.clear()
 
+        final_messages = list(compaction_result.messages)
+        if compaction_result.usage is not None:
+            registration = register_compaction_archive(
+                self._context.file_backend,
+                rotated_path,
+                message_count=original_message_count,
+                summary=build_compaction_summary(compaction_result.messages),
+            )
+            final_messages.append(
+                internal_user_message(
+                    [
+                        system(
+                            "Compacted context archives are available via the "
+                            "RecallCompactedContext tool for this conversation trajectory. "
+                            f"Archive `{registration.record.id}` contains the "
+                            "pre-compaction history. "
+                            f"There are now {registration.total_archives} compacted "
+                            "archive(s) available. Use targeted keywords if the "
+                            "compaction summary is not sufficient, and prefer this "
+                            "tool over reading raw archive files directly."
+                        )
+                    ]
+                )
+            )
+
+        self._sync_context_recall_tool_visibility()
+
+        await self._checkpoint()
+        await self._context.append_message(final_messages)
         # Estimate token count so context_usage is not reported as 0%
-        await self._context.update_token_count(compaction_result.estimated_token_count)
+        await self._context.update_token_count(
+            CompactionResult(
+                messages=final_messages, usage=compaction_result.usage
+            ).estimated_token_count
+        )
 
         wire_send(CompactionEnd())
 

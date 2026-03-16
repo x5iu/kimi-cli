@@ -10,6 +10,7 @@ from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
+from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
@@ -181,6 +182,36 @@ def test_read_file_params_schema(read_file_tool: ReadFile):
     )
 
 
+def test_recall_compacted_context_params_schema(
+    recall_compacted_context_tool: RecallCompactedContext,
+):
+    """Test the schema of RecallCompactedContext tool parameters."""
+    assert recall_compacted_context_tool.base.parameters == snapshot(
+        {
+            "properties": {
+                "query": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Targeted keywords to search for in compacted-context archives. Leave empty to list available archives and their summaries.",
+                },
+                "archive_id": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Optional archive ID like `c001` to restrict lookup to a single compacted-context archive.",
+                },
+                "max_results": {
+                    "default": 3,
+                    "description": "Maximum number of excerpts to return. Defaults to 3, max 5.",
+                    "maximum": 5,
+                    "minimum": 1,
+                    "type": "integer",
+                },
+            },
+            "type": "object",
+        }
+    )
+
+
 def test_read_media_file_params_schema(read_media_file_tool: ReadMediaFile):
     """Test the schema of ReadMediaFile tool parameters."""
     assert read_media_file_tool.base.parameters == snapshot(
@@ -346,8 +377,14 @@ def test_edit_params_schema(edit_tool: EditTool):
     assert items["type"] == "object"
     kind_prop = items["properties"]["kind"]
     assert kind_prop["enum"] == [
-        "replace", "append", "prepend", "delete",
-        "insert_before", "insert_after", "replace_lines", "patch",
+        "replace",
+        "append",
+        "prepend",
+        "delete",
+        "insert_before",
+        "insert_after",
+        "replace_lines",
+        "patch",
     ]
     assert "kind" in items["required"]
 

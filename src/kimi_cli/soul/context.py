@@ -117,7 +117,6 @@ class Context:
             async for line in old_file:
                 if not line.strip():
                     continue
-
                 line_json = json.loads(line)
                 if line_json["role"] == "_checkpoint" and line_json["id"] == checkpoint_id:
                     break
@@ -131,7 +130,7 @@ class Context:
                     message = Message.model_validate(line_json)
                     self._history.append(message)
 
-    async def clear(self):
+    async def clear(self) -> Path:
         """
         Clear the context history.
         This is almost equivalent to revert_to(0), but without relying on the assumption
@@ -158,6 +157,7 @@ class Context:
         self._history.clear()
         self._token_count = 0
         self._next_checkpoint_id = 0
+        return rotated_file_path
 
     async def append_message(self, message: Message | Sequence[Message]):
         logger.debug("Appending message(s) to context: {message}", message=message)

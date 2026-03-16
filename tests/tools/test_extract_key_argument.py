@@ -26,6 +26,10 @@ class TestExtractKeyArgument:
         result = extract_key_argument('{"pattern": "hello"}', "Grep")
         assert result == "hello"
 
+    def test_recall_compacted_context(self):
+        result = extract_key_argument('{"query": "foo.py traceback"}', "RecallCompactedContext")
+        assert result == "foo.py traceback"
+
     def test_long_shell_command_not_truncated(self):
         long_command = "echo " + "x" * 80
         result = extract_key_argument(json.dumps({"command": long_command}), "Shell")

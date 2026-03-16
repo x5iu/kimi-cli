@@ -65,6 +65,15 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("pattern"):
                 return None
             key_argument = str(curr_args["pattern"])
+        case "RecallCompactedContext":
+            if not isinstance(curr_args, dict):
+                return None
+            if curr_args.get("query"):
+                key_argument = str(curr_args["query"])
+            elif curr_args.get("archive_id"):
+                key_argument = str(curr_args["archive_id"])
+            else:
+                return None
         case "WriteFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None

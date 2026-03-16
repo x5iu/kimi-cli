@@ -42,14 +42,16 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
   the project root AGENTS file.
 - **Tooling**: `src/kimi_cli/soul/toolset.py` loads tools by import path, injects dependencies,
   and runs tool calls. Built-in tools live in `src/kimi_cli/tools/` (shell, file, web, todo,
-  multiagent, dmail, think). MCP tools are loaded via `fastmcp`; CLI management is in
-  `src/kimi_cli/mcp.py` and stored in the share dir.
+  multiagent, dmail, think, context recall). MCP tools are loaded via `fastmcp`; CLI management
+  is in `src/kimi_cli/mcp.py` and stored in the share dir.
 - **Subagents**: `LaborMarket` in `src/kimi_cli/soul/agent.py` manages fixed and dynamic
   subagents. The Task tool (`src/kimi_cli/tools/multiagent/`) spawns them.
 - **Core loop**: `src/kimi_cli/soul/kimisoul.py` is the main agent loop. It accepts user input,
   handles slash commands (`src/kimi_cli/soul/slash.py`), appends to `Context`
   (`src/kimi_cli/soul/context.py`), calls the LLM (kosong), runs tools, and performs compaction
-  (`src/kimi_cli/soul/compaction.py`) when needed.
+  (`src/kimi_cli/soul/compaction.py`) when needed. Compaction now also registers per-trajectory
+  archive metadata via `src/kimi_cli/soul/compaction_archive.py`, which powers the
+  `RecallCompactedContext` tool.
 - **Approvals**: `src/kimi_cli/soul/approval.py` mediates user approvals for tool actions; the
   soul forwards approval requests over `Wire` for UI handling.
 - **UI/Wire**: `src/kimi_cli/soul/run_soul` connects `KimiSoul` to a `Wire`
@@ -84,8 +86,8 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
 
 - `src/kimi_cli/agents/`: built-in agent YAML specs and prompts
 - `src/kimi_cli/prompts/`: shared prompt templates
-- `src/kimi_cli/soul/`: core runtime/loop, context, compaction, approvals
-- `src/kimi_cli/tools/`: built-in tools
+- `src/kimi_cli/soul/`: core runtime/loop, context, compaction, compaction archives, approvals
+- `src/kimi_cli/tools/`: built-in tools, including compacted-context recall
 - `src/kimi_cli/ui/`: UI frontends (shell/print/acp/wire)
 - `src/kimi_cli/acp/`: ACP server components
 - `packages/kosong/`, `packages/kaos/`: workspace deps

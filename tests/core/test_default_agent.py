@@ -571,6 +571,48 @@ A powerful search tool based-on ripgrep.
                 },
             ),
             Tool(
+                name="RecallCompactedContext",
+                description="""\
+Recall details from previously compacted conversation context for the current conversation trajectory.
+
+Use this tool when the compaction summary is not enough and you need older context details without reading raw archive files directly.
+
+What it does:
+- Lists available compacted-context archives for the current trajectory
+- Searches archived pre-compaction messages by targeted keywords
+- Returns small, relevant excerpts instead of the whole archive
+
+Guidelines:
+- Prefer specific queries such as file paths, function names, error strings, IDs, or distinctive keywords
+- Leave `query` empty to list available archives and their short summaries first
+- Use `archive_id` to narrow the search when you already know which archive is relevant
+- This tool only reads archives created by compaction for the current trajectory
+- Returned excerpts are sanitized and may omit hidden thinking content
+""",
+                parameters={
+                    "properties": {
+                        "query": {
+                            "anyOf": [{"type": "string"}, {"type": "null"}],
+                            "default": None,
+                            "description": "Targeted keywords to search for in compacted-context archives. Leave empty to list available archives and their summaries.",
+                        },
+                        "archive_id": {
+                            "anyOf": [{"type": "string"}, {"type": "null"}],
+                            "default": None,
+                            "description": "Optional archive ID like `c001` to restrict lookup to a single compacted-context archive.",
+                        },
+                        "max_results": {
+                            "default": 3,
+                            "description": "Maximum number of excerpts to return. Defaults to 3, max 5.",
+                            "maximum": 5,
+                            "minimum": 1,
+                            "type": "integer",
+                        },
+                    },
+                    "type": "object",
+                },
+            ),
+            Tool(
                 name="WriteFile",
                 description="""\
 Write content to a file.
@@ -952,6 +994,7 @@ At any time, you should be HELPFUL and POLITE, CONCISE and ACCURATE, PATIENT and
                     "ReadMediaFile",
                     "Glob",
                     "Grep",
+                    "RecallCompactedContext",
                     "WriteFile",
                     "Edit",
                     "SearchWeb",
