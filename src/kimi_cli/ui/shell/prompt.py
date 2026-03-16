@@ -2259,16 +2259,23 @@ class CustomPromptSession:
         def _follow_turn_output(_: object) -> None:
             nonlocal body_vertical_scroll, last_layout_signature
             signature = _turn_layout_signature()
-            target_scroll = self._target_turn_body_bottom_scroll(
-                body_window,
-                line_count=signature[2],
-                current_scroll=body_vertical_scroll,
-            )
-            if target_scroll is not None:
-                body_vertical_scroll = target_scroll
-                last_layout_signature = signature
-                app.invalidate()
-                return
+            if live_view.has_pending_input_request:
+                if body_vertical_scroll != 0:
+                    body_vertical_scroll = 0
+                    last_layout_signature = signature
+                    app.invalidate()
+                    return
+            else:
+                target_scroll = self._target_turn_body_bottom_scroll(
+                    body_window,
+                    line_count=signature[2],
+                    current_scroll=body_vertical_scroll,
+                )
+                if target_scroll is not None:
+                    body_vertical_scroll = target_scroll
+                    last_layout_signature = signature
+                    app.invalidate()
+                    return
             if signature != last_layout_signature:
                 last_layout_signature = signature
                 app.invalidate()

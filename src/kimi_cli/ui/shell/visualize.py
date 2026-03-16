@@ -1431,6 +1431,7 @@ class LiveView:
         content_char_limit: int | None = None,
     ) -> RenderableType:
         truncated = False
+        focus_pending_input_panel = self.has_pending_input_request and tail_block_limit == 0
         if tail_block_limit is not None:
             if tail_block_limit <= 0 and self._flushed_blocks:
                 blocks = []
@@ -1443,7 +1444,19 @@ class LiveView:
         else:
             blocks = list(self._flushed_blocks)
         has_specific_running_indicator = False
-        if self._mcp_loading_spinner is not None:
+        if focus_pending_input_panel:
+            truncated = truncated or any(
+                block is not None
+                for block in (
+                    self._mcp_loading_spinner,
+                    self._mooning_spinner,
+                    self._compacting_spinner,
+                    self._current_content_block,
+                    self._turn_spinner,
+                )
+            )
+            truncated = truncated or bool(self._tool_call_blocks)
+        elif self._mcp_loading_spinner is not None:
             if include_running_indicators:
                 blocks.append(self._mcp_loading_spinner)
                 has_specific_running_indicator = True
@@ -1477,7 +1490,8 @@ class LiveView:
                 if not tool_call.finished and include_running_indicators:
                     has_specific_running_indicator = True
         if (
-            include_running_indicators
+            not focus_pending_input_panel
+            and include_running_indicators
             and self._turn_spinner is not None
             and not has_specific_running_indicator
         ):
