@@ -63,7 +63,7 @@ from kimi_cli.llm import ModelCapability
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import StatusSnapshot, format_context_status
 from kimi_cli.ui.shell import placeholders as prompt_placeholders
-from kimi_cli.ui.shell.console import console
+from kimi_cli.ui.shell.console import _RIGHT_PADDING, console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.placeholders import (
     PromptPlaceholderManager,
@@ -180,7 +180,7 @@ class _RichRenderableControl(UIControl):
         self._content_cache.clear()
 
     def _render_lines(self, width: int) -> tuple[tuple[tuple[str, str], ...], ...]:
-        normalized_width = max(20, width)
+        normalized_width = max(20, width - _RIGHT_PADDING)
         self._invalidate_cache_if_needed()
         cached = self._rendered_lines_cache.get(normalized_width)
         if cached is not None:

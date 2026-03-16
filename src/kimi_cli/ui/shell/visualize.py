@@ -22,7 +22,7 @@ from rich.text import Text
 
 from kimi_cli.soul import format_context_status
 from kimi_cli.tools import extract_key_argument
-from kimi_cli.ui.shell.console import console
+from kimi_cli.ui.shell.console import _RIGHT_PADDING, console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.diff import format_unified_diff
@@ -1133,7 +1133,7 @@ class LiveView:
         return any(not block.finished for block in self._tool_call_blocks.values())
 
     def _renderable_to_ansi(self, renderable: RenderableType, width: int) -> str:
-        width = max(20, width)
+        width = max(20, width - _RIGHT_PADDING)
         sio = StringIO()
         render_console = Console(
             file=sio,

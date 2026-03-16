@@ -3,9 +3,9 @@ from __future__ import annotations
 from rich.console import Console, ConsoleDimensions
 from rich.theme import Theme
 
-# Reserve 1 column on the right so wide characters (e.g. CJK) never get
-# clipped by the terminal's right edge.
-_RIGHT_PADDING = 1
+# Reserve 2 columns on the right so wide characters (e.g. CJK) and
+# line-wrapping artefacts never get clipped by the terminal's right edge.
+_RIGHT_PADDING = 2
 
 _NEUTRAL_MARKDOWN_THEME = Theme(
     {
