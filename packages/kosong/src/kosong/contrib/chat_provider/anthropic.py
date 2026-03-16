@@ -210,7 +210,7 @@ class Anthropic:
         generation_kwargs.update(self._generation_kwargs)
         betas = generation_kwargs.pop("beta_features", [])
         extra_headers = {
-            **{"anthropic-beta": ",".join(str(e) for e in betas)},
+            **({"anthropic-beta": ",".join(str(e) for e in betas)} if betas else {}),
             **(generation_kwargs.pop("extra_headers", {})),
         }
 
