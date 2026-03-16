@@ -1,6 +1,7 @@
 """Tests for turn-end question detection."""
 
 from __future__ import annotations
+import asyncio
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -565,4 +566,72 @@ async def test_detect_turn_end_question_gives_up_after_max_attempts(
     result = await soul._detect_turn_end_question(assistant_msg)
 
     assert call_count == soul._TURN_END_DETECT_MAX_ATTEMPTS
+    assert result is None
+
+
+# -- Yes/No question detection tests --
+
+
+class TestParseYesNoQuestion:
+    def _make_soul(self, runtime: Runtime, tmp_path: Path) -> KimiSoul:
+        return KimiSoul(
+            Agent(
+                name="Test",
+                system_prompt="Test",
+                toolset=EmptyToolset(),
+                runtime=runtime,
+            ),
+            context=Context(file_backend=tmp_path / "history.jsonl"),
+        )
+
+    def test_parse_yes_no_question(self, runtime: Runtime, tmp_path: Path) -> None:
+        """Yes/No questions should be recognized as valid choice questions."""
+        soul = self._make_soul(runtime, tmp_path)
+        result = soul._parse_turn_end_question_payload(
+            '{"has_question": true, "questions": [{"question": "Should I proceed?",'
+            ' "options": [{"label": "Yes", "description": "Continue with the change"},'
+            ' {"label": "No", "description": "Cancel"}]}]}'
+        )
+        assert result is not None
+        assert result.has_question is True
+        assert len(result.questions) == 1
+        assert result.questions[0].question == "Should I proceed?"
+        assert result.questions[0].options[0].label == "Yes"
+        assert result.questions[0].options[1].label == "No"
+
+
+# -- Timeout tests --
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_times_out(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the side-channel LLM call exceeds the timeout, returns None."""
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    # Use a very short timeout for testing
+    monkeypatch.setattr(KimiSoul, "_TURN_END_DETECT_TIMEOUT", 0.1)
+
+    async def slow_generate(*, chat_provider, system_prompt, tools, history):
+        await asyncio.sleep(10)  # much longer than the timeout
+        return SimpleNamespace(
+            message=Message(role="assistant", content='{"has_question": false, "questions": []}')
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", slow_generate)
+
+    assistant_msg = Message(role="assistant", content="Should I do A or B?")
+    result = await soul._detect_turn_end_question(assistant_msg)
+
     assert result is None

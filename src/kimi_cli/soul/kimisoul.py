@@ -100,12 +100,13 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     '- "Would you like to continue, start over, or stop?"\n'
     '- "Which framework do you prefer: React, Vue, or Angular?"\n'
     '- "请选择 A 还是 B？"\n'
+    '- "Should I proceed?" (yes/no — options: Yes, No)\n'
+    '- "Do you want me to continue?" (yes/no — options: Yes, No)\n'
+    '- "是否继续？" (yes/no — options: Yes, No)\n'
     "\n"
     "Do NOT consider these as choice questions:\n"
     "- General clarifying questions without specific options\n"
     '- Rhetorical questions like "Does that make sense?"\n'
-    '- Simple yes/no confirmations like "Should I proceed?"'
-    " (unless there are distinct alternatives)\n"
     "- Questions embedded in the middle of the response that were already addressed\n"
     "\n"
     "Return strict JSON with this exact shape:\n"
@@ -838,6 +839,7 @@ class KimiSoul:
     # -- Turn-end question detection --------------------------------------------------
 
     _TURN_END_DETECT_MAX_ATTEMPTS = 2
+    _TURN_END_DETECT_TIMEOUT = 15.0  # seconds
 
     async def _detect_turn_end_question(
         self,
@@ -846,7 +848,25 @@ class KimiSoul:
         """Use a side-channel LLM call to check if *assistant_message* asks the user
         to choose between options.  Returns the parsed detection or ``None`` on
         failure.  Retries up to ``_TURN_END_DETECT_MAX_ATTEMPTS`` when the LLM
-        returns unparseable output."""
+        returns unparseable output.  The entire detection is capped at
+        ``_TURN_END_DETECT_TIMEOUT`` seconds."""
+        try:
+            return await asyncio.wait_for(
+                self._detect_turn_end_question_inner(assistant_message),
+                timeout=self._TURN_END_DETECT_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Turn-end question detection timed out after {timeout}s",
+                timeout=self._TURN_END_DETECT_TIMEOUT,
+            )
+            return None
+
+    async def _detect_turn_end_question_inner(
+        self,
+        assistant_message: Message,
+    ) -> TurnEndQuestionDetection | None:
+        """Inner implementation without timeout wrapper."""
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider.with_thinking("off")
 
