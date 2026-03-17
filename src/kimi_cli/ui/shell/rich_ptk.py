@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from rich.console import Console as RichConsole
 from rich.console import RenderableType
@@ -126,8 +127,14 @@ class _RichRenderableControl(UIControl):
 class _StackedRichRenderableControl(UIControl):
     """Stack multiple Rich renderables vertically while caching each section separately."""
 
-    def __init__(self, sections: Sequence[_RichRenderableControl]) -> None:
+    def __init__(
+        self,
+        sections: Sequence[_RichRenderableControl],
+        *,
+        get_cursor_line: Callable[[int], int | None] | None = None,
+    ) -> None:
         self._sections = list(sections)
+        self._get_cursor_line = get_cursor_line or (lambda _line_count: None)
 
     def _section_lines(self, width: int) -> list[tuple[tuple[tuple[str, str], ...], ...]]:
         return [section._render_lines(width) for section in self._sections]
@@ -160,8 +167,15 @@ class _StackedRichRenderableControl(UIControl):
                     return list(lines[i - start])
             return []
 
+        cursor_position = None
+        if line_offset > 0:
+            cursor_line = self._get_cursor_line(line_offset)
+            if cursor_line is not None:
+                cursor_position = Point(x=0, y=max(0, min(line_offset - 1, cursor_line)))
+
         return UIContent(
             get_line=_get_line,
             line_count=line_offset,
             show_cursor=False,
+            cursor_position=cursor_position,
         )

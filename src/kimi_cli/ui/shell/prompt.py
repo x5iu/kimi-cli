@@ -81,7 +81,7 @@ from kimi_cli.utils.clipboard import (
 )
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.slashcmd import SlashCommand
-from kimi_cli.wire.types import ContentPart, StepInterrupted
+from kimi_cli.wire.types import ContentPart, StepInterrupted, TextPart, ThinkPart, ToolCallPart
 
 AttachmentCache = prompt_placeholders.AttachmentCache
 CachedAttachment = prompt_placeholders.CachedAttachment
@@ -129,6 +129,18 @@ _INDICATOR_STYLES = {
     "question": "fg:#22d3ee",
 }
 _TURN_UI_REFRESH_INTERVAL = 0.2
+_TURN_UI_FAST_REFRESH_INTERVAL = 1 / 30
+_TURN_UI_BURST_REFRESH_INTERVAL = 1 / 60
+_TURN_UI_STREAM_BURST_SECONDS = 0.3
+_TURN_UI_STREAM_RESUME_BURST_GAP = 0.15
+_TURN_UI_BURST_STREAM_PUSH_PARTS = 1
+_TURN_UI_BURST_STREAM_PUSH_CHARS = 32
+_TURN_UI_COMPOSE_STREAM_PUSH_PARTS = 2
+_TURN_UI_COMPOSE_STREAM_PUSH_CHARS = 64
+_TURN_UI_FAST_STREAM_PUSH_PARTS = 4
+_TURN_UI_FAST_STREAM_PUSH_CHARS = 128
+_TURN_UI_STREAM_PUSH_PARTS = 8
+_TURN_UI_STREAM_PUSH_CHARS = 256
 _TERMINAL_SIZE_POLLING_INTERVAL = 1.0
 
 
@@ -1155,40 +1167,78 @@ class CustomPromptSession:
         return last_signature
 
     @staticmethod
-    def _target_turn_body_bottom_scroll(
-        body_window: Any,
-        *,
-        line_count: int,
-        current_scroll: int,
-    ) -> int | None:
-        render_info = body_window.render_info
-        if render_info is None:
-            return None
-        visible_height = max(1, render_info.window_height)
-        target_scroll = max(0, line_count - visible_height)
-        if current_scroll == target_scroll:
-            return None
-        return target_scroll
+    def _turn_ui_refresh_interval(live_view: Any, *, burst_active: bool = False) -> float:
+        indicator = getattr(live_view, "activity_indicator", None)
+        if indicator is None:
+            return _TURN_UI_REFRESH_INTERVAL
+        kind, _ = indicator
+        if kind == "composing":
+            return (
+                _TURN_UI_BURST_REFRESH_INTERVAL
+                if burst_active
+                else _TURN_UI_FAST_REFRESH_INTERVAL
+            )
+        if kind == "thinking":
+            return _TURN_UI_FAST_REFRESH_INTERVAL
+        return _TURN_UI_REFRESH_INTERVAL
 
-    @classmethod
-    def _target_turn_body_scroll(
-        cls,
-        *,
+    @staticmethod
+    def _turn_stream_push_thresholds(
         live_view: Any,
-        body_window: Any,
-        line_count: int,
-        current_scroll: int,
-        reveal_latest_output: bool,
-    ) -> int | None:
-        if getattr(live_view, "has_pending_input_request", False) and not reveal_latest_output:
-            if current_scroll == 0:
+        *,
+        burst_active: bool = False,
+    ) -> tuple[int, int]:
+        indicator = getattr(live_view, "activity_indicator", None)
+        if indicator is None:
+            return _TURN_UI_STREAM_PUSH_PARTS, _TURN_UI_STREAM_PUSH_CHARS
+        kind, _ = indicator
+        if kind == "composing":
+            if burst_active:
+                return _TURN_UI_BURST_STREAM_PUSH_PARTS, _TURN_UI_BURST_STREAM_PUSH_CHARS
+            return _TURN_UI_COMPOSE_STREAM_PUSH_PARTS, _TURN_UI_COMPOSE_STREAM_PUSH_CHARS
+        if kind == "thinking":
+            return _TURN_UI_FAST_STREAM_PUSH_PARTS, _TURN_UI_FAST_STREAM_PUSH_CHARS
+        return _TURN_UI_STREAM_PUSH_PARTS, _TURN_UI_STREAM_PUSH_CHARS
+
+    @staticmethod
+    def _turn_stream_refresh_metrics(msg: object) -> tuple[int, int, bool]:
+        match msg:
+            case TextPart(text=text) | ThinkPart(think=text):
+                return 1, len(text), "\n" in text
+            case ToolCallPart(arguments_part=arguments_part):
+                if not arguments_part:
+                    return 0, 0, False
+                return 1, len(arguments_part), "\n" in arguments_part
+            case _:
+                return 0, 0, False
+
+    @staticmethod
+    def _turn_stream_burst_kind(msg: object) -> str | None:
+        match msg:
+            case TextPart(text=text) if text:
+                return "composing"
+            case _:
                 return None
-            return 0
-        return cls._target_turn_body_bottom_scroll(
-            body_window,
-            line_count=line_count,
-            current_scroll=current_scroll,
-        )
+
+    @staticmethod
+    def _should_start_turn_stream_burst(
+        *,
+        active_kind: str | None,
+        msg_kind: str | None,
+        current_burst_kind: str | None,
+        now: float,
+        burst_until: float,
+        last_burstable_stream_at: float,
+    ) -> bool:
+        if active_kind != "composing" or msg_kind != "composing":
+            return False
+        if current_burst_kind != "composing":
+            return True
+        if now < burst_until:
+            return False
+        if last_burstable_stream_at <= 0:
+            return False
+        return now - last_burstable_stream_at >= _TURN_UI_STREAM_RESUME_BURST_GAP
 
     def _refresh_turn_application(
         self,
@@ -1450,10 +1500,15 @@ class CustomPromptSession:
     ) -> None:
         self._mode = PromptMode.AGENT
         feedback_message = ""
-        body_vertical_scroll = 0
         reveal_latest_output = False
         body_window: Window | None = None
         last_layout_signature: tuple[object, ...] | None = None
+        stream_refresh_parts = 0
+        stream_refresh_chars = 0
+        last_stream_refresh_at = 0.0
+        stream_burst_kind: str | None = None
+        stream_burst_until = 0.0
+        last_burstable_stream_at = 0.0
 
         def _app_columns(app: Application[Any] | None = None) -> int:
             current_app = get_app_or_none() if app is None else app
@@ -1548,8 +1603,17 @@ class CustomPromptSession:
                 live_view.input_mode,
             ),
         )
+
+        def _turn_body_cursor_line(line_count: int) -> int | None:
+            if line_count <= 0:
+                return None
+            if getattr(live_view, "has_pending_input_request", False) and not reveal_latest_output:
+                return 0
+            return line_count - 1
+
         body_control = _StackedRichRenderableControl(
-            [recent_notice_control, history_body_control, active_body_control]
+            [recent_notice_control, history_body_control, active_body_control],
+            get_cursor_line=_turn_body_cursor_line,
         )
 
         def _turn_layout_signature() -> tuple[int, int, int, bool, bool, int]:
@@ -1587,22 +1651,90 @@ class CustomPromptSession:
         def _refresh_turn_view(app: Application[Any]) -> None:
             _redraw_turn_view(app)
 
+        def _turn_stream_activity_kind() -> str | None:
+            indicator = getattr(live_view, "activity_indicator", None)
+            if indicator is None:
+                return None
+            kind, _ = indicator
+            if kind in {"thinking", "composing"}:
+                return kind
+            return None
+
+        def _turn_stream_burst_active(now: float | None = None) -> bool:
+            current = time.monotonic() if now is None else now
+            return (
+                _turn_stream_activity_kind() == stream_burst_kind == "composing"
+                and current < stream_burst_until
+            )
+
+        def _update_turn_stream_burst(msg: object) -> None:
+            nonlocal stream_burst_kind, stream_burst_until, last_burstable_stream_at
+            active_kind = _turn_stream_activity_kind()
+            if active_kind != "composing":
+                stream_burst_kind = None
+                stream_burst_until = 0.0
+                last_burstable_stream_at = 0.0
+                return
+            now = time.monotonic()
+            kind = self._turn_stream_burst_kind(msg)
+            if self._should_start_turn_stream_burst(
+                active_kind=active_kind,
+                msg_kind=kind,
+                current_burst_kind=stream_burst_kind,
+                now=now,
+                burst_until=stream_burst_until,
+                last_burstable_stream_at=last_burstable_stream_at,
+            ):
+                stream_burst_kind = "composing"
+                stream_burst_until = now + _TURN_UI_STREAM_BURST_SECONDS
+            if kind == "composing":
+                last_burstable_stream_at = now
+
+        def _reset_turn_stream_refresh_budget(*, mark_now: bool = False) -> None:
+            nonlocal stream_refresh_parts, stream_refresh_chars, last_stream_refresh_at
+            stream_refresh_parts = 0
+            stream_refresh_chars = 0
+            if mark_now:
+                last_stream_refresh_at = time.monotonic()
+
+        def _should_push_turn_stream_refresh(msg: object) -> bool:
+            nonlocal stream_refresh_parts, stream_refresh_chars, last_stream_refresh_at
+            part_count, char_count, force_refresh = self._turn_stream_refresh_metrics(msg)
+            if part_count <= 0 and char_count <= 0 and not force_refresh:
+                return False
+            stream_refresh_parts += part_count
+            stream_refresh_chars += char_count
+            if force_refresh:
+                _reset_turn_stream_refresh_budget(mark_now=True)
+                return True
+            now = time.monotonic()
+            burst_active = _turn_stream_burst_active(now)
+            part_limit, char_limit = self._turn_stream_push_thresholds(
+                live_view,
+                burst_active=burst_active,
+            )
+            if stream_refresh_parts >= part_limit:
+                _reset_turn_stream_refresh_budget(mark_now=True)
+                return True
+            if stream_refresh_chars >= char_limit:
+                _reset_turn_stream_refresh_budget(mark_now=True)
+                return True
+            refresh_interval = self._turn_ui_refresh_interval(
+                live_view,
+                burst_active=burst_active,
+            )
+            if last_stream_refresh_at <= 0 or now - last_stream_refresh_at >= refresh_interval:
+                _reset_turn_stream_refresh_budget(mark_now=True)
+                return True
+            return False
+
         def _clear_turn_output_reveal() -> None:
             nonlocal reveal_latest_output
             reveal_latest_output = False
 
         def _reveal_turn_output_tail() -> None:
-            nonlocal body_vertical_scroll, reveal_latest_output
+            nonlocal reveal_latest_output
             reveal_latest_output = True
-            target_scroll = self._target_turn_body_scroll(
-                live_view=live_view,
-                body_window=body_window,
-                line_count=_turn_layout_signature()[2],
-                current_scroll=body_vertical_scroll,
-                reveal_latest_output=True,
-            )
-            if target_scroll is not None:
-                body_vertical_scroll = target_scroll
 
         def _has_turn_activity() -> bool:
             return (
@@ -1764,7 +1896,6 @@ class CustomPromptSession:
         body_window = Window(
             body_control,
             always_hide_cursor=True,
-            get_vertical_scroll=lambda _: body_vertical_scroll,
         )
         activity_window = Window(
             FormattedTextControl(_render_activity),
@@ -1833,20 +1964,8 @@ class CustomPromptSession:
         last_layout_signature = _turn_layout_signature()
 
         def _follow_turn_output(_: object) -> None:
-            nonlocal body_vertical_scroll, last_layout_signature
+            nonlocal last_layout_signature
             signature = _turn_layout_signature()
-            target_scroll = self._target_turn_body_scroll(
-                live_view=live_view,
-                body_window=body_window,
-                line_count=signature[2],
-                current_scroll=body_vertical_scroll,
-                reveal_latest_output=reveal_latest_output,
-            )
-            if target_scroll is not None:
-                body_vertical_scroll = target_scroll
-                last_layout_signature = signature
-                app.invalidate()
-                return
             if signature != last_layout_signature:
                 last_layout_signature = signature
                 app.invalidate()
@@ -1874,25 +1993,36 @@ class CustomPromptSession:
 
                 _clear_turn_output_reveal()
                 live_view.dispatch_wire_message(msg)
+                _update_turn_stream_burst(msg)
                 feedback_message = ""
                 significant = is_significant_for_render(msg)
-                if significant or not live_view.needs_periodic_refresh:
+                stream_refresh = False
+                if not significant and live_view.needs_periodic_refresh:
+                    stream_refresh = _should_push_turn_stream_refresh(msg)
+                if significant or stream_refresh or not live_view.needs_periodic_refresh:
                     _refresh_turn_view(app)
+                    _reset_turn_stream_refresh_budget(mark_now=True)
 
                 # Yield to the event loop after significant state changes so
                 # prompt_toolkit can repaint immediately.  Without this the
                 # loop drains every queued message before _redraw runs,
                 # delaying tool-result and reminder rendering.
-                if significant:
+                if significant or stream_refresh:
                     await asyncio.sleep(0)
 
         async def _animate() -> None:
             while True:
-                await asyncio.sleep(_TURN_UI_REFRESH_INTERVAL)
-                self._refresh_turn_application(
+                await asyncio.sleep(
+                    self._turn_ui_refresh_interval(
+                        live_view,
+                        burst_active=_turn_stream_burst_active(),
+                    )
+                )
+                if self._refresh_turn_application(
                     app,
                     live_view=live_view,
-                )
+                ):
+                    _reset_turn_stream_refresh_budget(mark_now=True)
 
         consume_task = asyncio.create_task(_consume_wire())
         animate_task = asyncio.create_task(_animate())

@@ -124,7 +124,10 @@ def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
 
 
 def _render_recent_output_notice() -> RenderableType:
-    return Text("… showing recent output only during live turn", style="grey50 italic")
+    return Text(
+        "… showing recent output only during live turn; full history appears after the turn ends",
+        style="grey50 italic",
+    )
 
 
 class LiveView:
@@ -686,12 +689,17 @@ class LiveView:
         tail_block_limit: int | None = None,
         content_char_limit: int | None = None,
     ) -> bool:
-        _, history_truncated = self._history_blocks(tail_block_limit=tail_block_limit)
-        _, active_truncated = self._active_blocks(
+        history_blocks, history_truncated = self._history_blocks(tail_block_limit=tail_block_limit)
+        active_blocks, active_truncated = self._active_blocks(
             include_running_indicators=False,
             content_char_limit=content_char_limit,
         )
-        return history_truncated or active_truncated
+        if history_truncated or active_truncated:
+            return True
+        tail_mode_active = tail_block_limit is not None or content_char_limit is not None
+        if not tail_mode_active:
+            return False
+        return bool(history_blocks or active_blocks)
 
     def compose_history_body(
         self,

@@ -619,6 +619,25 @@ def test_live_view_compose_body_can_limit_to_recent_blocks() -> None:
     assert "recent output only during live turn" in rendered
 
 
+def test_live_view_tail_mode_notice_stays_visible_without_actual_truncation() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_content(TextPart(text="only block"))
+    view.flush_content()
+
+    rendered = view._renderable_to_ansi(
+        view.compose_body(
+            include_running_indicators=False,
+            tail_block_limit=10,
+        ),
+        80,
+    )
+
+    assert "only block" in rendered
+    assert "full history appears after the" in rendered
+    assert "turn ends" in rendered
+
+
 def test_live_view_compose_body_can_hide_previous_blocks_while_waiting_for_input() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
 

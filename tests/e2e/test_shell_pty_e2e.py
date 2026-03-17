@@ -785,6 +785,55 @@ def test_shell_cancel_running_command_kills_process_and_recovers(tmp_path: Path)
         shell.close()
 
 
+def test_shell_long_stream_tail_appears_before_turn_end(tmp_path: Path) -> None:
+    tail_marker = "STREAM-TAIL"
+    scripts = [
+        "\n".join(
+            [
+                *[f"text: Stream line {i:02d}" for i in range(1, 41)],
+                f"text: {tail_marker}",
+                build_shell_tool_call("tc-stream-tail", "sleep 5 && printf stream-done > stream_done.txt"),
+            ]
+        ),
+        "text: Stream tail recovery completed.",
+    ]
+    config_path = write_scripted_config(tmp_path, scripts)
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+    shell = start_shell_pty(
+        config_path=config_path,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+        lines=16,
+    )
+
+    try:
+        shell.read_until_contains("Welcome to Kimi Code CLI!")
+        _read_until_prompt(shell, after=shell.mark())
+
+        turn_mark = shell.mark()
+        shell.send_line("exercise long stream follow")
+        shell.read_until_contains(
+            "Using Shell (sleep 5 && printf stream-done > stream_done.txt)",
+            after=turn_mark,
+            timeout=15.0,
+        )
+        shell.read_until_contains(tail_marker, after=turn_mark, timeout=5.0)
+        assert not (work_dir / "stream_done.txt").exists()
+
+        shell.send_key("escape")
+        shell.read_until_contains("Interrupted by user", after=turn_mark, timeout=15.0)
+        _read_until_prompt(shell, after=shell.mark())
+
+        recovery_mark = shell.mark()
+        shell.send_line("confirm stream follow recovery")
+        shell.read_until_contains("Stream tail recovery completed.", after=recovery_mark, timeout=15.0)
+        _read_until_prompt(shell, after=shell.mark())
+    finally:
+        shell.close()
+
+
 def test_shell_ctrl_l_reveals_latest_output_during_question_prompt(tmp_path: Path) -> None:
     tail_marker = "ZTAILZ"
     question_payload = [
@@ -828,9 +877,15 @@ def test_shell_ctrl_l_reveals_latest_output_during_question_prompt(tmp_path: Pat
         shell.read_until_contains("Enter to choose", after=turn_mark, timeout=15.0)
         time.sleep(0.3)
 
+        marker_visible_before_redraw = tail_marker in shell.normalized_text()[turn_mark:]
+
         redraw_mark = shell.mark()
         shell.send_key("ctrl_l")
-        shell.read_until_contains(tail_marker, after=redraw_mark, timeout=15.0)
+        if marker_visible_before_redraw:
+            shell.wait_for_quiet(after=redraw_mark, quiet_period=0.3, timeout=5.0)
+            assert shell.process.poll() is None
+        else:
+            shell.read_until_contains(tail_marker, after=redraw_mark, timeout=15.0)
 
         shell.send_key("1")
         shell.read_until_contains("Ctrl-L recovery completed.", after=turn_mark, timeout=15.0)
