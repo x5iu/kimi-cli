@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import override
 
+from kosong.message import Message
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
