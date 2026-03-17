@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout.containers import FloatContainer
+from prompt_toolkit.utils import get_cwidth
 
 from kimi_cli.soul import StatusSnapshot
 from kimi_cli.ui.shell import prompt as shell_prompt
@@ -44,6 +45,17 @@ def test_frame_title_is_prompt() -> None:
     plain = "".join(fragment[1] for fragment in rendered)
 
     assert "PROMPT" in plain
+
+
+def test_turn_prompt_title_reflects_pending_input_mode() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+
+    rendered = prompt_session._render_turn_prompt_title(
+        SimpleNamespace(has_pending_input_request=True, input_mode="approval")
+    )
+    plain = "".join(fragment[1] for fragment in rendered)
+
+    assert "APPROVAL" in plain
 
 
 def test_render_message_shows_active_turn_badge() -> None:
@@ -113,6 +125,7 @@ def test_prompt_application_shows_completion_menu(
     app, _ = prompt_session._build_prompt_application()
 
     assert isinstance(app.layout.container, FloatContainer)
+    assert len(app.layout.container.floats) >= 1
 
 
 def test_prompt_session_uses_slow_terminal_size_polling(
@@ -148,16 +161,25 @@ def test_prompt_force_turn_full_repaint_resets_last_screen() -> None:
     assert calls == ["invalidate"]
 
 
-def test_prompt_hard_redraw_prefers_resize_path() -> None:
-    calls: list[str] = []
+def test_prompt_hard_redraw_prefers_renderer_erase() -> None:
+    calls: list[tuple[str, object | None]] = []
+
+    class _Renderer:
+        _last_screen = "screen"
+
+        def erase(self, leave_alternate_screen: bool = True) -> None:
+            calls.append(("erase", leave_alternate_screen))
 
     class _DummyApp:
-        def _on_resize(self) -> None:
-            calls.append("resize")
+        def __init__(self) -> None:
+            self.renderer = _Renderer()
+
+        def invalidate(self) -> None:
+            calls.append(("invalidate", None))
 
     shell_prompt.CustomPromptSession._hard_redraw(_DummyApp())
 
-    assert calls == ["resize"]
+    assert calls == [("erase", False), ("invalidate", None)]
 
 
 def test_prompt_redraw_for_layout_change_triggers_full_repaint() -> None:
@@ -216,6 +238,57 @@ def test_custom_prompt_app_clears_rendered_input_when_done(
     assert app.erase_when_done is True
 
 
+def test_prompt_application_cache_reuses_top_level_app(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[],
+        shell_mode_slash_commands=[],
+    )
+
+    first_app, first_text_area = prompt_session._get_prompt_application()
+    second_app, second_text_area = prompt_session._get_prompt_application()
+
+    assert first_app is second_app
+    assert first_text_area is second_text_area
+
+
+def test_prepare_prompt_application_clears_buffer_and_applies_mode(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[],
+        shell_mode_slash_commands=[],
+    )
+
+    app, text_area = prompt_session._get_prompt_application()
+    text_area.buffer.document = shell_prompt.Document(text="stale", cursor_position=5)
+    prompt_session._mode = PromptMode.SHELL
+
+    prepared_app, prepared_text_area = prompt_session._prepare_prompt_application()
+
+    assert prepared_app is app
+    assert prepared_text_area is text_area
+    assert prepared_text_area.buffer.text == ""
+    assert prepared_text_area.buffer.completer is prompt_session._shell_mode_completer
+
+
 def test_custom_prompt_app_binds_ctrl_l_to_redraw(
     temp_work_dir,
     tmp_path,
@@ -258,6 +331,161 @@ def test_custom_prompt_app_binds_ctrl_c_to_keyboard_interrupt(
     assert app.key_bindings is not None
     bindings = app.key_bindings.get_bindings_for_keys((Keys.ControlC,))
     assert bindings
+
+
+def test_dismiss_input_clears_buffer_text_and_completion() -> None:
+    class _DummyBuffer:
+        def __init__(self) -> None:
+            self.text = "pending input"
+            self.complete_state = object()
+            self.document = shell_prompt.Document(text=self.text, cursor_position=len(self.text))
+
+        def cancel_completion(self) -> None:
+            self.complete_state = None
+
+        @property
+        def document(self):
+            return self._document
+
+        @document.setter
+        def document(self, value) -> None:
+            self._document = value
+            self.text = value.text
+
+    buffer = _DummyBuffer()
+
+    handled = CustomPromptSession._dismiss_input(buffer)
+
+    assert handled is True
+    assert buffer.text == ""
+    assert buffer.complete_state is None
+
+
+def test_dismiss_input_returns_false_when_nothing_to_clear() -> None:
+    class _DummyBuffer:
+        text = ""
+        complete_state = None
+
+        def cancel_completion(self) -> None:
+            raise AssertionError("cancel_completion should not be called")
+
+    assert CustomPromptSession._dismiss_input(_DummyBuffer()) is False
+
+
+def test_turn_input_hint_text_shows_pending_question_hint() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+
+    hint = prompt_session._turn_input_hint_text(
+        live_view=SimpleNamespace(
+            input_mode="question",
+            input_hint="Use ↑/↓ to focus and Enter to choose.",
+        ),
+        buffer_text="",
+        feedback_message="",
+    )
+
+    assert "Use ↑/↓" in hint
+
+
+def test_turn_input_hint_text_hides_when_buffer_has_text() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+
+    hint = prompt_session._turn_input_hint_text(
+        live_view=SimpleNamespace(
+            input_mode="question",
+            input_hint="Use ↑/↓ to focus and Enter to choose.",
+        ),
+        buffer_text="typing",
+        feedback_message="",
+    )
+
+    assert hint == ""
+
+
+def test_immediate_toast_replaces_older_messages() -> None:
+    _toast_queues["left"].clear()
+
+    shell_prompt.toast("older toast", position="left")
+    shell_prompt.toast("new toast", position="left", immediate=True)
+
+    assert len(_toast_queues["left"]) == 1
+    assert shell_prompt._current_toast("left").message == "new toast"
+
+
+def test_render_toast_line_shows_left_and_right_toasts(monkeypatch) -> None:
+    width = 80
+    prompt_session = object.__new__(CustomPromptSession)
+
+    class _DummyOutput:
+        @staticmethod
+        def get_size():
+            return SimpleNamespace(columns=width)
+
+    dummy_app = SimpleNamespace(output=_DummyOutput())
+    monkeypatch.setattr(shell_prompt, "get_app_or_none", lambda: dummy_app)
+    _toast_queues["left"].clear()
+    _toast_queues["right"].clear()
+    shell_prompt.toast("left toast", position="left", immediate=True)
+    shell_prompt.toast("right toast", position="right", immediate=True)
+
+    rendered = prompt_session._render_toast_line()
+    plain = "".join(fragment[1] for fragment in rendered)
+
+    assert "left toast" in plain
+    assert "right toast" in plain
+    assert get_cwidth(plain) <= width
+
+
+def test_refresh_turn_application_repaints_for_visible_toast() -> None:
+    invalidate_calls = 0
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._has_toasts = lambda: True
+
+    class _App:
+        def invalidate(self) -> None:
+            nonlocal invalidate_calls
+            invalidate_calls += 1
+
+    refreshed = prompt_session._refresh_turn_application(
+        _App(),
+        live_view=SimpleNamespace(needs_periodic_refresh=False),
+    )
+
+    assert refreshed is True
+    assert invalidate_calls == 1
+
+
+def test_refresh_turn_application_clears_expired_toast() -> None:
+    invalidate_calls = 0
+    prompt_session = object.__new__(CustomPromptSession)
+    states = iter([True, False])
+    prompt_session._has_toasts = lambda: next(states)
+
+    class _App:
+        def __init__(self) -> None:
+            self._kimi_had_toasts = False
+
+        def invalidate(self) -> None:
+            nonlocal invalidate_calls
+            invalidate_calls += 1
+
+    app = _App()
+
+    assert (
+        prompt_session._refresh_turn_application(
+            app,
+            live_view=SimpleNamespace(needs_periodic_refresh=False),
+        )
+        is True
+    )
+    assert (
+        prompt_session._refresh_turn_application(
+            app,
+            live_view=SimpleNamespace(needs_periodic_refresh=False),
+        )
+        is True
+    )
+    assert invalidate_calls == 2
 
 
 def test_reminder_mode_hides_hint_line(monkeypatch) -> None:
@@ -366,7 +594,54 @@ def test_bottom_toolbar_shows_working_directory(monkeypatch) -> None:
     second_line = plain.split("\n", 1)[1]
 
     assert "/tmp/project" in second_line
-    assert len(second_line) <= width
+    assert get_cwidth(second_line) <= width
+
+
+def test_bottom_toolbar_handles_cjk_working_directory_width(monkeypatch) -> None:
+    width = 40
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._mode = PromptMode.AGENT
+    prompt_session._model_name = "kimi"
+    prompt_session._thinking = False
+    prompt_session._status_provider = lambda: StatusSnapshot(context_usage=0.0)
+    prompt_session._working_dir_provider = lambda: "/tmp/项目/子目录/更深的目录"
+    prompt_session._tips = []
+    prompt_session._tip_rotation_index = 0
+    prompt_session._input_box_state_provider = lambda: InputBoxState()
+
+    class _DummyOutput:
+        @staticmethod
+        def get_size():
+            return SimpleNamespace(columns=width)
+
+    dummy_app = SimpleNamespace(output=_DummyOutput())
+    monkeypatch.setattr(shell_prompt, "get_app_or_none", lambda: dummy_app)
+    _toast_queues["left"].clear()
+    _toast_queues["right"].clear()
+
+    plain = "".join(fragment[1] for fragment in prompt_session._render_bottom_toolbar())
+    second_line = plain.split("\n", 1)[1]
+
+    assert "录" in second_line
+    assert get_cwidth(second_line) <= width
+
+
+def test_turn_footer_handles_cjk_working_directory_width() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._mode = PromptMode.AGENT
+    prompt_session._model_name = "kimi"
+    prompt_session._thinking = False
+    prompt_session._status_provider = lambda: StatusSnapshot(context_usage=0.0)
+    prompt_session._working_dir_provider = lambda: "/tmp/项目/子目录/更深的目录"
+
+    rendered = prompt_session._render_turn_footer(
+        40,
+        status=StatusSnapshot(context_usage=0.0),
+    )
+    plain = "".join(fragment[1] for fragment in rendered)
+
+    assert "录" in plain
+    assert get_cwidth(plain) <= 40
 
 
 def test_active_turn_activity_line_shows_running_indicator() -> None:
@@ -432,6 +707,34 @@ def test_rich_renderable_control_invalidates_cache_when_revision_changes() -> No
     assert second_content.line_count == 2
     assert control.line_count(80) == 2
     assert calls == [0, 1]
+
+
+def test_stacked_rich_renderable_control_rerenders_only_changed_section() -> None:
+    revision_a = 0
+    revision_b = 0
+    calls: list[tuple[str, int]] = []
+
+    control = shell_prompt._StackedRichRenderableControl(
+        [
+            shell_prompt._RichRenderableControl(
+                lambda: calls.append(("a", revision_a)) or "head",
+                get_cache_revision=lambda: revision_a,
+            ),
+            shell_prompt._RichRenderableControl(
+                lambda: calls.append(("b", revision_b)) or "body",
+                get_cache_revision=lambda: revision_b,
+            ),
+        ]
+    )
+
+    content = control.create_content(80, None)
+    assert content.line_count == 2
+    assert calls == [("a", 0), ("b", 0)]
+
+    revision_b = 1
+    content = control.create_content(80, None)
+    assert content.line_count == 2
+    assert calls == [("a", 0), ("b", 0), ("b", 1)]
 
 
 def test_rich_style_to_prompt_toolkit_maps_basic_styles() -> None:
@@ -514,7 +817,9 @@ def test_refresh_turn_application_uses_incremental_redraw() -> None:
             invalidate_calls += 1
 
     app = _App()
-    refreshed = CustomPromptSession._refresh_turn_application(
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._has_toasts = lambda: False
+    refreshed = prompt_session._refresh_turn_application(
         app,
         live_view=SimpleNamespace(needs_periodic_refresh=True),
     )
@@ -533,7 +838,9 @@ def test_refresh_turn_application_stops_repainting_when_idle() -> None:
             invalidate_calls += 1
 
     app = _App()
-    refreshed = CustomPromptSession._refresh_turn_application(
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._has_toasts = lambda: False
+    refreshed = prompt_session._refresh_turn_application(
         app,
         live_view=SimpleNamespace(needs_periodic_refresh=False),
     )
@@ -560,6 +867,36 @@ def test_target_turn_body_bottom_scroll_tracks_latest_output() -> None:
             current_scroll=7,
         )
         is None
+    )
+
+
+def test_target_turn_body_scroll_resets_to_top_for_pending_input() -> None:
+    body_window = SimpleNamespace(render_info=SimpleNamespace(window_height=4, window_width=20))
+
+    assert (
+        CustomPromptSession._target_turn_body_scroll(
+            live_view=SimpleNamespace(has_pending_input_request=True),
+            body_window=body_window,
+            line_count=11,
+            current_scroll=3,
+            reveal_latest_output=False,
+        )
+        == 0
+    )
+
+
+def test_target_turn_body_scroll_can_reveal_latest_output_for_pending_input() -> None:
+    body_window = SimpleNamespace(render_info=SimpleNamespace(window_height=4, window_width=20))
+
+    assert (
+        CustomPromptSession._target_turn_body_scroll(
+            live_view=SimpleNamespace(has_pending_input_request=True),
+            body_window=body_window,
+            line_count=11,
+            current_scroll=0,
+            reveal_latest_output=True,
+        )
+        == 7
     )
 
 
@@ -606,4 +943,4 @@ def test_bottom_toolbar_no_overflow_when_tip_would_exactly_fill_old_available(mo
     plain = "".join(fragment[1] for fragment in rendered)
     second_line = plain.split("\n", 1)[1]
 
-    assert len(second_line) <= width
+    assert get_cwidth(second_line) <= width

@@ -118,6 +118,55 @@ async def test_live_view_switches_to_custom_answer_mode_for_keyboard_selected_ot
     assert await request.wait() == {"Which format should I use?": "TOML"}
 
 
+@pytest.mark.asyncio
+async def test_live_view_expand_hint_mentions_ctrl_e() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-expand-hint",
+        tool_call_id="tool-expand-hint",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+                body="Long details",
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert "Ctrl-E" in view.input_hint
+    assert "/more" in view.input_hint
+
+
+def test_live_view_ctrl_e_expands_current_panel(monkeypatch) -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    request = QuestionRequest(
+        id="question-expand-key",
+        tool_call_id="tool-expand-key",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+                body="Long details",
+            )
+        ],
+    )
+    view.request_question(request)
+    calls: list[str] = []
+    monkeypatch.setattr(view, "show_more", lambda: calls.append("expand") or True)
+
+    view.dispatch_keyboard_event(KeyEvent.CTRL_E)
+
+    assert calls == ["expand"]
+
+
 def test_live_view_enter_toggles_multi_select_option_before_submit() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(
@@ -366,6 +415,69 @@ def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
 
     view.dispatch_wire_message(TurnEnd())
     assert "Running..." not in view.render_ansi(80)
+
+
+def test_live_view_pauses_periodic_refresh_while_waiting_for_input() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.dispatch_wire_message(TurnBegin(user_input="hello"))
+    view.append_content(TextPart(text="still streaming"))
+    assert view.needs_periodic_refresh is True
+
+    view.request_question(
+        QuestionRequest(
+            id="question-pause-refresh",
+            tool_call_id="tool-pause-refresh",
+            questions=[
+                QuestionItem(
+                    question="Which format should I use?",
+                    options=[
+                        QuestionOption(label="JSON"),
+                        QuestionOption(label="YAML"),
+                    ],
+                )
+            ],
+        )
+    )
+
+    assert view.needs_periodic_refresh is False
+
+
+def test_live_view_compose_body_keeps_recent_blocks_while_waiting_for_input() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_content(TextPart(text="older block"))
+    view.flush_content()
+    view.append_content(TextPart(text="recent block"))
+    view.flush_content()
+    view.request_question(
+        QuestionRequest(
+            id="question-show-recent-history",
+            tool_call_id="tool-show-recent-history",
+            questions=[
+                QuestionItem(
+                    question="Which format should I use?",
+                    options=[
+                        QuestionOption(label="JSON"),
+                        QuestionOption(label="YAML"),
+                    ],
+                )
+            ],
+        )
+    )
+
+    rendered = view._renderable_to_ansi(
+        view.compose_body(
+            include_running_indicators=False,
+            tail_block_limit=1,
+        ),
+        80,
+    )
+
+    assert "older block" not in rendered
+    assert "recent block" in rendered
+    assert "Which format should I use?" in rendered
+    assert "recent output only during live turn" in rendered
 
 
 def test_live_view_bumps_render_revision_for_same_height_content_updates() -> None:

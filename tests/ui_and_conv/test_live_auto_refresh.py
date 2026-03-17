@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from kimi_cli.ui.shell.visualize import LiveView
+from kimi_cli.ui.shell.visualize import LiveView, is_significant_for_render
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.wire import WireUISide
 from kimi_cli.wire.types import StatusUpdate, TextPart
@@ -37,6 +37,16 @@ class _DummyWire:
         raise QueueShutDown
 
 
+class _SequenceWire:
+    def __init__(self, messages: list[object]) -> None:
+        self._messages = list(messages)
+
+    async def receive(self):
+        if self._messages:
+            return self._messages.pop(0)
+        raise QueueShutDown
+
+
 def test_live_view_retains_flushed_content_without_console_output() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
     view.append_content(TextPart(text="hello"))
@@ -63,3 +73,27 @@ async def test_live_view_disables_auto_refresh(monkeypatch) -> None:
 
     assert created
     assert created[0].kwargs["auto_refresh"] is False
+
+
+@pytest.mark.asyncio
+async def test_live_view_defers_non_significant_updates_until_periodic_refresh(monkeypatch) -> None:
+    created: list[_DummyLive] = []
+
+    def _fake_live(*args, **kwargs):
+        live = _DummyLive(*args, **kwargs)
+        created.append(live)
+        return live
+
+    visualize_module = importlib.import_module("kimi_cli.ui.shell.visualize")
+    monkeypatch.setattr(visualize_module, "Live", _fake_live)
+
+    view = LiveView(StatusUpdate(context_usage=0.0))
+    await view.visualize_loop(cast(WireUISide, _SequenceWire([TextPart(text="hello")])))
+
+    assert created
+    assert len(created[0].updated) == 1
+
+
+def test_is_significant_for_render_filters_streaming_messages() -> None:
+    assert is_significant_for_render(TextPart(text="hello")) is False
+    assert is_significant_for_render(StatusUpdate(context_usage=0.1)) is False

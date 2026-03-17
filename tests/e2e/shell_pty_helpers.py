@@ -158,6 +158,7 @@ class ShellPTYProcess:
     def send_line(self, text: str) -> None:
         if text:
             self.send_text(text)
+            time.sleep(0.05)
         self.send_key("enter")
 
     def wait(self, timeout: float = DEFAULT_TIMEOUT) -> int:

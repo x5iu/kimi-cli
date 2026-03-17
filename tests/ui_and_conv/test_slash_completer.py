@@ -8,9 +8,10 @@ from types import SimpleNamespace
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.layout.containers import ConditionalContainer, FloatContainer, HSplit, Window
+from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.utils import get_cwidth
 
-import kimi_cli.ui.shell.prompt as prompt_mod
+import kimi_cli.ui.shell.completion as completion_mod
 from kimi_cli.soul import StatusSnapshot
 from kimi_cli.ui.shell.prompt import (
     CustomPromptSession,
@@ -156,7 +157,7 @@ def test_slash_menu_preserves_unselected_state(monkeypatch):
     ]
     complete_state = SimpleNamespace(completions=completions, complete_index=None)
     app = SimpleNamespace(current_buffer=SimpleNamespace(complete_state=complete_state))
-    monkeypatch.setattr(prompt_mod, "get_app_or_none", lambda: app)
+    monkeypatch.setattr(completion_mod, "get_app_or_none", lambda: app)
 
     control = SlashCommandMenuControl(left_padding=lambda: 0)
     content = control.create_content(width=80, height=6)
@@ -165,12 +166,76 @@ def test_slash_menu_preserves_unselected_state(monkeypatch):
         "".join(fragment[1] for fragment in content.get_line(i)) for i in range(content.line_count)
     ]
 
-    assert content.line_count == 1 + len(completions)
+    assert content.line_count == 6
     assert content.cursor_position.y == 0
     assert "›" not in rendered_lines[1]
     assert "›" not in rendered_lines[2]
     assert "Ctrl-O" in rendered_lines[1]
     assert rendered_lines[1].count("/editor") == 1
+    assert rendered_lines[-1].strip() == ""
+
+
+def test_completion_menu_uses_full_width_when_meta_missing() -> None:
+    completions = [
+        Completion(
+            text="src/kimi_cli/ui/shell/prompt.py",
+            start_position=0,
+            display="src/kimi_cli/ui/shell/prompt.py",
+            display_meta="",
+        )
+    ]
+    control = SlashCommandMenuControl(left_padding=lambda: 0)
+
+    command_width = control._command_column_width(
+        completions,
+        menu_width=40,
+        marker_width=2,
+        has_meta=False,
+    )
+
+    assert command_width == 38
+
+
+def test_completion_menu_height_is_stable_for_selected_description(monkeypatch) -> None:
+    completions = [
+        Completion(
+            text="/editor",
+            start_position=0,
+            display="/editor",
+            display_meta="Set default external editor for Ctrl-O and configure wait behavior",
+        ),
+        Completion(
+            text="/exit",
+            start_position=0,
+            display="/exit",
+            display_meta="Exit the application",
+        ),
+    ]
+    control = SlashCommandMenuControl(left_padding=lambda: 0)
+
+    selected_app = SimpleNamespace(
+        current_buffer=SimpleNamespace(
+            complete_state=SimpleNamespace(completions=completions, complete_index=0)
+        )
+    )
+    unselected_app = SimpleNamespace(
+        current_buffer=SimpleNamespace(
+            complete_state=SimpleNamespace(completions=completions, complete_index=None)
+        )
+    )
+
+    monkeypatch.setattr(completion_mod, "get_app_or_none", lambda: selected_app)
+    selected_height = control.preferred_height(80, 10, False, None)
+    selected_content = control.create_content(width=80, height=6)
+
+    monkeypatch.setattr(completion_mod, "get_app_or_none", lambda: unselected_app)
+    unselected_height = control.preferred_height(80, 10, False, None)
+    unselected_content = control.create_content(width=80, height=6)
+
+    assert selected_height == 10
+    assert unselected_height == 10
+    assert selected_content.line_count == 6
+    assert unselected_content.line_count == 6
 
 
 def test_find_prompt_float_container_supports_conditional_container_shape():
@@ -193,3 +258,69 @@ def test_find_prompt_float_container_supports_direct_float_container_shape():
     root = HSplit([float_container])
 
     assert _find_prompt_float_container(root) is float_container
+
+
+def test_prompt_session_wraps_root_layout_for_slash_menu(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[_make_command("help")],
+        shell_mode_slash_commands=[],
+    )
+
+    root_container = prompt_session._session.layout.container
+
+    assert isinstance(root_container, FloatContainer)
+    assert isinstance(root_container.content, HSplit)
+    assert root_container.floats
+
+    slash_float = root_container.floats[0]
+    assert slash_float.left == 0
+    assert slash_float.right == 0
+    assert slash_float.ycursor is True
+
+    inner_float_container = _find_prompt_float_container(root_container.content)
+    assert isinstance(inner_float_container, FloatContainer)
+    assert not any(
+        isinstance(float_.content, CompletionsMenu) for float_ in inner_float_container.floats
+    )
+    assert any(
+        isinstance(float_.content, ConditionalContainer)
+        and isinstance(float_.content.content, CompletionsMenu)
+        for float_ in inner_float_container.floats
+    )
+
+
+def test_prompt_application_uses_inline_slash_menu(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[_make_command("help")],
+        shell_mode_slash_commands=[],
+    )
+
+    app, _ = prompt_session._build_prompt_application()
+
+    slash_windows = [
+        container
+        for container in app.layout.walk()
+        if isinstance(container, Window) and isinstance(container.content, SlashCommandMenuControl)
+    ]
+
+    assert len(slash_windows) == 1

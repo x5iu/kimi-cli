@@ -62,7 +62,14 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
   the shell now switches into a single prompt_toolkit Application that owns both the
   dynamic middle output area and the fixed bottom input/status area, so users can send
   reminders or answer approval/question prompts without fighting a second renderer; it is
-  the default interactive experience.
+  the default interactive experience. TUI responsibilities are now split across
+  `src/kimi_cli/ui/shell/prompt.py` (prompt/runtime orchestration),
+  `src/kimi_cli/ui/shell/completion.py` (slash/@ completion UI),
+  `src/kimi_cli/ui/shell/rich_ptk.py` (Rich-to-prompt_toolkit bridge controls),
+  `src/kimi_cli/ui/shell/toast.py` (toast queue + notification lifecycle),
+  `src/kimi_cli/ui/shell/panels.py` (approval/question panels),
+  `src/kimi_cli/ui/shell/blocks.py` (stream/tool/status render blocks), and
+  `src/kimi_cli/ui/shell/visualize.py` (live turn state + rendering loop).
 - **Slash commands**: Soul-level commands live in `src/kimi_cli/soul/slash.py`; shell-level
   commands live in `src/kimi_cli/ui/shell/slash.py`. The shell UI exposes both and dispatches
   based on the registry. Standard skills register `/skill:<skill-name>` and load `SKILL.md`

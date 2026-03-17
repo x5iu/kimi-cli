@@ -678,3 +678,26 @@ def test_toggle_select_noop_in_single_select():
     all_done = panel.submit()
     assert all_done is True
     assert panel.get_answers() == {"Pick one?": "A"}
+
+
+def test_question_body_preview_renders_inline() -> None:
+    request = QuestionRequest(
+        id="qr-body-preview",
+        tool_call_id="tc-body-preview",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[QuestionOption(label="JSON"), QuestionOption(label="YAML")],
+                body="Line 1\nLine 2\nLine 3\nLine 4",
+            )
+        ],
+    )
+    panel = _QuestionRequestPanel(request)
+
+    rendered = _render_to_str(panel)
+
+    assert "Line 1" in rendered
+    assert "Line 2" in rendered
+    assert "Line 3" in rendered
+    assert "Ctrl-E" in rendered
+    assert "/more" in rendered

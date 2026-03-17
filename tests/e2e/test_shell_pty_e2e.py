@@ -117,7 +117,6 @@ def test_shell_exit_command_from_idle_prompt(tmp_path: Path) -> None:
         shell.close()
 
 
-@pytest.mark.skip(reason="allstar TUI input box captures keystrokes; upstream interaction model not compatible")
 def test_shell_question_roundtrip_with_other_answer(tmp_path: Path) -> None:
     question_payload = [
         {
@@ -204,7 +203,6 @@ def test_shell_question_roundtrip_with_other_answer(tmp_path: Path) -> None:
         shell.close()
 
 
-@pytest.mark.skip(reason="allstar TUI input box captures keystrokes; upstream interaction model not compatible")
 def test_shell_approval_roundtrip_and_session_auto_approve(tmp_path: Path) -> None:
     scripts = [
         "\n".join(
@@ -273,7 +271,6 @@ def test_shell_approval_roundtrip_and_session_auto_approve(tmp_path: Path) -> No
         shell.close()
 
 
-@pytest.mark.skip(reason="allstar TUI input box captures keystrokes; upstream interaction model not compatible")
 def test_shell_approval_reject_and_recover(tmp_path: Path) -> None:
     scripts = [
         "\n".join(
@@ -411,7 +408,6 @@ def test_shell_session_resume_and_replay(tmp_path: Path) -> None:
         second_shell.close()
 
 
-@pytest.mark.skip(reason="/clear triggers Reload which hangs the process in inline prompt mode")
 def test_shell_clear_reloads_without_replaying_old_turns(tmp_path: Path) -> None:
     config_path = write_scripted_config(
         tmp_path,
@@ -464,7 +460,6 @@ def test_shell_clear_reloads_without_replaying_old_turns(tmp_path: Path) -> None
         shell.close()
 
 
-@pytest.mark.skip(reason="allstar TUI input box captures keystrokes; upstream interaction model not compatible")
 def test_shell_cancel_running_command_kills_process_and_recovers(tmp_path: Path) -> None:
     scripts = [
         build_shell_tool_call("tc-c1", "sleep 2 && printf should-not-exist > cancel_output.txt"),

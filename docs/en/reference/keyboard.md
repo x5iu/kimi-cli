@@ -73,7 +73,9 @@ Useful for entering multi-line code snippets or formatted text.
 
 ### `Ctrl-L`: Redraw the whole TUI
 
-Press `Ctrl-L` to clear and redraw the whole TUI in the current terminal, including the output area, input box, and bottom status bar.
+Press `Ctrl-L` to redraw the current TUI in place while preserving terminal scrollback, including the output area, input box, and bottom status bar. It should not wipe previously rendered content out of your terminal history.
+
+During an active agent turn, `Ctrl-L` also scrolls the output area to the end of the currently displayable content so the latest text comes back on screen, while still letting you scroll up to inspect earlier output.
 
 This is a useful manual recovery shortcut when window switching, terminal resizing, or focus changes leave behind stale borders, duplicate frames, or a misplaced input box.
 

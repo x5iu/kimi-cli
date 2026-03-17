@@ -8,6 +8,7 @@ from inline_snapshot import snapshot
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
 
+import kimi_cli.ui.shell.completion as completion_mod
 from kimi_cli.ui.shell.prompt import LocalFileMentionCompleter
 
 
@@ -47,6 +48,33 @@ def test_directory_completion_continues_after_slash(tmp_path: Path):
 
     assert "src/" in texts
     assert "src/module.py" in texts
+
+
+def test_directory_completion_scans_only_matching_subtree(
+    tmp_path: Path,
+    monkeypatch,
+):
+    (tmp_path / "src" / "pkg").mkdir(parents=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "src" / "pkg" / "module.py").write_text("print('hi')\n")
+    (tmp_path / "docs" / "guide.md").write_text("# guide\n")
+
+    visited: list[Path] = []
+    original_walk = completion_mod.os.walk
+
+    def _spy_walk(root: str | Path):
+        visited.append(Path(root))
+        yield from original_walk(root)
+
+    monkeypatch.setattr(completion_mod.os, "walk", _spy_walk)
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@src/")
+
+    assert texts == snapshot(["src/", "src/pkg/", "src/pkg/module.py"])
+    assert visited
+    assert visited[0] == tmp_path / "src"
+    assert all(path == tmp_path / "src" or path.is_relative_to(tmp_path / "src") for path in visited)
 
 
 def test_completed_file_short_circuits_completions(tmp_path: Path):

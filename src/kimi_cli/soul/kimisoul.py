@@ -108,6 +108,7 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     '- "Should I proceed?" (yes/no — options: Yes, No)\n'
     '- "Do you want me to continue?" (yes/no — options: Yes, No)\n'
     '- "是否继续？" (yes/no — options: Yes, No)\n'
+    '- "是否要继续？" (yes/no — options: Yes, No)\n'
     "\n"
     "Do NOT consider these as choice questions:\n"
     "- General clarifying questions without specific options\n"
@@ -887,7 +888,7 @@ class KimiSoul:
                 self._detect_turn_end_question_inner(assistant_message),
                 timeout=self._TURN_END_DETECT_TIMEOUT,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Turn-end question detection timed out after {timeout}s",
                 timeout=self._TURN_END_DETECT_TIMEOUT,
@@ -915,6 +916,7 @@ class KimiSoul:
         ]
 
         for attempt in range(1, self._TURN_END_DETECT_MAX_ATTEMPTS + 1):
+
             async def _run_once():
                 return await kosong.generate(
                     chat_provider=chat_provider,

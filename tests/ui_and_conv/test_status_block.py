@@ -35,8 +35,8 @@ def test_partial_update_preserves_tokens():
     assert "10k" in block.text.plain
 
 
-def test_update_tokens_only_does_not_rerender():
-    """Updating only tokens (without context_usage) should not change display."""
+def test_update_tokens_only_rerenders_with_latest_counts():
+    """Updating token counts should refresh the displayed status line."""
     block = _StatusBlock(
         StatusUpdate(
             context_usage=0.30,
@@ -44,10 +44,12 @@ def test_update_tokens_only_does_not_rerender():
             max_context_tokens=10000,
         )
     )
-    old_text = block.text.plain
-    # Update only tokens — no context_usage, so no re-render
+
     block.update(StatusUpdate(context_tokens=5000))
-    assert block.text.plain == old_text
+
+    assert "30.0%" in block.text.plain
+    assert "5k" in block.text.plain
+    assert "10k" in block.text.plain
 
 
 def test_all_none_update_is_noop():

@@ -71,6 +71,30 @@ class TestHeadlineRendering:
         assert long_command in rendered
         assert "..." not in rendered
 
+    def test_append_args_part_returns_false_when_headline_is_unchanged(self):
+        block = _ToolCallBlock(
+            ToolCall(
+                id="call_2",
+                function=ToolCall.FunctionBody(name="Shell", arguments=None),
+            )
+        )
+
+        changed = block.append_args_part('{"co')
+
+        assert changed is False
+
+    def test_append_args_part_returns_true_when_key_argument_becomes_available(self):
+        block = _ToolCallBlock(
+            ToolCall(
+                id="call_3",
+                function=ToolCall.FunctionBody(name="Shell", arguments=None),
+            )
+        )
+
+        changed = block.append_args_part('{"command":"echo ok"}')
+
+        assert changed is True
+
 
 class TestErrorRendering:
     def test_renders_error_message_and_output(self):

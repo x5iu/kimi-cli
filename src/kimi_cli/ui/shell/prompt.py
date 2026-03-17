@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import re
 import shlex
 import time
 from collections import deque
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import md5
 from pathlib import Path
-from typing import Any, Literal, cast, override
+from typing import Any, Literal, cast
 
 from kaos.path import KaosPath
 from prompt_toolkit import PromptSession
@@ -21,19 +19,11 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.clipboard.pyperclip import PyperclipClipboard
-from prompt_toolkit.completion import (
-    CompleteEvent,
-    Completer,
-    Completion,
-    FuzzyCompleter,
-    WordCompleter,
-    merge_completers,
-)
+from prompt_toolkit.completion import merge_completers
 from prompt_toolkit.cursor_shapes import CursorShape, SimpleCursorShapeConfig
-from prompt_toolkit.data_structures import Point
 from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition, has_completions, has_focus, is_done
-from prompt_toolkit.formatted_text import AnyFormattedText, FormattedText
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent, merge_key_bindings
 from prompt_toolkit.keys import Keys
@@ -45,7 +35,7 @@ from prompt_toolkit.layout.containers import (
     FloatContainer,
     Window,
 )
-from prompt_toolkit.layout.controls import FormattedTextControl, UIContent, UIControl
+from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -53,17 +43,24 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame, TextArea
 from pydantic import BaseModel, ValidationError
-from rich.console import Console as RichConsole
-from rich.console import RenderableType
-from rich.segment import Segment
-from rich.style import Style as RichStyle
-from rich.text import Text as RichText
+from rich.style import Style as _RichStyle
 
 from kimi_cli.llm import ModelCapability
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import StatusSnapshot, format_context_status
 from kimi_cli.ui.shell import placeholders as prompt_placeholders
-from kimi_cli.ui.shell.console import _RIGHT_PADDING, console
+from kimi_cli.ui.shell import rich_ptk as _rich_ptk
+from kimi_cli.ui.shell import toast as _toast
+from kimi_cli.ui.shell.completion import (
+    LocalFileMentionCompleter,
+    SlashCommandCompleter,
+    SlashCommandMenuControl,
+    _find_prompt_float_container,
+)
+from kimi_cli.ui.shell.completion import (
+    _wrap_to_width as _completion_wrap_to_width,
+)
+from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.placeholders import (
     PromptPlaceholderManager,
@@ -73,6 +70,9 @@ from kimi_cli.ui.shell.placeholders import (
 from kimi_cli.ui.shell.visualize import (
     MAX_ACTIVE_TURN_CONTENT_CHARS,
     MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
+    MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS,
+    _render_recent_output_notice,
+    is_significant_for_render,
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.clipboard import (
@@ -81,20 +81,21 @@ from kimi_cli.utils.clipboard import (
 )
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.slashcmd import SlashCommand
-from kimi_cli.utils.string import shorten_middle
-from kimi_cli.wire.types import (
-    ApprovalResponse,
-    ContentPart,
-    StatusUpdate,
-    StepInterrupted,
-    SubagentEvent,
-    ToolCallPart,
-)
+from kimi_cli.wire.types import ContentPart, StepInterrupted
 
 AttachmentCache = prompt_placeholders.AttachmentCache
 CachedAttachment = prompt_placeholders.CachedAttachment
 _parse_attachment_kind = prompt_placeholders.parse_attachment_kind
 _sanitize_surrogates = sanitize_surrogates  # backward compat re-export
+_RichRenderableControl = _rich_ptk._RichRenderableControl
+_StackedRichRenderableControl = _rich_ptk._StackedRichRenderableControl
+_rich_from_ansi = _rich_ptk._rich_from_ansi
+_rich_style_to_prompt_toolkit = _rich_ptk._rich_style_to_prompt_toolkit
+_toast_queues = _toast._toast_queues
+_current_toast = _toast._current_toast
+toast = _toast.toast
+RichStyle = _RichStyle
+_wrap_to_width = _completion_wrap_to_width
 
 PROMPT_SYMBOL = "✨"
 PROMPT_SYMBOL_SHELL = "$"
@@ -127,860 +128,8 @@ _INDICATOR_STYLES = {
     "approval": "fg:#f59e0b",
     "question": "fg:#22d3ee",
 }
-_TURN_UI_REFRESH_INTERVAL = 0.1
+_TURN_UI_REFRESH_INTERVAL = 0.2
 _TERMINAL_SIZE_POLLING_INTERVAL = 1.0
-
-def _is_significant_for_render(msg: object) -> bool:
-    """Whether a wire message warrants yielding to let the UI render immediately.
-
-    High-frequency streaming messages (content tokens, tool-call argument
-    chunks, status ticks) are rendered by the periodic *_animate* task
-    (~100 ms).  Yielding after every one of those would cause excessive
-    repaints and hurt throughput.
-
-    Everything else (tool results, new tool calls, lifecycle events, user
-    interaction requests, …) should trigger an immediate render so the
-    user sees them right away.
-    """
-    if isinstance(msg, (ContentPart, ToolCallPart, StatusUpdate, ApprovalResponse)):
-        return False
-    if isinstance(msg, SubagentEvent):
-        return _is_significant_for_render(msg.event)
-    return True
-
-
-
-def _rich_from_ansi(text: str) -> RichText:
-    return RichText.from_ansi(text)
-
-
-def _rich_style_to_prompt_toolkit(style: RichStyle | None) -> str:
-    if style is None:
-        return ""
-    parts: list[str] = []
-    if style.color is not None:
-        fg = style.color.get_truecolor()
-        parts.append(f"fg:#{fg.red:02x}{fg.green:02x}{fg.blue:02x}")
-    if style.bgcolor is not None:
-        bg = style.bgcolor.get_truecolor()
-        parts.append(f"bg:#{bg.red:02x}{bg.green:02x}{bg.blue:02x}")
-    if style.bold:
-        parts.append("bold")
-    if style.italic:
-        parts.append("italic")
-    if style.underline:
-        parts.append("underline")
-    if style.strike:
-        parts.append("strike")
-    if style.reverse:
-        parts.append("reverse")
-    if style.blink:
-        parts.append("blink")
-    return " ".join(parts)
-
-
-class _RichRenderableControl(UIControl):
-    """Render Rich renderables directly with the actual width assigned by prompt_toolkit."""
-
-    _CACHE_UNSET = object()
-
-    def __init__(
-        self,
-        get_renderable: Callable[[], RenderableType],
-        *,
-        get_cache_revision: Callable[[], object] | None = None,
-    ) -> None:
-        self._get_renderable = get_renderable
-        self._get_cache_revision = get_cache_revision or (lambda: None)
-        self._console = RichConsole(force_terminal=True, color_system="truecolor", highlight=False)
-        self._cached_revision: object = self._CACHE_UNSET
-        self._rendered_lines_cache: dict[int, tuple[tuple[tuple[str, str], ...], ...]] = {}
-        self._content_cache: dict[int, UIContent] = {}
-
-    def _invalidate_cache_if_needed(self) -> None:
-        revision = self._get_cache_revision()
-        if revision == self._cached_revision:
-            return
-        self._cached_revision = revision
-        self._rendered_lines_cache.clear()
-        self._content_cache.clear()
-
-    def _render_lines(self, width: int) -> tuple[tuple[tuple[str, str], ...], ...]:
-        normalized_width = max(20, width - _RIGHT_PADDING)
-        self._invalidate_cache_if_needed()
-        cached = self._rendered_lines_cache.get(normalized_width)
-        if cached is not None:
-            return cached
-
-        renderable = self._get_renderable()
-        options = self._console.options.update_width(normalized_width)
-        lines = self._console.render_lines(renderable, options=options, pad=False, new_lines=False)
-        rendered_lines: list[tuple[tuple[str, str], ...]] = []
-        for line in lines or [[]]:
-            fragments: list[tuple[str, str]] = []
-            for segment in Segment.simplify(line):
-                if segment.control or not segment.text:
-                    continue
-                fragments.append((_rich_style_to_prompt_toolkit(segment.style), segment.text))
-            rendered_lines.append(tuple(fragments))
-        cached = tuple(rendered_lines) or ((),)
-        self._rendered_lines_cache[normalized_width] = cached
-        return cached
-
-    def line_count(self, width: int) -> int:
-        return len(self._render_lines(width))
-
-    def preferred_height(
-        self,
-        width: int,
-        max_available_height: int,
-        wrap_lines: bool,
-        get_line_prefix: Any,
-    ) -> int | None:
-        return min(self.line_count(width), max_available_height)
-
-    def create_content(self, width: int, height: int | None) -> UIContent:
-        normalized_width = max(20, width)
-        self._invalidate_cache_if_needed()
-        cached = self._content_cache.get(normalized_width)
-        if cached is not None:
-            return cached
-
-        key_lines = self._render_lines(normalized_width)
-        cached = UIContent(
-            get_line=lambda i: list(key_lines[i]),
-            line_count=len(key_lines),
-            show_cursor=False,
-        )
-        self._content_cache[normalized_width] = cached
-        return cached
-
-
-class SlashCommandCompleter(Completer):
-    """
-    A completer that:
-    - Shows one line per slash command using the canonical "/name"
-    - Fuzzy-matches by primary name or any alias while inserting the canonical "/name"
-    - Only activates when the current token starts with '/'
-    """
-
-    def __init__(self, available_commands: Sequence[SlashCommand[Any]]) -> None:
-        super().__init__()
-        self._available_commands = list(available_commands)
-        self._command_lookup: dict[str, list[SlashCommand[Any]]] = {}
-        words: list[str] = []
-
-        for cmd in sorted(self._available_commands, key=lambda c: c.name):
-            if cmd.name not in self._command_lookup:
-                self._command_lookup[cmd.name] = []
-                words.append(cmd.name)
-            self._command_lookup[cmd.name].append(cmd)
-            for alias in cmd.aliases:
-                if alias in self._command_lookup:
-                    self._command_lookup[alias].append(cmd)
-                else:
-                    self._command_lookup[alias] = [cmd]
-                    words.append(alias)
-
-        self._word_pattern = re.compile(r"[^\s]+")
-        self._fuzzy_pattern = r"^[^\s]*"
-        self._word_completer = WordCompleter(words, WORD=False, pattern=self._word_pattern)
-        self._fuzzy = FuzzyCompleter(self._word_completer, WORD=False, pattern=self._fuzzy_pattern)
-
-    @staticmethod
-    def should_complete(document: Document) -> bool:
-        """Return whether slash command completion should be active for the current buffer."""
-        text = document.text_before_cursor
-
-        if document.text_after_cursor.strip():
-            return False
-
-        last_space = text.rfind(" ")
-        token = text[last_space + 1 :]
-        prefix = text[: last_space + 1] if last_space != -1 else ""
-
-        return not prefix.strip() and token.startswith("/")
-
-    @override
-    def get_completions(
-        self, document: Document, complete_event: CompleteEvent
-    ) -> Iterable[Completion]:
-        if not self.should_complete(document):
-            return
-        text = document.text_before_cursor
-        last_space = text.rfind(" ")
-        token = text[last_space + 1 :]
-
-        typed = token[1:]
-        if typed and typed in self._command_lookup:
-            return
-        mention_doc = Document(text=typed, cursor_position=len(typed))
-        candidates = list(self._fuzzy.get_completions(mention_doc, complete_event))
-
-        seen: set[str] = set()
-
-        for candidate in candidates:
-            commands = self._command_lookup.get(candidate.text)
-            if not commands:
-                continue
-            for cmd in commands:
-                if cmd.name in seen:
-                    continue
-                seen.add(cmd.name)
-                yield Completion(
-                    text=f"/{cmd.name}",
-                    start_position=-len(token),
-                    display=f"/{cmd.name}",
-                    display_meta=cmd.description,
-                )
-
-
-
-def _truncate_to_width(text: str, width: int) -> str:
-    if width <= 0:
-        return ""
-
-    total = 0
-    chars: list[str] = []
-    for ch in text:
-        ch_width = get_cwidth(ch)
-        if total + ch_width > width:
-            break
-        chars.append(ch)
-        total += ch_width
-
-    if total == get_cwidth(text):
-        return text + (" " * max(0, width - total))
-
-    ellipsis = "..."
-    ellipsis_width = get_cwidth(ellipsis)
-    if width <= ellipsis_width:
-        return "." * width
-
-    available = width - ellipsis_width
-    total = 0
-    chars = []
-    for ch in text:
-        ch_width = get_cwidth(ch)
-        if total + ch_width > available:
-            break
-        chars.append(ch)
-        total += ch_width
-    return "".join(chars) + ellipsis + (" " * max(0, width - total - ellipsis_width))
-
-
-def _wrap_to_width(text: str, width: int, *, max_lines: int | None = None) -> list[str]:
-    if width <= 0:
-        return []
-
-    words = text.split()
-    if not words:
-        return [""]
-
-    lines: list[str] = []
-    current_words: list[str] = []
-    current_width = 0
-    index = 0
-
-    while index < len(words):
-        word = words[index]
-        word_width = get_cwidth(word)
-        separator_width = 1 if current_words else 0
-
-        if current_words and current_width + separator_width + word_width <= width:
-            current_words.append(word)
-            current_width += separator_width + word_width
-            index += 1
-            continue
-
-        if not current_words and word_width <= width:
-            current_words.append(word)
-            current_width = word_width
-            index += 1
-            continue
-
-        if not current_words and word_width > width:
-            current_words.append(_truncate_to_width(word, width).rstrip())
-            current_width = get_cwidth(current_words[0])
-            index += 1
-
-        lines.append(" ".join(current_words))
-        current_words = []
-        current_width = 0
-
-        if max_lines is not None and len(lines) == max_lines:
-            remaining = " ".join(words[index:])
-            if remaining:
-                prefix = f"{lines[-1]} " if lines[-1] else ""
-                lines[-1] = _truncate_to_width(prefix + remaining, width).rstrip()
-            return lines
-
-    if current_words:
-        line = " ".join(current_words)
-        if max_lines is not None and len(lines) + 1 > max_lines:
-            if lines:
-                lines[-1] = _truncate_to_width(f"{lines[-1]} {line}", width).rstrip()
-            else:
-                lines.append(_truncate_to_width(line, width).rstrip())
-        else:
-            lines.append(line)
-
-    return lines
-
-
-def _find_prompt_float_container(layout_container: object) -> FloatContainer | None:
-    if not isinstance(layout_container, HSplit):
-        return None
-
-    for child in cast(Sequence[object], layout_container.children):
-        float_container = _extract_float_container(child)
-        if float_container is not None:
-            return float_container
-    return None
-
-
-def _extract_float_container(container: object) -> FloatContainer | None:
-    if isinstance(container, FloatContainer):
-        return container
-    if isinstance(container, ConditionalContainer):
-        if isinstance(container.content, FloatContainer):
-            return container.content
-        if isinstance(container.alternative_content, FloatContainer):
-            return container.alternative_content
-    return None
-
-
-class SlashCommandMenuControl(UIControl):
-    """Render slash command completions as a full-width menu that matches the shell UI."""
-
-    _MAX_EXPANDED_META_LINES = 3
-
-    def __init__(
-        self,
-        *,
-        left_padding: Callable[[], int],
-        scroll_offset: int = 1,
-    ) -> None:
-        self._left_padding = left_padding
-        self._scroll_offset = scroll_offset
-
-    def has_focus(self) -> bool:
-        return False
-
-    def preferred_width(self, max_available_width: int) -> int | None:
-        return max_available_width
-
-    def preferred_height(
-        self,
-        width: int,
-        max_available_height: int,
-        wrap_lines: bool,
-        get_line_prefix: Callable[..., AnyFormattedText] | None,
-    ) -> int | None:
-        app = get_app_or_none()
-        complete_state = (
-            getattr(app.current_buffer, "complete_state", None) if app is not None else None
-        )
-        if complete_state is None:
-            return 0
-        completions = complete_state.completions
-        selected_index = complete_state.complete_index
-        if selected_index is None:
-            return min(max_available_height, len(completions) + 1)
-        menu_width = max(0, width - self._left_padding())
-        marker_width = 2
-        command_width = self._command_column_width(completions, menu_width, marker_width)
-        gap_width = 3 if menu_width > command_width + 6 else 1
-        meta_width = max(0, menu_width - marker_width - command_width - gap_width)
-        selected_meta_lines = self._selected_meta_lines(
-            completions[selected_index].display_meta_text,
-            meta_width,
-        )
-        return min(max_available_height, len(completions) + len(selected_meta_lines))
-
-    def create_content(self, width: int, height: int) -> UIContent:
-        app = get_app_or_none()
-        complete_state = (
-            getattr(app.current_buffer, "complete_state", None) if app is not None else None
-        )
-        if complete_state is None or not complete_state.completions:
-            return UIContent()
-
-        completions = complete_state.completions
-        selected_index = complete_state.complete_index
-        available_rows = max(1, height - 1)
-
-        menu_width = max(0, width - self._left_padding())
-        marker_width = 2
-        command_width = self._command_column_width(completions, menu_width, marker_width)
-        gap_width = 3 if menu_width > command_width + 6 else 1
-        meta_width = max(0, menu_width - marker_width - command_width - gap_width)
-
-        rendered_lines: list[FormattedText] = [
-            FormattedText([("class:slash-completion-menu.separator", "─" * max(0, width))])
-        ]
-        selected_line_index = 0
-
-        if selected_index is None:
-            end = min(len(completions) - 1, available_rows - 1)
-            for index in range(0, end + 1):
-                rendered_lines.append(
-                    self._render_single_line_item(
-                        width=width,
-                        completion=completions[index],
-                        marker_width=marker_width,
-                        command_width=command_width,
-                        meta_width=meta_width,
-                        gap_width=gap_width,
-                        is_current=False,
-                    )
-                )
-
-            return UIContent(
-                get_line=lambda i: rendered_lines[i],
-                line_count=len(rendered_lines),
-                cursor_position=Point(x=0, y=selected_line_index),
-            )
-
-        selected_meta_lines = self._selected_meta_lines(
-            completions[selected_index].display_meta_text,
-            meta_width,
-        )
-        start, end = self._visible_window_bounds(
-            completion_count=len(completions),
-            selected_index=selected_index,
-            available_rows=available_rows,
-            selected_item_height=len(selected_meta_lines),
-        )
-        selected_line_index = 1
-
-        for index in range(start, end + 1):
-            completion = completions[index]
-            if index == selected_index:
-                selected_line_index = len(rendered_lines)
-                rendered_lines.extend(
-                    self._render_selected_item_lines(
-                        width=width,
-                        completion=completion,
-                        marker_width=marker_width,
-                        command_width=command_width,
-                        meta_width=meta_width,
-                        gap_width=gap_width,
-                        meta_lines=selected_meta_lines,
-                    )
-                )
-                continue
-
-            rendered_lines.append(
-                self._render_single_line_item(
-                    width=width,
-                    completion=completion,
-                    marker_width=marker_width,
-                    command_width=command_width,
-                    meta_width=meta_width,
-                    gap_width=gap_width,
-                    is_current=False,
-                )
-            )
-
-        return UIContent(
-            get_line=lambda i: rendered_lines[i],
-            line_count=len(rendered_lines),
-            cursor_position=Point(x=0, y=selected_line_index),
-        )
-
-    def _selected_meta_lines(self, text: str, meta_width: int) -> list[str]:
-        lines = _wrap_to_width(
-            text,
-            meta_width,
-            max_lines=self._MAX_EXPANDED_META_LINES,
-        )
-        return lines or [""]
-
-    def _visible_window_bounds(
-        self,
-        *,
-        completion_count: int,
-        selected_index: int,
-        available_rows: int,
-        selected_item_height: int,
-    ) -> tuple[int, int]:
-        selected_item_height = min(selected_item_height, available_rows)
-        remaining_rows = max(0, available_rows - selected_item_height)
-
-        before = min(self._scroll_offset, selected_index, remaining_rows)
-        remaining_rows -= before
-        after = min(completion_count - selected_index - 1, remaining_rows)
-        remaining_rows -= after
-
-        extra_before = min(selected_index - before, remaining_rows)
-        before += extra_before
-        remaining_rows -= extra_before
-
-        extra_after = min(completion_count - selected_index - 1 - after, remaining_rows)
-        after += extra_after
-
-        return selected_index - before, selected_index + after
-
-    def _command_column_width(
-        self,
-        completions: Sequence[Completion],
-        menu_width: int,
-        marker_width: int,
-    ) -> int:
-        if menu_width <= 0:
-            return 0
-        longest = max((get_cwidth(c.display_text) for c in completions), default=0)
-        preferred = longest + 2
-        usable_width = max(0, menu_width - marker_width)
-        minimum = min(usable_width, 18)
-        maximum = max(minimum, min(28, usable_width // 2))
-        return max(minimum, min(preferred, maximum))
-
-    def _render_single_line_item(
-        self,
-        *,
-        width: int,
-        completion: Completion,
-        marker_width: int,
-        command_width: int,
-        meta_width: int,
-        gap_width: int,
-        is_current: bool,
-    ) -> FormattedText:
-        padding_width = max(0, width - marker_width - command_width - meta_width - gap_width)
-        left_padding = min(self._left_padding(), padding_width)
-        trailing_width = max(
-            0,
-            width - left_padding - marker_width - command_width - gap_width - meta_width,
-        )
-
-        command_style = (
-            "class:slash-completion-menu.command.current"
-            if is_current
-            else "class:slash-completion-menu.command"
-        )
-        meta_style = (
-            "class:slash-completion-menu.meta.current"
-            if is_current
-            else "class:slash-completion-menu.meta"
-        )
-        marker_style = (
-            "class:slash-completion-menu.marker.current"
-            if is_current
-            else "class:slash-completion-menu.marker"
-        )
-        marker = "› " if is_current else "  "
-
-        fragments: FormattedText = FormattedText()
-        fragments.append(("class:slash-completion-menu", " " * left_padding))
-        fragments.append((marker_style, marker.ljust(marker_width)))
-        fragments.append(
-            (command_style, _truncate_to_width(completion.display_text, command_width))
-        )
-        fragments.append(("class:slash-completion-menu", " " * gap_width))
-        fragments.append((meta_style, _truncate_to_width(completion.display_meta_text, meta_width)))
-        fragments.append(("class:slash-completion-menu", " " * trailing_width))
-        return fragments
-
-    def _render_selected_item_lines(
-        self,
-        *,
-        width: int,
-        completion: Completion,
-        marker_width: int,
-        command_width: int,
-        meta_width: int,
-        gap_width: int,
-        meta_lines: Sequence[str],
-    ) -> list[FormattedText]:
-        lines = [
-            self._render_single_line_item(
-                width=width,
-                completion=Completion(
-                    text=completion.text,
-                    start_position=completion.start_position,
-                    display=completion.display,
-                    display_meta=meta_lines[0],
-                ),
-                marker_width=marker_width,
-                command_width=command_width,
-                meta_width=meta_width,
-                gap_width=gap_width,
-                is_current=True,
-            )
-        ]
-
-        continuation_prefix = (
-            " " * self._left_padding() + " " * marker_width + " " * command_width + " " * gap_width
-        )
-        continuation_trailing = max(
-            0,
-            width - get_cwidth(continuation_prefix) - meta_width,
-        )
-        for meta_line in meta_lines[1:]:
-            fragments: FormattedText = FormattedText()
-            fragments.append(("class:slash-completion-menu", continuation_prefix))
-            fragments.append(
-                (
-                    "class:slash-completion-menu.meta.current",
-                    _truncate_to_width(meta_line, meta_width),
-                )
-            )
-            fragments.append(("class:slash-completion-menu", " " * continuation_trailing))
-            lines.append(fragments)
-
-        return lines
-
-
-class LocalFileMentionCompleter(Completer):
-    """Offer fuzzy `@` path completion by indexing workspace files."""
-
-    _FRAGMENT_PATTERN = re.compile(r"[^\s@]+")
-    _TRIGGER_GUARDS = frozenset((".", "-", "_", "`", "'", '"', ":", "@", "#", "~"))
-    _IGNORED_NAME_GROUPS: dict[str, tuple[str, ...]] = {
-        "vcs_metadata": (".DS_Store", ".bzr", ".git", ".hg", ".svn"),
-        "tooling_caches": (
-            ".build",
-            ".cache",
-            ".coverage",
-            ".fleet",
-            ".gradle",
-            ".idea",
-            ".ipynb_checkpoints",
-            ".pnpm-store",
-            ".pytest_cache",
-            ".pub-cache",
-            ".ruff_cache",
-            ".swiftpm",
-            ".tox",
-            ".venv",
-            ".vs",
-            ".vscode",
-            ".yarn",
-            ".yarn-cache",
-        ),
-        "js_frontend": (
-            ".next",
-            ".nuxt",
-            ".parcel-cache",
-            ".svelte-kit",
-            ".turbo",
-            ".vercel",
-            "node_modules",
-        ),
-        "python_packaging": (
-            "__pycache__",
-            "build",
-            "coverage",
-            "dist",
-            "htmlcov",
-            "pip-wheel-metadata",
-            "venv",
-        ),
-        "java_jvm": (".mvn", "out", "target"),
-        "dotnet_native": ("bin", "cmake-build-debug", "cmake-build-release", "obj"),
-        "bazel_buck": ("bazel-bin", "bazel-out", "bazel-testlogs", "buck-out"),
-        "misc_artifacts": (
-            ".dart_tool",
-            ".serverless",
-            ".stack-work",
-            ".terraform",
-            ".terragrunt-cache",
-            "DerivedData",
-            "Pods",
-            "deps",
-            "tmp",
-            "vendor",
-        ),
-    }
-    _IGNORED_NAMES = frozenset(name for group in _IGNORED_NAME_GROUPS.values() for name in group)
-    _IGNORED_PATTERN_PARTS: tuple[str, ...] = (
-        r".*_cache$",
-        r".*-cache$",
-        r".*\.egg-info$",
-        r".*\.dist-info$",
-        r".*\.py[co]$",
-        r".*\.class$",
-        r".*\.sw[po]$",
-        r".*~$",
-        r".*\.(?:tmp|bak)$",
-    )
-    _IGNORED_PATTERNS = re.compile(
-        "|".join(f"(?:{part})" for part in _IGNORED_PATTERN_PARTS),
-        re.IGNORECASE,
-    )
-
-    def __init__(
-        self,
-        root: Path,
-        *,
-        refresh_interval: float = 2.0,
-        limit: int = 1000,
-    ) -> None:
-        self._root = root
-        self._refresh_interval = refresh_interval
-        self._limit = limit
-        self._cache_time: float = 0.0
-        self._cached_paths: list[str] = []
-        self._top_cache_time: float = 0.0
-        self._top_cached_paths: list[str] = []
-        self._fragment_hint: str | None = None
-
-        self._word_completer = WordCompleter(
-            self._get_paths,
-            WORD=False,
-            pattern=self._FRAGMENT_PATTERN,
-        )
-
-        self._fuzzy = FuzzyCompleter(
-            self._word_completer,
-            WORD=False,
-            pattern=r"^[^\s@]*",
-        )
-
-    @classmethod
-    def _is_ignored(cls, name: str) -> bool:
-        if not name:
-            return True
-        if name in cls._IGNORED_NAMES:
-            return True
-        return bool(cls._IGNORED_PATTERNS.fullmatch(name))
-
-    def _get_paths(self) -> list[str]:
-        fragment = self._fragment_hint or ""
-        if "/" not in fragment and len(fragment) < 3:
-            return self._get_top_level_paths()
-        return self._get_deep_paths()
-
-    def _get_top_level_paths(self) -> list[str]:
-        now = time.monotonic()
-        if now - self._top_cache_time <= self._refresh_interval:
-            return self._top_cached_paths
-
-        entries: list[str] = []
-        try:
-            for entry in sorted(self._root.iterdir(), key=lambda p: p.name):
-                name = entry.name
-                if self._is_ignored(name):
-                    continue
-                entries.append(f"{name}/" if entry.is_dir() else name)
-                if len(entries) >= self._limit:
-                    break
-        except OSError:
-            return self._top_cached_paths
-
-        self._top_cached_paths = entries
-        self._top_cache_time = now
-        return self._top_cached_paths
-
-    def _get_deep_paths(self) -> list[str]:
-        now = time.monotonic()
-        if now - self._cache_time <= self._refresh_interval:
-            return self._cached_paths
-
-        paths: list[str] = []
-        try:
-            for current_root, dirs, files in os.walk(self._root):
-                relative_root = Path(current_root).relative_to(self._root)
-
-                # Prevent descending into ignored directories.
-                dirs[:] = sorted(d for d in dirs if not self._is_ignored(d))
-
-                if relative_root.parts and any(
-                    self._is_ignored(part) for part in relative_root.parts
-                ):
-                    dirs[:] = []
-                    continue
-
-                if relative_root.parts:
-                    paths.append(relative_root.as_posix() + "/")
-                    if len(paths) >= self._limit:
-                        break
-
-                for file_name in sorted(files):
-                    if self._is_ignored(file_name):
-                        continue
-                    relative = (relative_root / file_name).as_posix()
-                    if not relative:
-                        continue
-                    paths.append(relative)
-                    if len(paths) >= self._limit:
-                        break
-
-                if len(paths) >= self._limit:
-                    break
-        except OSError:
-            return self._cached_paths
-
-        self._cached_paths = paths
-        self._cache_time = now
-        return self._cached_paths
-
-    @staticmethod
-    def _extract_fragment(text: str) -> str | None:
-        index = text.rfind("@")
-        if index == -1:
-            return None
-
-        if index > 0:
-            prev = text[index - 1]
-            if prev.isalnum() or prev in LocalFileMentionCompleter._TRIGGER_GUARDS:
-                return None
-
-        fragment = text[index + 1 :]
-        if not fragment:
-            return ""
-
-        if any(ch.isspace() for ch in fragment):
-            return None
-
-        return fragment
-
-    def _is_completed_file(self, fragment: str) -> bool:
-        candidate = fragment.rstrip("/")
-        if not candidate:
-            return False
-        try:
-            return (self._root / candidate).is_file()
-        except OSError:
-            return False
-
-    @override
-    def get_completions(
-        self, document: Document, complete_event: CompleteEvent
-    ) -> Iterable[Completion]:
-        fragment = self._extract_fragment(document.text_before_cursor)
-        if fragment is None:
-            return
-        if self._is_completed_file(fragment):
-            return
-
-        mention_doc = Document(text=fragment, cursor_position=len(fragment))
-        self._fragment_hint = fragment
-        try:
-            # First, ask the fuzzy completer for candidates.
-            candidates = list(self._fuzzy.get_completions(mention_doc, complete_event))
-
-            # re-rank: prefer basename matches
-            frag_lower = fragment.lower()
-
-            def _rank(c: Completion) -> tuple[int, ...]:
-                path = c.text
-                base = path.rstrip("/").split("/")[-1].lower()
-                if base.startswith(frag_lower):
-                    cat = 0
-                elif frag_lower in base:
-                    cat = 1
-                else:
-                    cat = 2
-                # preserve original FuzzyCompleter's order in the same category
-                return (cat,)
-
-            candidates.sort(key=_rank)
-            yield from candidates
-        finally:
-            self._fragment_hint = None
 
 
 class _HistoryEntry(BaseModel):
@@ -1047,6 +196,7 @@ class UserInput(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         if not self.resolved_command:
             self.resolved_command = self.command
+
     content: list[ContentPart]
     """The rich content parts."""
 
@@ -1080,57 +230,6 @@ class InputBoxState:
 
 
 _REFRESH_INTERVAL = 1.0
-
-
-@dataclass(slots=True)
-class _ToastEntry:
-    topic: str | None
-    """There can be only one toast of each non-None topic in the queue."""
-    message: str
-    expires_at: float
-
-
-_toast_queues: dict[Literal["left", "right"], deque[_ToastEntry]] = {
-    "left": deque(),
-    "right": deque(),
-}
-"""The queue of toasts to show, including the one currently being shown (the first one)."""
-
-
-def toast(
-    message: str,
-    duration: float = 5.0,
-    topic: str | None = None,
-    immediate: bool = False,
-    position: Literal["left", "right"] = "left",
-) -> None:
-    queue = _toast_queues[position]
-    duration = max(duration, _REFRESH_INTERVAL)
-    entry = _ToastEntry(topic=topic, message=message, expires_at=time.monotonic() + duration)
-    if topic is not None:
-        # Remove existing toasts with the same topic
-        for existing in list(queue):
-            if existing.topic == topic:
-                queue.remove(existing)
-    if immediate:
-        queue.appendleft(entry)
-    else:
-        queue.append(entry)
-
-
-def _prune_toasts(position: Literal["left", "right"]) -> None:
-    queue = _toast_queues[position]
-    now = time.monotonic()
-    while queue and queue[0].expires_at <= now:
-        queue.popleft()
-
-
-def _current_toast(position: Literal["left", "right"] = "left") -> _ToastEntry | None:
-    _prune_toasts(position)
-    queue = _toast_queues[position]
-    if not queue:
-        return None
-    return queue[0]
 
 
 def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
@@ -1203,34 +302,31 @@ class CustomPromptSession:
         self._file_mention_completer = LocalFileMentionCompleter(
             KaosPath.cwd().unsafe_to_local_path()
         )
+        self._agent_slash_completer = SlashCommandCompleter(agent_mode_slash_commands)
+        self._shell_slash_completer = SlashCommandCompleter(shell_mode_slash_commands)
         self._agent_mode_completer = merge_completers(
             [
-                SlashCommandCompleter(agent_mode_slash_commands),
+                self._agent_slash_completer,
                 # TODO(kaos): we need an async KaosFileMentionCompleter
                 self._file_mention_completer,
             ],
             deduplicate=True,
         )
         self._turn_mode_completer = self._file_mention_completer
-        self._shell_mode_completer = SlashCommandCompleter(shell_mode_slash_commands)
+        self._shell_mode_completer = self._shell_slash_completer
 
         # Build key bindings
         _kb = KeyBindings()
 
-        @_kb.add("enter", filter=has_completions)
-        def _(event: KeyPressEvent) -> None:
-            """Accept the first completion when Enter is pressed and completions are shown."""
-            buff = event.current_buffer
-            if buff.complete_state and buff.complete_state.completions:
-                # Get the current completion, or use the first one if none is selected
-                completion = buff.complete_state.current_completion
-                if not completion:
-                    completion = buff.complete_state.completions[0]
-                buff.apply_completion(completion)
-
         @_kb.add("c-x", eager=True)
         def _(event: KeyPressEvent) -> None:
             self._mode = self._mode.toggle()
+            toast(
+                f"{self._mode.value} mode",
+                topic="prompt_mode",
+                duration=2.0,
+                immediate=True,
+            )
             # Apply mode-specific settings
             self._apply_mode(event)
             # Redraw UI
@@ -1326,46 +422,42 @@ class CustomPromptSession:
         # such as when backspace is used to delete text.
         @self._session.default_buffer.on_text_changed.add_handler
         def _(buffer: Buffer) -> None:
-            if buffer.complete_while_typing():
-                buffer.start_completion()
+            self._maybe_start_completion(
+                buffer,
+                allow_slash=True,
+                allow_mentions=self._mode == PromptMode.AGENT,
+            )
 
         self._status_refresh_task: asyncio.Task[None] | None = None
+        self._prompt_app: Application[str] | None = None
+        self._prompt_text_area: TextArea | None = None
 
     def _install_slash_completion_menu(self) -> None:
-        float_container = _find_prompt_float_container(self._session.layout.container)
-        if not isinstance(float_container, FloatContainer):
-            return
+        root_container = self._session.layout.container
+        prompt_float_container = _find_prompt_float_container(root_container)
+        outer_float_container = FloatContainer(content=root_container, floats=[])
+        self._session.layout.container = outer_float_container
+        self._install_slash_completion_menu_for_buffer(
+            outer_float_container,
+            buffer=self._session.default_buffer,
+            hide_original_menu=False,
+        )
+        if isinstance(prompt_float_container, FloatContainer):
+            self._hide_original_completion_menu(
+                prompt_float_container,
+                buffer=self._session.default_buffer,
+            )
 
-        slash_menu_filter = (
-            has_focus(self._session.default_buffer)
-            & has_completions
-            & ~is_done
-            & Condition(self._should_show_slash_completion_menu)
-        )
-        slash_menu = ConditionalContainer(
-            Window(
-                content=SlashCommandMenuControl(left_padding=self._slash_menu_left_padding),
-                dont_extend_height=True,
-                height=Dimension(max=10),
-                style="class:slash-completion-menu",
-            ),
-            filter=slash_menu_filter,
-        )
-        float_container.floats.insert(
-            0,
-            Float(
-                left=0,
-                right=0,
-                ycursor=True,
-                content=slash_menu,
-                z_index=10**8,
-            ),
-        )
-
+    def _hide_original_completion_menu(
+        self,
+        float_container: FloatContainer,
+        *,
+        buffer: Buffer,
+    ) -> None:
         original_float = next(
             (
                 float_
-                for float_ in float_container.floats[1:]
+                for float_ in float_container.floats
                 if isinstance(float_.content, CompletionsMenu)
             ),
             None,
@@ -1374,12 +466,82 @@ class CustomPromptSession:
             return
         original_float.content = ConditionalContainer(
             original_float.content,
-            filter=~Condition(self._should_show_slash_completion_menu),
+            filter=~self._build_inline_completion_filter(buffer),
         )
 
-    def _should_show_slash_completion_menu(self) -> bool:
-        document = self._session.default_buffer.document
-        return SlashCommandCompleter.should_complete(document)
+    def _build_inline_completion_filter(self, buffer: Buffer) -> Condition:
+        return has_focus(buffer) & has_completions & ~is_done
+
+    def _build_inline_completion_menu(self, buffer: Buffer) -> ConditionalContainer:
+        return ConditionalContainer(
+            Window(
+                content=SlashCommandMenuControl(left_padding=self._slash_menu_left_padding),
+                dont_extend_height=True,
+                height=Dimension(max=10),
+                style="class:slash-completion-menu",
+            ),
+            filter=self._build_inline_completion_filter(buffer),
+        )
+
+    def _install_slash_completion_menu_for_buffer(
+        self,
+        float_container: FloatContainer,
+        *,
+        buffer: Buffer,
+        hide_original_menu: bool = True,
+    ) -> None:
+        float_container.floats.insert(
+            0,
+            Float(
+                left=0,
+                right=0,
+                ycursor=True,
+                content=self._build_inline_completion_menu(buffer),
+                z_index=10**8,
+            ),
+        )
+
+        if hide_original_menu:
+            self._hide_original_completion_menu(float_container, buffer=buffer)
+
+    @staticmethod
+    def _should_trigger_completion(
+        document: Document,
+        *,
+        allow_slash: bool,
+        allow_mentions: bool,
+    ) -> bool:
+        return (allow_slash and SlashCommandCompleter.should_complete(document)) or (
+            allow_mentions and LocalFileMentionCompleter.should_complete(document)
+        )
+
+    def _current_slash_completer(self) -> SlashCommandCompleter:
+        if self._mode == PromptMode.SHELL:
+            return self._shell_slash_completer
+        return self._agent_slash_completer
+
+    def _maybe_start_completion(
+        self,
+        buffer: Buffer,
+        *,
+        allow_slash: bool,
+        allow_mentions: bool,
+    ) -> None:
+        if not buffer.complete_while_typing():
+            return
+        if not self._should_trigger_completion(
+            buffer.document,
+            allow_slash=allow_slash,
+            allow_mentions=allow_mentions,
+        ):
+            if buffer.complete_state is not None:
+                buffer.cancel_completion()
+            return
+        if allow_slash and self._current_slash_completer().is_exact_match(buffer.document):
+            if buffer.complete_state is not None:
+                buffer.cancel_completion()
+            return
+        buffer.start_completion()
 
     def _slash_menu_left_padding(self) -> int:
         if self._mode == PromptMode.SHELL:
@@ -1423,12 +585,84 @@ class CustomPromptSession:
             return "…"
         return text[: max_len - 1] + "…"
 
+    @staticmethod
+    def _display_width(text: str) -> int:
+        return get_cwidth(text)
+
+    @classmethod
+    def _truncate_display_text(cls, text: str, max_width: int) -> str:
+        if max_width <= 0:
+            return ""
+        if cls._display_width(text) <= max_width:
+            return text
+        ellipsis = "…"
+        ellipsis_width = cls._display_width(ellipsis)
+        if max_width <= ellipsis_width:
+            return ellipsis
+        available = max_width - ellipsis_width
+        total = 0
+        chars: list[str] = []
+        for ch in text:
+            ch_width = get_cwidth(ch)
+            if total + ch_width > available:
+                break
+            chars.append(ch)
+            total += ch_width
+        return "".join(chars) + ellipsis
+
+    @staticmethod
+    def _take_prefix_width(text: str, width: int) -> str:
+        if width <= 0:
+            return ""
+        total = 0
+        chars: list[str] = []
+        for ch in text:
+            ch_width = get_cwidth(ch)
+            if total + ch_width > width:
+                break
+            chars.append(ch)
+            total += ch_width
+        return "".join(chars)
+
+    @staticmethod
+    def _take_suffix_width(text: str, width: int) -> str:
+        if width <= 0:
+            return ""
+        total = 0
+        chars: deque[str] = deque()
+        for ch in reversed(text):
+            ch_width = get_cwidth(ch)
+            if total + ch_width > width:
+                break
+            chars.appendleft(ch)
+            total += ch_width
+        return "".join(chars)
+
+    @classmethod
+    def _shorten_middle_display_text(cls, text: str, width: int) -> str:
+        if width <= 0:
+            return ""
+        if cls._display_width(text) <= width:
+            return text
+        ellipsis = "..."
+        ellipsis_width = cls._display_width(ellipsis)
+        if width <= ellipsis_width:
+            return "." * width
+        available = width - ellipsis_width
+        left_width = available // 2
+        right_width = available - left_width
+        return (
+            cls._take_prefix_width(text, left_width)
+            + ellipsis
+            + cls._take_suffix_width(text, right_width)
+        )
+
     def _render_active_input_box_message(self, state: InputBoxState) -> FormattedText:
         label, border_style, badge_style = self._input_box_appearance(state)
         app = get_app_or_none()
         columns = app.output.get_size().columns if app is not None else 80
         badge = f" {label} "
-        used = 3 + len(badge) + 1  # ╭─ + badge + ╮
+        used = self._display_width("╭─") + self._display_width(badge) + self._display_width("╮")
         filler = "─" * max(1, columns - used)
         return FormattedText(
             [
@@ -1473,6 +707,20 @@ class CustomPromptSession:
         badge_style = "bg:#2563eb #ffffff bold"
         return FormattedText([(border_style, "─"), (badge_style, " PROMPT "), (border_style, "─")])
 
+    def _render_turn_prompt_title(self, live_view: Any) -> FormattedText:
+        if not getattr(live_view, "has_pending_input_request", False):
+            return self._render_prompt_title()
+        mode = cast(
+            Literal["default", "reminder", "approval", "question", "question_other"],
+            getattr(live_view, "input_mode", "default"),
+        )
+        label, border_style, badge_style = self._input_box_appearance(
+            InputBoxState(active=True, mode=mode)
+        )
+        return FormattedText(
+            [(border_style, "─"), (badge_style, f" {label} "), (border_style, "─")]
+        )
+
     def _render_frame_title(self) -> FormattedText:
         return self._render_prompt_title()
 
@@ -1513,10 +761,13 @@ class CustomPromptSession:
         columns = app.output.get_size().columns if app is not None else 80
         left_text = self._render_footer_left_text(
             status=status,
-            columns=columns,
+            columns=max(1, columns - self._display_width("  ")),
             right_text=right_text,
         )
-        padding = max(1, columns - len(left_text) - len(right_text))
+        padding = max(
+            1,
+            columns - self._display_width(left_text) - self._display_width(right_text),
+        )
         return FormattedText(
             [
                 ("fg:#38bdf8 bold", left_text),
@@ -1524,6 +775,57 @@ class CustomPromptSession:
                 ("fg:#9ca3af", right_text),
             ]
         )
+
+    @staticmethod
+    def _toast_messages() -> tuple[str | None, str | None]:
+        left_toast = _current_toast("left")
+        right_toast = _current_toast("right")
+        return (
+            left_toast.message if left_toast is not None else None,
+            right_toast.message if right_toast is not None else None,
+        )
+
+    def _has_toasts(self) -> bool:
+        left_text, right_text = self._toast_messages()
+        return bool(left_text or right_text)
+
+    def _render_toast_line(self, columns: int | None = None) -> FormattedText | str:
+        left_text, right_text = self._toast_messages()
+        if not left_text and not right_text:
+            return ""
+
+        app = get_app_or_none()
+        total_columns = (
+            columns
+            if columns is not None
+            else (app.output.get_size().columns if app is not None else 80)
+        )
+        total_columns = max(1, total_columns)
+
+        available = total_columns
+        rendered_right = ""
+        if right_text:
+            rendered_right = self._truncate_display_text(right_text, max(0, total_columns // 2))
+            available = max(0, total_columns - self._display_width(rendered_right) - 2)
+
+        rendered_left = ""
+        if left_text:
+            rendered_left = self._truncate_display_text(left_text, available)
+
+        fragments: list[tuple[str, str]] = []
+        if rendered_left:
+            fragments.append(("fg:#cbd5e1 italic", rendered_left))
+        if rendered_right:
+            if rendered_left:
+                padding = max(
+                    2,
+                    total_columns
+                    - self._display_width(rendered_left)
+                    - self._display_width(rendered_right),
+                )
+                fragments.append(("", " " * padding))
+            fragments.append(("fg:#cbd5e1 italic", rendered_right))
+        return FormattedText(fragments)
 
     @staticmethod
     def _with_completion_menu(content: Any) -> FloatContainer:
@@ -1585,8 +887,11 @@ class CustomPromptSession:
 
         @text_area.buffer.on_text_changed.add_handler
         def _(buffer: Buffer) -> None:
-            if buffer.complete_while_typing():
-                buffer.start_completion()
+            self._maybe_start_completion(
+                buffer,
+                allow_slash=True,
+                allow_mentions=self._mode == PromptMode.AGENT,
+            )
             app = get_app_or_none()
             if app is not None:
                 _redraw_prompt_view(app)
@@ -1596,15 +901,28 @@ class CustomPromptSession:
             height=1,
             dont_extend_height=True,
         )
+        agent_toast_window = Window(
+            FormattedTextControl(lambda: self._render_toast_line(_app_columns())),
+            height=1,
+            dont_extend_height=True,
+        )
+        shell_toast_window = Window(
+            FormattedTextControl(lambda: self._render_toast_line(_app_columns())),
+            height=1,
+            dont_extend_height=True,
+        )
         footer_window = Window(
             FormattedTextControl(self._render_footer_line),
             height=1,
             dont_extend_height=True,
         )
         spacer = Window(height=Dimension(weight=1), char=" ")
+        agent_completion_menu = self._build_inline_completion_menu(text_area.buffer)
+        shell_completion_menu = self._build_inline_completion_menu(text_area.buffer)
         agent_container = HSplit(
             [
                 spacer,
+                agent_completion_menu,
                 Frame(
                     HSplit(
                         [
@@ -1621,17 +939,45 @@ class CustomPromptSession:
                     title=self._render_frame_title,
                     style="fg:#38bdf8",
                 ),
+                ConditionalContainer(
+                    agent_toast_window,
+                    filter=Condition(self._has_toasts),
+                ),
                 footer_window,
             ]
         )
-        shell_container = HSplit([spacer, text_area])
+        shell_container = HSplit(
+            [
+                spacer,
+                shell_completion_menu,
+                text_area,
+                ConditionalContainer(
+                    shell_toast_window,
+                    filter=Condition(self._has_toasts),
+                ),
+            ]
+        )
         container = self._with_completion_menu(
             DynamicContainer(
                 lambda: agent_container if self._show_agent_input_frame() else shell_container
             )
         )
+        self._hide_original_completion_menu(container, buffer=text_area.buffer)
 
         accept_kb = KeyBindings()
+
+        @accept_kb.add("enter", filter=has_completions, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            buff = event.current_buffer
+            if not (buff.complete_state and buff.complete_state.completions):
+                return
+            if self._current_slash_completer().is_exact_match(buff.document):
+                event.app.exit(result=text_area.buffer.text)
+                return
+            completion = buff.complete_state.current_completion
+            if not completion:
+                completion = buff.complete_state.completions[0]
+            buff.apply_completion(completion)
 
         @accept_kb.add("enter", filter=~has_completions, eager=True)
         def _(event: KeyPressEvent) -> None:
@@ -1647,6 +993,9 @@ class CustomPromptSession:
 
         @accept_kb.add("c-c", eager=True)
         def _(event: KeyPressEvent) -> None:
+            if self._dismiss_input(event.current_buffer):
+                event.app.invalidate()
+                return
             event.app.exit(exception=KeyboardInterrupt)
 
         app = Application[str](
@@ -1661,6 +1010,20 @@ class CustomPromptSession:
             terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
         last_layout_signature = _prompt_layout_signature()
+        return app, text_area
+
+    def _get_prompt_application(self) -> tuple[Application[str], TextArea]:
+        if self._prompt_app is None or self._prompt_text_area is None:
+            self._prompt_app, self._prompt_text_area = self._build_prompt_application()
+        return self._prompt_app, self._prompt_text_area
+
+    def _prepare_prompt_application(self) -> tuple[Application[str], TextArea]:
+        app, text_area = self._get_prompt_application()
+        self._apply_mode_to_buffer(text_area.buffer)
+        if text_area.buffer.complete_state is not None:
+            text_area.buffer.cancel_completion()
+        text_area.buffer.document = Document(text="", cursor_position=0)
+        self._force_turn_full_repaint(app)
         return app, text_area
 
     def _open_in_external_editor(self, event: KeyPressEvent) -> None:
@@ -1701,19 +1064,25 @@ class CustomPromptSession:
 
         event.app.create_background_task(_run_pager())
 
+    def _apply_mode_to_buffer(self, buff: Buffer | None) -> None:
+        if buff is None:
+            return
+        if self._mode == PromptMode.SHELL:
+            buff.completer = self._shell_mode_completer
+            return
+        buff.completer = self._agent_mode_completer
+
     def _apply_mode(self, event: KeyPressEvent | None = None) -> None:
         # Apply mode to the active buffer (not the PromptSession itself)
         try:
-            buff = event.current_buffer if event is not None else self._session.default_buffer
+            buff = event.current_buffer if event is not None else None
         except Exception:
             buff = None
-
-        if self._mode == PromptMode.SHELL:
-            if buff is not None:
-                buff.completer = self._shell_mode_completer
-        else:
-            if buff is not None:
-                buff.completer = self._agent_mode_completer
+        if buff is None and self._prompt_text_area is not None:
+            buff = self._prompt_text_area.buffer
+        if buff is None:
+            buff = self._session.default_buffer
+        self._apply_mode_to_buffer(buff)
 
     def _render_signature(self) -> tuple[object, ...]:
         status = self._status_provider()
@@ -1748,9 +1117,13 @@ class CustomPromptSession:
 
     @classmethod
     def _hard_redraw(cls, app: Any) -> None:
-        on_resize = getattr(app, "_on_resize", None)
-        if callable(on_resize):
-            on_resize()
+        renderer = getattr(app, "renderer", None)
+        erase = getattr(renderer, "erase", None)
+        if callable(erase):
+            erase(leave_alternate_screen=False)
+            invalidate = getattr(app, "invalidate", None)
+            if callable(invalidate):
+                invalidate()
             return
         cls._force_turn_full_repaint(app)
 
@@ -1791,16 +1164,54 @@ class CustomPromptSession:
             return None
         return target_scroll
 
-    @staticmethod
+    @classmethod
+    def _target_turn_body_scroll(
+        cls,
+        *,
+        live_view: Any,
+        body_window: Any,
+        line_count: int,
+        current_scroll: int,
+        reveal_latest_output: bool,
+    ) -> int | None:
+        if getattr(live_view, "has_pending_input_request", False) and not reveal_latest_output:
+            if current_scroll == 0:
+                return None
+            return 0
+        return cls._target_turn_body_bottom_scroll(
+            body_window,
+            line_count=line_count,
+            current_scroll=current_scroll,
+        )
+
     def _refresh_turn_application(
+        self,
         app: Any,
         *,
         live_view: Any,
     ) -> bool:
-        if not getattr(live_view, "needs_periodic_refresh", False):
+        has_toasts = self._has_toasts()
+        had_toasts = bool(getattr(app, "_kimi_had_toasts", False))
+        app._kimi_had_toasts = has_toasts
+        if (
+            not getattr(live_view, "needs_periodic_refresh", False)
+            and not has_toasts
+            and not had_toasts
+        ):
             return False
         app.invalidate()
         return True
+
+    @staticmethod
+    def _dismiss_input(buffer: Buffer) -> bool:
+        handled = False
+        if buffer.complete_state is not None:
+            buffer.cancel_completion()
+            handled = True
+        if buffer.text:
+            buffer.document = Document(text="", cursor_position=0)
+            handled = True
+        return handled
 
     def _format_live_activity_status(self, live_view: Any) -> tuple[str, str] | None:
         indicator = getattr(live_view, "activity_indicator", None)
@@ -1826,13 +1237,29 @@ class CustomPromptSession:
             ]
         )
 
+    def _turn_input_hint_text(
+        self,
+        *,
+        live_view: Any,
+        buffer_text: str,
+        feedback_message: str,
+    ) -> str:
+        if buffer_text:
+            return ""
+        if getattr(live_view, "input_mode", "reminder") == "reminder":
+            return ""
+        hint = feedback_message or getattr(live_view, "input_hint", "")
+        if not hint:
+            return ""
+        return self._truncate_text(hint, 160)
+
     @staticmethod
     def _shorten_footer_path(path: str, width: int) -> str:
         if width <= 0:
             return ""
         if width <= 4:
-            return CustomPromptSession._truncate_text(path, width)
-        return shorten_middle(path, width)
+            return CustomPromptSession._truncate_display_text(path, width)
+        return CustomPromptSession._shorten_middle_display_text(path, width)
 
     def _working_dir_text(self) -> str:
         provider = getattr(self, "_working_dir_provider", None)
@@ -1849,19 +1276,21 @@ class CustomPromptSession:
         prefix: str = "",
     ) -> str:
         mode_text = self._mode_text(status)
-        available = max(1, columns - len(right_text) - 1)
+        available = max(1, columns - self._display_width(right_text) - 1)
         if prefix:
-            available = max(1, available - len(prefix))
-        base_text = self._truncate_text(mode_text, available)
+            available = max(1, available - self._display_width(prefix))
+        base_text = self._truncate_display_text(mode_text, available)
         working_dir = self._working_dir_text()
         if not working_dir:
             return f"{prefix}{base_text}"
 
         separator = " · "
-        if available <= len(mode_text) + len(separator):
+        mode_width = self._display_width(mode_text)
+        separator_width = self._display_width(separator)
+        if available <= mode_width + separator_width:
             return f"{prefix}{base_text}"
 
-        path_width = available - len(mode_text) - len(separator)
+        path_width = available - mode_width - separator_width
         path_text = self._shorten_footer_path(working_dir, path_width)
         if not path_text:
             return f"{prefix}{base_text}"
@@ -1876,11 +1305,11 @@ class CustomPromptSession:
         right_text = self._render_right_span(status)
         left_text = self._render_footer_left_text(
             status=status,
-            columns=columns,
+            columns=max(1, columns - self._display_width("  ")),
             right_text=right_text,
         )
         fragments: list[tuple[str, str]] = [("fg:#38bdf8 bold", left_text)]
-        remaining = columns - len(left_text) - len(right_text)
+        remaining = columns - self._display_width(left_text) - self._display_width(right_text)
         fragments.append(("", " " * max(1, remaining)))
         fragments.append(("fg:#9ca3af", right_text))
         return FormattedText(fragments)
@@ -1998,7 +1427,7 @@ class CustomPromptSession:
         )
 
     async def prompt(self) -> UserInput:
-        app, _ = self._build_prompt_application()
+        app, _ = self._prepare_prompt_application()
         with patch_stdout(raw=True):
             command = str(await app.run_async()).strip()
         self._append_history_entry(command)
@@ -2016,6 +1445,7 @@ class CustomPromptSession:
         self._mode = PromptMode.AGENT
         feedback_message = ""
         body_vertical_scroll = 0
+        reveal_latest_output = False
         body_window: Window | None = None
         last_layout_signature: tuple[object, ...] | None = None
 
@@ -2040,41 +1470,80 @@ class CustomPromptSession:
 
         @text_area.buffer.on_text_changed.add_handler
         def _(buffer: Buffer) -> None:
-            if buffer.complete_while_typing():
-                buffer.start_completion()
+            _clear_turn_output_reveal()
+            self._maybe_start_completion(
+                buffer,
+                allow_slash=False,
+                allow_mentions=True,
+            )
             app = get_app_or_none()
             if app is not None:
                 _redraw_turn_view(app)
 
         def _render_title() -> FormattedText:
-            return self._render_prompt_title()
+            return self._render_turn_prompt_title(live_view)
+
+        def _turn_hint_text() -> str:
+            return self._turn_input_hint_text(
+                live_view=live_view,
+                buffer_text=text_area.buffer.text,
+                feedback_message=feedback_message,
+            )
 
         def _render_hint() -> FormattedText | str:
-            if text_area.buffer.text:
-                return ""
-            if live_view.input_mode == "reminder":
-                return ""
-            if live_view.has_pending_input_request and not feedback_message:
-                return ""
-            hint = feedback_message or live_view.input_hint
+            hint = _turn_hint_text()
             if not hint:
                 return ""
-            hint = self._truncate_text(hint, 160)
             return FormattedText([("fg:#22d3ee italic", hint)])
 
         def _render_footer() -> FormattedText:
             status = self._status_provider()
             return self._render_turn_footer(_app_columns(), status=status)
 
-        body_control = _RichRenderableControl(
-            lambda: live_view.compose_body(
+        def _turn_tail_block_limit() -> int:
+            return (
+                MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS
+                if live_view.has_pending_input_request
+                else MAX_ACTIVE_TURN_FLUSHED_BLOCKS
+            )
+
+        recent_notice_control = _RichRenderableControl(
+            lambda: (
+                _render_recent_output_notice()
+                if live_view.should_show_recent_output_notice(
+                    tail_block_limit=_turn_tail_block_limit(),
+                    content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
+                )
+                else None
+            ),
+            get_cache_revision=lambda: (
+                getattr(live_view, "history_revision", 0),
+                getattr(live_view, "active_revision", 0),
+                live_view.has_pending_input_request,
+            ),
+        )
+        history_body_control = _RichRenderableControl(
+            lambda: live_view.compose_history_body(
+                tail_block_limit=_turn_tail_block_limit(),
+            ),
+            get_cache_revision=lambda: (
+                getattr(live_view, "history_revision", 0),
+                _turn_tail_block_limit(),
+            ),
+        )
+        active_body_control = _RichRenderableControl(
+            lambda: live_view.compose_active_body(
                 include_running_indicators=False,
-                tail_block_limit=(
-                    0 if live_view.has_pending_input_request else MAX_ACTIVE_TURN_FLUSHED_BLOCKS
-                ),
                 content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
             ),
-            get_cache_revision=lambda: getattr(live_view, "render_revision", 0),
+            get_cache_revision=lambda: (
+                getattr(live_view, "active_revision", 0),
+                live_view.has_pending_input_request,
+                live_view.input_mode,
+            ),
+        )
+        body_control = _StackedRichRenderableControl(
+            [recent_notice_control, history_body_control, active_body_control]
         )
 
         def _turn_layout_signature() -> tuple[int, int, int, bool, bool, int]:
@@ -2089,8 +1558,8 @@ class CustomPromptSession:
                 else _input_box_height()
             )
             body_line_count = body_control.line_count(body_width)
-            has_activity = bool(self._render_turn_activity(live_view))
-            has_hint = bool(_render_hint())
+            has_activity = _has_turn_activity()
+            has_hint = bool(_turn_hint_text())
             return (
                 getattr(live_view, "render_revision", 0),
                 body_width,
@@ -2112,12 +1581,51 @@ class CustomPromptSession:
         def _refresh_turn_view(app: Application[Any]) -> None:
             _redraw_turn_view(app)
 
+        def _clear_turn_output_reveal() -> None:
+            nonlocal reveal_latest_output
+            reveal_latest_output = False
+
+        def _reveal_turn_output_tail() -> None:
+            nonlocal body_vertical_scroll, reveal_latest_output
+            reveal_latest_output = True
+            target_scroll = self._target_turn_body_scroll(
+                live_view=live_view,
+                body_window=body_window,
+                line_count=_turn_layout_signature()[2],
+                current_scroll=body_vertical_scroll,
+                reveal_latest_output=True,
+            )
+            if target_scroll is not None:
+                body_vertical_scroll = target_scroll
+
+        def _has_turn_activity() -> bool:
+            return (
+                not getattr(live_view, "has_pending_input_request", False)
+                and self._format_live_activity_status(live_view) is not None
+            )
+
         def _render_activity() -> FormattedText | str:
             return self._render_turn_activity(live_view)
 
         key_bindings = KeyBindings()
         route_live_navigation = Condition(
             lambda: self._should_route_live_navigation(live_view, text_area.buffer.text)
+        )
+
+        def _dispatch_live_key(event: KeyPressEvent, event_type: KeyEvent) -> None:
+            _clear_turn_output_reveal()
+            live_view.dispatch_keyboard_event(event_type)
+            _refresh_turn_view(event.app)
+
+        route_idle_escape_cancel = Condition(
+            lambda: (
+                not live_view.has_pending_input_request
+                and not text_area.buffer.text.strip()
+                and text_area.buffer.complete_state is None
+            )
+        )
+        expand_panel = Condition(
+            lambda: live_view.can_expand_current_panel and live_view.input_mode != "question_other"
         )
 
         @key_bindings.add("enter", filter=has_completions)
@@ -2131,47 +1639,63 @@ class CustomPromptSession:
 
         @key_bindings.add("enter", filter=route_live_navigation & ~has_completions, eager=True)
         def _(event: KeyPressEvent) -> None:
-            live_view.dispatch_keyboard_event(KeyEvent.ENTER)
-            _refresh_turn_view(event.app)
+            _dispatch_live_key(event, KeyEvent.ENTER)
 
         @key_bindings.add("up", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
-            live_view.dispatch_keyboard_event(KeyEvent.UP)
-            _refresh_turn_view(event.app)
+            _dispatch_live_key(event, KeyEvent.UP)
 
         @key_bindings.add("down", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
-            live_view.dispatch_keyboard_event(KeyEvent.DOWN)
-            _refresh_turn_view(event.app)
+            _dispatch_live_key(event, KeyEvent.DOWN)
 
         @key_bindings.add("left", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
-            live_view.dispatch_keyboard_event(KeyEvent.LEFT)
-            _refresh_turn_view(event.app)
+            _dispatch_live_key(event, KeyEvent.LEFT)
 
         @key_bindings.add("right", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
-            live_view.dispatch_keyboard_event(KeyEvent.RIGHT)
-            _refresh_turn_view(event.app)
+            _dispatch_live_key(event, KeyEvent.RIGHT)
 
         @key_bindings.add("tab", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
-            live_view.dispatch_keyboard_event(KeyEvent.TAB)
-            _refresh_turn_view(event.app)
+            _dispatch_live_key(event, KeyEvent.TAB)
 
         @key_bindings.add("space", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
-            live_view.dispatch_keyboard_event(KeyEvent.SPACE)
-            _refresh_turn_view(event.app)
+            _dispatch_live_key(event, KeyEvent.SPACE)
 
         @key_bindings.add("escape", filter=route_live_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:
+            _dispatch_live_key(event, KeyEvent.ESCAPE)
+
+        def _bind_live_digit(key: str, event_type: KeyEvent) -> None:
+            @key_bindings.add(key, filter=route_live_navigation, eager=True)
+            def _(event: KeyPressEvent) -> None:
+                _dispatch_live_key(event, event_type)
+
+        _bind_live_digit("1", KeyEvent.NUM_1)
+        _bind_live_digit("2", KeyEvent.NUM_2)
+        _bind_live_digit("3", KeyEvent.NUM_3)
+        _bind_live_digit("4", KeyEvent.NUM_4)
+        _bind_live_digit("5", KeyEvent.NUM_5)
+
+        @key_bindings.add("c-e", filter=expand_panel, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            nonlocal feedback_message
+            feedback_message = ""
+            self._open_live_view_expansion(event, live_view)
+
+        @key_bindings.add("escape", filter=route_idle_escape_cancel, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _clear_turn_output_reveal()
             live_view.dispatch_keyboard_event(KeyEvent.ESCAPE)
             _refresh_turn_view(event.app)
 
         @key_bindings.add("enter", filter=~route_live_navigation & ~has_completions, eager=True)
         def _(event: KeyPressEvent) -> None:
             nonlocal feedback_message
+            _clear_turn_output_reveal()
             command = event.current_buffer.text.strip()
             if not command:
                 return
@@ -2207,6 +1731,7 @@ class CustomPromptSession:
 
         @key_bindings.add("c-l", eager=True)
         def _(event: KeyPressEvent) -> None:
+            _reveal_turn_output_tail()
             self._hard_redraw(event.app)
 
         if self._clipboard is not None:
@@ -2221,6 +1746,12 @@ class CustomPromptSession:
 
         @key_bindings.add("c-c", eager=True)
         def _(event: KeyPressEvent) -> None:
+            nonlocal feedback_message
+            _clear_turn_output_reveal()
+            if self._dismiss_input(event.current_buffer):
+                feedback_message = ""
+                _refresh_turn_view(event.app)
+                return
             cancel_handler()
             _refresh_turn_view(event.app)
 
@@ -2239,25 +1770,32 @@ class CustomPromptSession:
             height=1,
             dont_extend_height=True,
         )
+        toast_window = Window(
+            FormattedTextControl(lambda: self._render_toast_line(_app_columns())),
+            height=1,
+            dont_extend_height=True,
+        )
         footer_window = Window(
             FormattedTextControl(_render_footer),
             height=1,
             dont_extend_height=True,
         )
+        completion_menu = self._build_inline_completion_menu(text_area.buffer)
         container = self._with_completion_menu(
             HSplit(
                 [
                     body_window,
                     ConditionalContainer(
                         activity_window,
-                        filter=Condition(lambda: bool(self._render_turn_activity(live_view))),
+                        filter=Condition(_has_turn_activity),
                     ),
+                    completion_menu,
                     Frame(
                         HSplit(
                             [
                                 ConditionalContainer(
                                     hint_window,
-                                    filter=Condition(lambda: bool(_render_hint())),
+                                    filter=Condition(lambda: bool(_turn_hint_text())),
                                 ),
                                 text_area,
                             ]
@@ -2265,10 +1803,16 @@ class CustomPromptSession:
                         title=_render_title,
                         style="fg:#38bdf8",
                     ),
+                    ConditionalContainer(
+                        toast_window,
+                        filter=Condition(self._has_toasts),
+                    ),
                     footer_window,
                 ]
             )
         )
+        self._hide_original_completion_menu(container, buffer=text_area.buffer)
+
         app = Application[None](
             layout=Layout(container, focused_element=text_area),
             key_bindings=key_bindings,
@@ -2285,23 +1829,18 @@ class CustomPromptSession:
         def _follow_turn_output(_: object) -> None:
             nonlocal body_vertical_scroll, last_layout_signature
             signature = _turn_layout_signature()
-            if live_view.has_pending_input_request:
-                if body_vertical_scroll != 0:
-                    body_vertical_scroll = 0
-                    last_layout_signature = signature
-                    app.invalidate()
-                    return
-            else:
-                target_scroll = self._target_turn_body_bottom_scroll(
-                    body_window,
-                    line_count=signature[2],
-                    current_scroll=body_vertical_scroll,
-                )
-                if target_scroll is not None:
-                    body_vertical_scroll = target_scroll
-                    last_layout_signature = signature
-                    app.invalidate()
-                    return
+            target_scroll = self._target_turn_body_scroll(
+                live_view=live_view,
+                body_window=body_window,
+                line_count=signature[2],
+                current_scroll=body_vertical_scroll,
+                reveal_latest_output=reveal_latest_output,
+            )
+            if target_scroll is not None:
+                body_vertical_scroll = target_scroll
+                last_layout_signature = signature
+                app.invalidate()
+                return
             if signature != last_layout_signature:
                 last_layout_signature = signature
                 app.invalidate()
@@ -2327,15 +1866,18 @@ class CustomPromptSession:
                     app.exit()
                     return
 
+                _clear_turn_output_reveal()
                 live_view.dispatch_wire_message(msg)
                 feedback_message = ""
-                _refresh_turn_view(app)
+                significant = is_significant_for_render(msg)
+                if significant or not live_view.needs_periodic_refresh:
+                    _refresh_turn_view(app)
 
                 # Yield to the event loop after significant state changes so
                 # prompt_toolkit can repaint immediately.  Without this the
                 # loop drains every queued message before _redraw runs,
                 # delaying tool-result and reminder rendering.
-                if _is_significant_for_render(msg):
+                if significant:
                     await asyncio.sleep(0)
 
         async def _animate() -> None:
@@ -2408,8 +1950,10 @@ class CustomPromptSession:
         return mode
 
     def _rotated_tips_text(self, available: int) -> str | None:
+        if available <= 0 or not self._tips:
+            return None
         full_text = _TIP_SEPARATOR.join(self._tips)
-        if len(full_text) <= available:
+        if self._display_width(full_text) <= available:
             return full_text
 
         n = len(self._tips)
@@ -2418,7 +1962,9 @@ class CustomPromptSession:
         selected: list[str] = []
         total_len = 0
         for tip in rotated:
-            needed = len(tip) + (len(_TIP_SEPARATOR) if selected else 0)
+            needed = self._display_width(tip) + (
+                self._display_width(_TIP_SEPARATOR) if selected else 0
+            )
             if total_len + needed <= available:
                 selected.append(tip)
                 total_len += needed
@@ -2438,7 +1984,10 @@ class CustomPromptSession:
             right_text=right_text,
             prefix="╰─ ",
         )
-        padding = max(1, columns - len(footer_text) - len(right_text))
+        padding = max(
+            1,
+            columns - self._display_width(footer_text) - self._display_width(right_text),
+        )
         return FormattedText(
             [
                 (border_style, footer_text),
@@ -2463,24 +2012,29 @@ class CustomPromptSession:
 
         left_text = self._render_footer_left_text(
             status=status,
-            columns=columns,
+            columns=max(1, columns - self._display_width("  ")),
             right_text=right_text,
         )
         fragments.extend([("", left_text), ("", "  ")])
-        columns -= len(left_text) + 2
+        columns -= self._display_width(left_text) + self._display_width("  ")
 
         current_toast_left = _current_toast("left")
         if current_toast_left is not None:
             left_text = current_toast_left.message
         else:
-            left_text = self._rotated_tips_text(columns - len(right_text) - 3)
+            left_text = self._rotated_tips_text(
+                columns - self._display_width(right_text) - self._display_width("   ")
+            )
 
         if left_text:
-            left_text = self._truncate_text(left_text, max(0, columns - len(right_text) - 3))
+            left_text = self._truncate_display_text(
+                left_text,
+                max(0, columns - self._display_width(right_text) - self._display_width("   ")),
+            )
             fragments.extend([("", left_text), ("", "  ")])
-            columns -= len(left_text) + 2
+            columns -= self._display_width(left_text) + self._display_width("  ")
 
-        padding = max(1, columns - len(right_text))
+        padding = max(1, columns - self._display_width(right_text))
         fragments.append(("", " " * padding))
         fragments.append(("fg:#9ca3af", right_text))
         return FormattedText(fragments)

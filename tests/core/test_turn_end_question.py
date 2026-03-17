@@ -1,8 +1,8 @@
 """Tests for turn-end question detection."""
 
 from __future__ import annotations
-import asyncio
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -150,6 +150,7 @@ async def test_detect_turn_end_question_calls_generate(
 
 # -- Integration: _maybe_ask_turn_end_question --
 
+
 @pytest.mark.asyncio
 async def test_detect_turn_end_question_strips_thinking_parts(
     runtime: Runtime,
@@ -200,7 +201,6 @@ async def test_detect_turn_end_question_strips_thinking_parts(
     # Ensure no ThinkPart in the sent message
     for part in history[0].content:
         assert not isinstance(part, KosongThinkPart)
-
 
 
 @pytest.mark.asyncio
@@ -433,7 +433,6 @@ async def test_run_skips_detection_when_disabled(
     assert not detection_called
 
 
-
 @pytest.mark.asyncio
 async def test_run_sends_follow_up_input_on_user_choice(
     runtime: Runtime,
@@ -510,9 +509,7 @@ async def test_detect_turn_end_question_retries_on_bad_json(
         call_count += 1
         if call_count == 1:
             # First attempt: garbage output
-            return SimpleNamespace(
-                message=Message(role="assistant", content="Sure, here is...")
-            )
+            return SimpleNamespace(message=Message(role="assistant", content="Sure, here is..."))
         # Second attempt: valid JSON
         return SimpleNamespace(
             message=Message(
@@ -556,9 +553,7 @@ async def test_detect_turn_end_question_gives_up_after_max_attempts(
     async def fake_generate(*, chat_provider, system_prompt, tools, history):
         nonlocal call_count
         call_count += 1
-        return SimpleNamespace(
-            message=Message(role="assistant", content="I don't know")
-        )
+        return SimpleNamespace(message=Message(role="assistant", content="I don't know"))
 
     monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
 
@@ -635,3 +630,7 @@ async def test_detect_turn_end_question_times_out(
     result = await soul._detect_turn_end_question(assistant_msg)
 
     assert result is None
+
+
+def test_turn_end_question_prompt_mentions_continue_in_chinese() -> None:
+    assert '"是否要继续？"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT

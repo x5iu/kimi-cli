@@ -1,49 +1,42 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections import deque
 from collections.abc import Sequence
 from contextlib import suppress
 from io import StringIO
-from typing import Any, NamedTuple, cast
+from typing import Any, cast
 
-import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 from kosong.tooling import ToolError, ToolOk
 from rich import box
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
-from rich.markup import escape
-from rich.padding import Padding
 from rich.panel import Panel
 from rich.spinner import Spinner
-from rich.style import Style
 from rich.text import Text
 
-from kimi_cli.soul import format_context_status
-from kimi_cli.tools import extract_key_argument
+from kimi_cli.ui.shell.blocks import _ContentBlock, _StatusBlock, _ToolCallBlock
 from kimi_cli.ui.shell.console import _RIGHT_PADDING, console
 from kimi_cli.ui.shell.keyboard import KeyEvent
+from kimi_cli.ui.shell.panels import (
+    _ApprovalRequestPanel,
+    _QuestionRequestPanel,
+    _show_approval_in_pager,
+    _show_question_body_in_pager,
+)
 from kimi_cli.utils.aioqueue import QueueShutDown
-from kimi_cli.utils.diff import format_unified_diff
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.rich.columns import BulletColumns
-from kimi_cli.utils.rich.markdown import Markdown
-from kimi_cli.utils.rich.syntax import KimiSyntax
 from kimi_cli.wire import WireUISide
 from kimi_cli.wire.types import (
     ApprovalRequest,
     ApprovalResponse,
-    BriefDisplayBlock,
     CompactionBegin,
     CompactionEnd,
     ContentPart,
-    DiffDisplayBlock,
     FollowUpInput,
     MCPLoadingBegin,
     MCPLoadingEnd,
     QuestionRequest,
-    ShellDisplayBlock,
     SkillReminderNotice,
     StatusUpdate,
     StepBegin,
@@ -51,12 +44,10 @@ from kimi_cli.wire.types import (
     SubagentEvent,
     TextPart,
     ThinkPart,
-    TodoDisplayBlock,
     ToolCall,
     ToolCallPart,
     ToolCallRequest,
     ToolResult,
-    ToolReturnValue,
     TurnBegin,
     TurnEnd,
     WireMessage,
@@ -66,10 +57,18 @@ MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
 MAX_ACTIVE_TURN_FLUSHED_BLOCKS = 12
+MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS = 3
 MAX_ACTIVE_TURN_CONTENT_CHARS = 12_000
+LIVE_VIEW_REFRESH_INTERVAL = 0.2
 
-# Truncation limits for approval request display
-MAX_PREVIEW_LINES = 4
+
+def is_significant_for_render(msg: object) -> bool:
+    """Whether a wire message should trigger an immediate repaint."""
+    if isinstance(msg, (ContentPart, ToolCallPart, StatusUpdate, ApprovalResponse)):
+        return False
+    if isinstance(msg, SubagentEvent):
+        return is_significant_for_render(msg.event)
+    return True
 
 
 async def visualize(
@@ -128,863 +127,6 @@ def _render_recent_output_notice() -> RenderableType:
     return Text("… showing recent output only during live turn", style="grey50 italic")
 
 
-class _ContentBlock:
-    def __init__(self, is_think: bool):
-        self.is_think = is_think
-        self._spinner = Spinner("dots", self.status_text)
-        self._chunks: list[str] = []
-        self._raw_text_cache: str | None = ""
-        self._raw_text_length = 0
-
-    @property
-    def raw_text(self) -> str:
-        if self._raw_text_cache is None:
-            self._raw_text_cache = "".join(self._chunks)
-        return self._raw_text_cache
-
-    @property
-    def status_text(self) -> str:
-        return "Thinking..." if self.is_think else "Composing..."
-
-    def compose(self, *, show_indicator: bool = True) -> RenderableType:
-        if show_indicator:
-            return self._spinner
-        return self.compose_final()
-
-    def compose_final(self) -> RenderableType:
-        return BulletColumns(
-            Markdown(
-                self.raw_text,
-                style="grey50 italic" if self.is_think else "",
-            ),
-            bullet_style="grey50" if self.is_think else None,
-        )
-
-    def compose_tail(
-        self,
-        *,
-        max_chars: int,
-        show_indicator: bool = True,
-    ) -> tuple[RenderableType, bool]:
-        if show_indicator:
-            return self._spinner, False
-
-        text, truncated = self._tail_text(max_chars)
-        if truncated:
-            text = f"...\n\n{text}"
-        renderable = BulletColumns(
-            Markdown(
-                text,
-                style="grey50 italic" if self.is_think else "",
-            ),
-            bullet_style="grey50" if self.is_think else None,
-        )
-        return renderable, truncated
-
-    def _tail_text(self, max_chars: int) -> tuple[str, bool]:
-        if max_chars <= 0 or self._raw_text_length <= max_chars:
-            return self.raw_text, False
-
-        remaining = max_chars
-        parts: list[str] = []
-        for chunk in reversed(self._chunks):
-            if remaining <= 0:
-                break
-            if len(chunk) <= remaining:
-                parts.append(chunk)
-                remaining -= len(chunk)
-            else:
-                parts.append(chunk[-remaining:])
-                remaining = 0
-        return "".join(reversed(parts)), True
-
-    def append(self, content: str) -> None:
-        self._chunks.append(content)
-        self._raw_text_cache = None
-        self._raw_text_length += len(content)
-
-
-class _ToolCallBlock:
-    class FinishedSubCall(NamedTuple):
-        call: ToolCall
-        result: ToolReturnValue
-
-    def __init__(self, tool_call: ToolCall):
-        self._tool_name = tool_call.function.name
-        self._lexer = streamingjson.Lexer()
-        if tool_call.function.arguments is not None:
-            self._lexer.append_string(tool_call.function.arguments)
-
-        self._argument = extract_key_argument(self._lexer, self._tool_name)
-        self._full_url = self._extract_full_url(tool_call.function.arguments, self._tool_name)
-        self._result: ToolReturnValue | None = None
-
-        self._ongoing_subagent_tool_calls: dict[str, ToolCall] = {}
-        self._last_subagent_tool_call: ToolCall | None = None
-        self._n_finished_subagent_tool_calls = 0
-        self._finished_subagent_tool_calls = deque[_ToolCallBlock.FinishedSubCall](
-            maxlen=MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
-        )
-
-        self._spinning_dots = Spinner("dots", text="")
-        self._renderable: RenderableType = self._compose()
-
-    def compose(self, *, show_indicator: bool = True) -> RenderableType:
-        if show_indicator:
-            return self._renderable
-        return self._compose(show_indicator=False)
-
-    @property
-    def finished(self) -> bool:
-        return self._result is not None
-
-    def append_args_part(self, args_part: str):
-        if self.finished:
-            return
-        self._lexer.append_string(args_part)
-        # TODO: maybe don't extract detail if it's already stable
-        argument = extract_key_argument(self._lexer, self._tool_name)
-        if argument and argument != self._argument:
-            self._argument = argument
-            self._full_url = self._extract_full_url(self._lexer.complete_json(), self._tool_name)
-            self._renderable = BulletColumns(
-                self._build_headline_text(),
-                bullet=self._spinning_dots,
-            )
-
-    def finish(self, result: ToolReturnValue):
-        self._result = result
-        self._renderable = self._compose()
-
-    def append_sub_tool_call(self, tool_call: ToolCall):
-        self._ongoing_subagent_tool_calls[tool_call.id] = tool_call
-        self._last_subagent_tool_call = tool_call
-
-    def append_sub_tool_call_part(self, tool_call_part: ToolCallPart):
-        if self._last_subagent_tool_call is None:
-            return
-        if not tool_call_part.arguments_part:
-            return
-        if self._last_subagent_tool_call.function.arguments is None:
-            self._last_subagent_tool_call.function.arguments = tool_call_part.arguments_part
-        else:
-            self._last_subagent_tool_call.function.arguments += tool_call_part.arguments_part
-
-    def finish_sub_tool_call(self, tool_result: ToolResult):
-        self._last_subagent_tool_call = None
-        sub_tool_call = self._ongoing_subagent_tool_calls.pop(tool_result.tool_call_id, None)
-        if sub_tool_call is None:
-            return
-
-        self._finished_subagent_tool_calls.append(
-            _ToolCallBlock.FinishedSubCall(
-                call=sub_tool_call,
-                result=tool_result.return_value,
-            )
-        )
-        self._n_finished_subagent_tool_calls += 1
-        self._renderable = self._compose()
-
-    def _compose(self, *, show_indicator: bool = True) -> RenderableType:
-        lines: list[RenderableType] = [
-            self._build_headline_text(),
-        ]
-
-        if self._n_finished_subagent_tool_calls > MAX_SUBAGENT_TOOL_CALLS_TO_SHOW:
-            n_hidden = self._n_finished_subagent_tool_calls - MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
-            lines.append(
-                BulletColumns(
-                    Text(
-                        f"{n_hidden} more tool call{'s' if n_hidden > 1 else ''} ...",
-                        style="grey50 italic",
-                    ),
-                    bullet_style="grey50",
-                )
-            )
-        for sub_call, sub_result in self._finished_subagent_tool_calls:
-            argument = extract_key_argument(
-                sub_call.function.arguments or "", sub_call.function.name
-            )
-            sub_url = self._extract_full_url(sub_call.function.arguments, sub_call.function.name)
-            sub_text = Text()
-            sub_text.append("Used ")
-            sub_text.append(sub_call.function.name, style="blue")
-            if argument:
-                sub_text.append(" (", style="grey50")
-                arg_style = Style(color="grey50", link=sub_url) if sub_url else "grey50"
-                sub_text.append(argument, style=arg_style)
-                sub_text.append(")", style="grey50")
-            sub_lines = [cast(RenderableType, sub_text)]
-            sub_lines.extend(self._render_result_display(sub_result))
-            lines.append(
-                BulletColumns(
-                    Group(*sub_lines),
-                    bullet_style="green" if not sub_result.is_error else "red",
-                )
-            )
-
-        if self._result is not None:
-            lines.extend(self._render_result_display(self._result))
-
-        if self.finished:
-            assert self._result is not None
-            return BulletColumns(
-                Group(*lines),
-                bullet_style="green" if not self._result.is_error else "red",
-            )
-        if show_indicator:
-            return BulletColumns(
-                Group(*lines),
-                bullet=self._spinning_dots,
-            )
-        return BulletColumns(Group(*lines), bullet_style="grey50")
-
-    @staticmethod
-    def _extract_full_url(arguments: str | None, tool_name: str) -> str | None:
-        """Extract the full URL from FetchURL tool arguments."""
-        if tool_name != "FetchURL" or not arguments:
-            return None
-        try:
-            args = json.loads(arguments)
-        except (json.JSONDecodeError, TypeError):
-            return None
-        if isinstance(args, dict):
-            url = cast(dict[str, Any], args).get("url")
-            if url:
-                return str(url)
-        return None
-
-    @property
-    def status_text(self) -> str:
-        return self._headline_plain(finished=False)
-
-    def _headline_plain(self, *, finished: bool) -> str:
-        text = f"{'Used' if finished else 'Using'} {self._tool_name}"
-        if self._argument:
-            text += f" ({self._argument})"
-        return text
-
-    def _build_headline_text(self) -> Text:
-        text = Text()
-        text.append("Used " if self.finished else "Using ")
-        text.append(self._tool_name, style="blue")
-        if self._argument:
-            text.append(" (", style="grey50")
-            arg_style = Style(color="grey50", link=self._full_url) if self._full_url else "grey50"
-            text.append(self._argument, style=arg_style)
-            text.append(")", style="grey50")
-        return text
-
-    @staticmethod
-    def _extract_error_message(result: ToolReturnValue) -> str:
-        if result.message:
-            return result.message.strip()
-
-        for block in result.display:
-            if isinstance(block, BriefDisplayBlock) and block.text:
-                return block.text.strip()
-
-        return ""
-
-    def _render_result_display(self, result: ToolReturnValue) -> list[RenderableType]:
-        lines: list[RenderableType] = []
-        if result.is_error:
-            error_message = self._extract_error_message(result)
-            if error_message:
-                lines.append(Text(error_message, style="red", overflow="fold"))
-
-            error_output = self._extract_error_output(result)
-            if error_output:
-                lines.append(Text(error_output, style="red", overflow="fold"))
-        else:
-            has_diff_display = any(isinstance(block, DiffDisplayBlock) for block in result.display)
-            if result.message and has_diff_display:
-                lines.append(Markdown(result.message, style="dim"))
-
-        last_diff_path: str | None = None
-        for block in result.display:
-            if isinstance(block, BriefDisplayBlock):
-                last_diff_path = None
-                if result.is_error:
-                    continue
-                if block.text:
-                    lines.append(Markdown(block.text, style="grey50"))
-            elif isinstance(block, TodoDisplayBlock):
-                last_diff_path = None
-                markdown = self._render_todo_markdown(block)
-                if markdown:
-                    lines.append(Markdown(markdown, style="grey50"))
-            elif isinstance(block, DiffDisplayBlock):
-                if block.path != last_diff_path:
-                    lines.append(Text(block.path, style="bold"))
-                    last_diff_path = block.path
-                else:
-                    lines.append(Text("⋮", style="grey50"))
-
-                diff_text = format_unified_diff(
-                    block.old_text,
-                    block.new_text,
-                    block.path,
-                    include_file_header=False,
-                ).rstrip("\n")
-                if diff_text:
-                    lines.append(KimiSyntax(diff_text, "diff"))
-            else:
-                last_diff_path = None
-
-        return lines
-
-    @classmethod
-    def _extract_error_output(cls, result: ToolReturnValue) -> str:
-        text = cls._stringify_output(result.output).strip("\n")
-        if not text.strip():
-            return ""
-
-        truncated = False
-        if len(text) > MAX_TOOL_ERROR_OUTPUT_CHARS:
-            text = text[:MAX_TOOL_ERROR_OUTPUT_CHARS].rstrip()
-            truncated = True
-
-        lines = text.splitlines()
-        if len(lines) > MAX_TOOL_ERROR_OUTPUT_LINES:
-            text = "\n".join(lines[:MAX_TOOL_ERROR_OUTPUT_LINES]).rstrip()
-            truncated = True
-
-        if truncated:
-            text += "\n[...truncated]"
-        return text
-
-    @staticmethod
-    def _stringify_output(output: str | ContentPart | Sequence[ContentPart]) -> str:
-        if isinstance(output, str):
-            return output
-        if isinstance(output, TextPart):
-            return output.text
-        if isinstance(output, Sequence):
-            return "".join(part.text for part in output if isinstance(part, TextPart))
-        return ""
-
-    def _render_todo_markdown(self, block: TodoDisplayBlock) -> str:
-        lines: list[str] = []
-        for todo in block.items:
-            normalized = todo.status.replace("_", " ").lower()
-            match normalized:
-                case "pending":
-                    lines.append(f"- {todo.title}")
-                case "in progress":
-                    lines.append(f"- {todo.title} ←")
-                case "done":
-                    lines.append(f"- ~~{todo.title}~~")
-                case _:
-                    lines.append(f"- {todo.title}")
-        return "\n".join(lines)
-
-
-class _ApprovalContentBlock(NamedTuple):
-    """A pre-rendered content block for approval request with line count."""
-
-    text: str
-    lines: int
-    style: str = ""
-    lexer: str = ""
-
-
-class _ApprovalRequestPanel:
-    def __init__(self, request: ApprovalRequest):
-        self.request = request
-        self.options: list[tuple[str, ApprovalResponse.Kind]] = [
-            ("Approve once", "approve"),
-            ("Approve for this session", "approve_for_session"),
-            ("Reject, tell Kimi what to do instead", "reject"),
-        ]
-        self.selected_index = 0
-
-        # Pre-render all content blocks with line counts
-        self._content_blocks: list[_ApprovalContentBlock] = []
-        last_diff_path: str | None = None
-
-        # Handle description (only if no display blocks)
-        if request.description and not request.display:
-            text = request.description.rstrip("\n")
-            self._content_blocks.append(
-                _ApprovalContentBlock(text=text, lines=text.count("\n") + 1)
-            )
-
-        # Handle display blocks
-        for block in request.display:
-            if isinstance(block, DiffDisplayBlock):
-                # File path or ellipsis
-                if block.path != last_diff_path:
-                    self._content_blocks.append(
-                        _ApprovalContentBlock(text=block.path, lines=1, style="bold")
-                    )
-                    last_diff_path = block.path
-                else:
-                    self._content_blocks.append(
-                        _ApprovalContentBlock(text="⋮", lines=1, style="dim")
-                    )
-                # Diff content
-                diff_text = format_unified_diff(
-                    block.old_text,
-                    block.new_text,
-                    block.path,
-                    include_file_header=False,
-                ).rstrip("\n")
-                self._content_blocks.append(
-                    _ApprovalContentBlock(
-                        text=diff_text, lines=diff_text.count("\n") + 1, lexer="diff"
-                    )
-                )
-            elif isinstance(block, ShellDisplayBlock):
-                text = block.command.rstrip("\n")
-                self._content_blocks.append(
-                    _ApprovalContentBlock(
-                        text=text, lines=text.count("\n") + 1, lexer=block.language
-                    )
-                )
-                last_diff_path = None
-            elif isinstance(block, BriefDisplayBlock) and block.text:
-                text = block.text.rstrip("\n")
-                self._content_blocks.append(
-                    _ApprovalContentBlock(text=text, lines=text.count("\n") + 1, style="grey50")
-                )
-                last_diff_path = None
-
-        self._total_lines = sum(b.lines for b in self._content_blocks)
-        self.has_expandable_content = self._total_lines > MAX_PREVIEW_LINES
-
-    def render(self, *, allow_expand: bool = True) -> RenderableType:
-        """Render the approval menu as a bordered panel."""
-        content_lines: list[RenderableType] = [
-            Text.from_markup(
-                "[yellow]"
-                f"{escape(self.request.sender)} is requesting approval to "
-                f"{escape(self.request.action)}:[/yellow]"
-            )
-        ]
-        content_lines.append(Text(""))
-
-        # Render content with line budget
-        remaining = MAX_PREVIEW_LINES
-        for block in self._content_blocks:
-            if remaining <= 0:
-                break
-            content_lines.append(self._render_block(block, remaining))
-            remaining -= min(block.lines, remaining)
-
-        if self.has_expandable_content and allow_expand:
-            content_lines.append(Text("... (truncated, type /more to expand)", style="dim italic"))
-
-        lines: list[RenderableType] = []
-        if content_lines:
-            lines.append(Padding(Group(*content_lines), (0, 0, 0, 1)))
-
-        # Add menu options with number key labels
-        if lines:
-            lines.append(Text(""))
-        for i, (option_text, _) in enumerate(self.options):
-            num = i + 1
-            if i == self.selected_index:
-                lines.append(Text(f"\u2192 [{num}] {option_text}", style="cyan"))
-            else:
-                lines.append(Text(f"  [{num}] {option_text}", style="grey50"))
-
-        # Keyboard hints
-        lines.append(Text(""))
-        hint = "  Type 1/2/3 in the input box, then press Enter"
-        if self.has_expandable_content and allow_expand:
-            hint += "  (/more to expand)"
-        lines.append(Text(hint, style="dim"))
-
-        return Panel(
-            Group(*lines),
-            border_style="bold yellow",
-            title="[bold yellow]\u26a0 ACTION REQUIRED[/bold yellow]",
-            title_align="left",
-            padding=(0, 1),
-        )
-
-    def _render_block(
-        self, block: _ApprovalContentBlock, max_lines: int | None = None
-    ) -> RenderableType:
-        """Render a content block, optionally truncated."""
-        text = block.text
-        if max_lines is not None and block.lines > max_lines:
-            # Truncate to max_lines
-            text = "\n".join(text.split("\n")[:max_lines])
-
-        if block.lexer:
-            return KimiSyntax(text, block.lexer)
-        return Text(text, style=block.style)
-
-    def render_full(self) -> list[RenderableType]:
-        """Render full content for pager (no truncation)."""
-        return [self._render_block(block) for block in self._content_blocks]
-
-    def move_up(self):
-        """Move selection up."""
-        self.selected_index = (self.selected_index - 1) % len(self.options)
-
-    def move_down(self):
-        """Move selection down."""
-        self.selected_index = (self.selected_index + 1) % len(self.options)
-
-    def get_selected_response(self) -> ApprovalResponse.Kind:
-        """Get the approval response based on selected option."""
-        return self.options[self.selected_index][1]
-
-
-def _show_approval_in_pager(panel: _ApprovalRequestPanel) -> None:
-    """Show the full approval request content in a pager."""
-    with console.screen(), console.pager(styles=True):
-        # Header: matches the style in _ApprovalRequestPanel.render()
-        console.print(
-            Text.from_markup(
-                "[yellow]⚠ "
-                f"{escape(panel.request.sender)} is requesting approval to "
-                f"{escape(panel.request.action)}:[/yellow]"
-            )
-        )
-        console.print()
-
-        # Render full content (no truncation)
-        for renderable in panel.render_full():
-            console.print(renderable)
-
-
-OTHER_OPTION_LABEL = "Other"
-
-
-class _QuestionRequestPanel:
-    """Renders structured questions for the user to answer interactively."""
-
-    def __init__(self, request: QuestionRequest):
-        self.request = request
-        self._current_question_index = 0
-        self._answers: dict[str, str] = {}
-        self._saved_selections: dict[int, tuple[int, set[int]]] = {}
-        self._selected_index = 0
-        self._multi_selected: set[int] = set()
-        self._body_text: str = ""
-        self.has_expandable_content: bool = False
-        self._setup_current_question()
-
-    def _setup_current_question(self) -> None:
-        q = self._current_question
-        self._options = [(o.label, o.description) for o in q.options]
-        other_label = q.other_label or OTHER_OPTION_LABEL
-        other_desc = q.other_description or ""
-        self._options.append((other_label, other_desc))
-        idx = self._current_question_index
-        if idx in self._saved_selections:
-            saved_idx, saved_multi = self._saved_selections[idx]
-            self._selected_index = min(saved_idx, len(self._options) - 1)
-            self._multi_selected = saved_multi
-        elif q.question in self._answers:
-            answer = self._answers[q.question]
-            if q.multi_select:
-                answer_labels = [a.strip() for a in answer.split(", ")]
-                known_labels = {label for label, _ in self._options[:-1]}
-                self._multi_selected = set()
-                for i, (label, _) in enumerate(self._options[:-1]):
-                    if label in answer_labels:
-                        self._multi_selected.add(i)
-                # Unmatched labels = Other text
-                if any(answer_label not in known_labels for answer_label in answer_labels):
-                    self._multi_selected.add(len(self._options) - 1)
-                self._selected_index = min(self._multi_selected) if self._multi_selected else 0
-            else:
-                for i, (label, _) in enumerate(self._options):
-                    if label == answer:
-                        self._selected_index = i
-                        break
-                else:
-                    # Unknown submitted label should map to the synthetic "Other" option.
-                    self._selected_index = len(self._options) - 1
-                self._multi_selected = set()
-        else:
-            self._selected_index = 0
-            self._multi_selected = set()
-        self._recompute_body()
-
-    def _recompute_body(self) -> None:
-        """Recompute body content state for the current question."""
-        body = self._current_question.body
-        self._body_text = body.rstrip("\n") if body else ""
-        self.has_expandable_content = bool(self._body_text)
-
-    @property
-    def _current_question(self):
-        return self.request.questions[self._current_question_index]
-
-    @property
-    def is_other_selected(self) -> bool:
-        return self._selected_index == len(self._options) - 1
-
-    @property
-    def is_multi_select(self) -> bool:
-        return self._current_question.multi_select
-
-    @property
-    def current_question_text(self) -> str:
-        return self._current_question.question
-
-    @property
-    def options(self) -> Sequence[tuple[str, str]]:
-        return self._options
-
-    @property
-    def option_count(self) -> int:
-        return len(self._options)
-
-    @property
-    def selected_index(self) -> int:
-        return self._selected_index
-
-    @selected_index.setter
-    def selected_index(self, value: int) -> None:
-        self._selected_index = value
-
-    @property
-    def multi_selected(self) -> set[int]:
-        return self._multi_selected
-
-    def set_multi_selected(self, indices: set[int]) -> None:
-        self._multi_selected = set(indices)
-
-    def should_prompt_other_input(self) -> bool:
-        """Whether pressing ENTER should open free-text input for the current question."""
-        if not self.is_multi_select:
-            return self.is_other_selected
-        other_idx = len(self._options) - 1
-        return other_idx in self._multi_selected
-
-    def select_index(self, index: int) -> bool:
-        """Select an option by index. Returns False when index is out of range."""
-        if not (0 <= index < len(self._options)):
-            return False
-        self._selected_index = index
-        return True
-
-    def render(self, *, allow_expand: bool = True) -> RenderableType:
-        q = self._current_question
-        lines: list[RenderableType] = []
-
-        # Tab bar for multi-question navigation
-        if len(self.request.questions) > 1:
-            tab_parts: list[str] = []
-            for i, qi in enumerate(self.request.questions):
-                label = escape(qi.header or f"Q{i + 1}")
-                if i == self._current_question_index:
-                    icon, style = "\u25cf", "bold cyan"
-                elif qi.question in self._answers:
-                    icon, style = "\u2713", "green"
-                else:
-                    icon, style = "\u25cb", "grey50"
-                tab_parts.append(f"[{style}]({icon}) {label}[/{style}]")
-            lines.append(Text.from_markup("  ".join(tab_parts)))
-            lines.append(Text(""))
-
-        # Question text (header is now shown in the tab bar)
-        lines.append(Text.from_markup(f"[yellow]? {escape(q.question)}[/yellow]"))
-        if q.multi_select:
-            lines.append(Text("  (separate multiple selections with commas)", style="dim italic"))
-        lines.append(Text(""))
-
-        # Body hint: prompt user to view full content
-        if self._body_text and allow_expand:
-            lines.append(
-                Text.from_markup("[bold cyan]  \u25b6 Type /more to view full content[/bold cyan]")
-            )
-            lines.append(Text(""))
-
-        # Options with number key labels
-        for i, (label, description) in enumerate(self._options):
-            num = i + 1
-            if q.multi_select:
-                checked = "\u2713" if i in self._multi_selected else " "
-                prefix = f"\\[{checked}]"
-                if i == self._selected_index:
-                    option_line = Text.from_markup(f"[cyan]{prefix} {escape(label)}[/cyan]")
-                else:
-                    option_line = Text.from_markup(f"[grey50]{prefix} {escape(label)}[/grey50]")
-            else:
-                if i == self._selected_index:
-                    option_line = Text.from_markup(f"[cyan]\u2192 \\[{num}] {escape(label)}[/cyan]")
-                else:
-                    option_line = Text.from_markup(f"[grey50]  \\[{num}] {escape(label)}[/grey50]")
-            lines.append(option_line)
-
-            if description:
-                lines.append(Text(f"      {description}", style="dim"))
-
-        # Keyboard hints
-        lines.append(Text(""))
-        hint = "  Use ↑/↓ to move focus and Enter to choose"
-        if self.has_expandable_content and allow_expand:
-            hint += "  (/more to expand)"
-        lines.append(Text(hint, style="dim"))
-        if q.multi_select:
-            lines.append(
-                Text(
-                    "  Press Space or Enter to select. "
-                    "Press Enter again on a checked option to submit.",
-                    style="dim",
-                )
-            )
-            lines.append(Text("  Select Other to enter custom text.", style="dim"))
-        else:
-            lines.append(Text("  Select Other to enter custom text.", style="dim"))
-
-        return Panel(
-            Group(*lines),
-            border_style="bold cyan",
-            title="[bold cyan]? QUESTION[/bold cyan]",
-            title_align="left",
-            padding=(0, 1),
-        )
-
-    def go_to(self, index: int) -> None:
-        """Jump to a specific question by index, saving current UI state first."""
-        if index == self._current_question_index:
-            return
-        if not (0 <= index < len(self.request.questions)):
-            return
-        # Save current cursor state (not as an answer — only submit() writes answers)
-        self._saved_selections[self._current_question_index] = (
-            self._selected_index,
-            set(self._multi_selected),
-        )
-        self._current_question_index = index
-        self._setup_current_question()
-
-    def next_tab(self) -> None:
-        """Switch to the next question tab (no wrap)."""
-        if self._current_question_index < len(self.request.questions) - 1:
-            self.go_to(self._current_question_index + 1)
-
-    def prev_tab(self) -> None:
-        """Switch to the previous question tab (no wrap)."""
-        if self._current_question_index > 0:
-            self.go_to(self._current_question_index - 1)
-
-    def move_up(self) -> None:
-        self._selected_index = (self._selected_index - 1) % len(self._options)
-
-    def move_down(self) -> None:
-        self._selected_index = (self._selected_index + 1) % len(self._options)
-
-    def toggle_select(self) -> None:
-        """Toggle selection for multi-select mode."""
-        if not self.is_multi_select:
-            return
-        if self._selected_index in self._multi_selected:
-            self._multi_selected.discard(self._selected_index)
-        else:
-            self._multi_selected.add(self._selected_index)
-
-    def submit(self) -> bool:
-        """Submit the current answer and advance. Returns True if all questions are answered."""
-        q = self._current_question
-        if q.multi_select:
-            # Check if "Other" is among the selected
-            other_idx = len(self._options) - 1
-            if other_idx in self._multi_selected:
-                return False  # caller should handle Other input
-            selected_labels = [
-                self._options[i][0] for i in sorted(self._multi_selected) if i < len(q.options)
-            ]
-            if not selected_labels:
-                return False  # don't allow empty multi-select submission
-            self._answers[q.question] = ", ".join(selected_labels)
-        else:
-            if self.is_other_selected:
-                return False  # caller should handle Other input
-            self._answers[q.question] = self._options[self._selected_index][0]
-        # Clear stale draft so returning to this question uses the submitted answer
-        self._saved_selections.pop(self._current_question_index, None)
-        return self._advance()
-
-    def submit_other(self, text: str) -> bool:
-        """Submit 'Other' text for the current question. Returns True if all done."""
-        q = self._current_question
-        if q.multi_select:
-            # Include both selected options and the custom text
-            other_idx = len(self._options) - 1
-            selected_labels = [
-                self._options[i][0]
-                for i in sorted(self._multi_selected)
-                if i < len(q.options) and i != other_idx
-            ]
-            if text:
-                selected_labels.append(text)
-            self._answers[q.question] = ", ".join(selected_labels) if selected_labels else text
-        else:
-            self._answers[q.question] = text
-        # Clear stale draft so returning to this question uses the submitted answer
-        self._saved_selections.pop(self._current_question_index, None)
-        return self._advance()
-
-    def _advance(self) -> bool:
-        """Move to the next unanswered question. Returns True if all questions are done."""
-        total = len(self.request.questions)
-        # Check if all questions have been answered
-        if len(self._answers) >= total:
-            return True
-        # Find the next unanswered question (starting from current + 1, wrapping)
-        for offset in range(1, total + 1):
-            idx = (self._current_question_index + offset) % total
-            if self.request.questions[idx].question not in self._answers:
-                self._current_question_index = idx
-                self._setup_current_question()
-                return False
-        return True
-
-    def get_answers(self) -> dict[str, str]:
-        return self._answers
-
-    def render_full_body(self) -> list[RenderableType]:
-        """Render full body content for pager display (no truncation)."""
-        if not self._body_text:
-            return []
-        return [Markdown(self._body_text)]
-
-
-def _show_question_body_in_pager(panel: _QuestionRequestPanel) -> None:
-    """Show the full question body content in a pager."""
-    with console.screen(), console.pager(styles=True):
-        console.print(Text.from_markup(f"[yellow]? {escape(panel.current_question_text)}[/yellow]"))
-        console.print()
-        for renderable in panel.render_full_body():
-            console.print(renderable)
-
-
-class _StatusBlock:
-    def __init__(self, initial: StatusUpdate) -> None:
-        self.text = Text("", justify="right")
-        self._context_usage: float = 0.0
-        self._context_tokens: int = 0
-        self._max_context_tokens: int = 0
-        self.update(initial)
-
-    def render(self) -> RenderableType:
-        return self.text
-
-    def update(self, status: StatusUpdate) -> None:
-        if status.context_usage is not None:
-            self._context_usage = status.context_usage
-        if status.context_tokens is not None:
-            self._context_tokens = status.context_tokens
-        if status.max_context_tokens is not None:
-            self._max_context_tokens = status.max_context_tokens
-        if status.context_usage is not None:
-            self.text.plain = format_context_status(
-                self._context_usage,
-                self._context_tokens,
-                self._max_context_tokens,
-            )
-
-
 class LiveView:
     def __init__(
         self,
@@ -1023,6 +165,8 @@ class LiveView:
 
         self._need_recompose = False
         self._render_revision = 0
+        self._history_revision = 0
+        self._active_revision = 0
 
     def _reset_live_shape(self, live: Live) -> None:
         # Rich doesn't expose a public API to clear Live's cached render height.
@@ -1042,9 +186,10 @@ class LiveView:
 
             async def _animate() -> None:
                 while True:
-                    await asyncio.sleep(0.1)
-                    if self.needs_periodic_refresh:
+                    await asyncio.sleep(LIVE_VIEW_REFRESH_INTERVAL)
+                    if self.needs_periodic_refresh or self._need_recompose:
                         live.update(self.compose(), refresh=True)
+                        self._need_recompose = False
 
             animate_task = asyncio.create_task(_animate())
             try:
@@ -1064,7 +209,9 @@ class LiveView:
                         break
 
                     self.dispatch_wire_message(msg)
-                    if self._need_recompose:
+                    if self._need_recompose and (
+                        is_significant_for_render(msg) or not self.needs_periodic_refresh
+                    ):
                         live.update(self.compose(), refresh=True)
                         self._need_recompose = False
             finally:
@@ -1078,7 +225,30 @@ class LiveView:
         return self._render_revision
 
     def refresh_soon(self) -> None:
+        self.refresh_all()
+
+    @property
+    def history_revision(self) -> int:
+        return self._history_revision
+
+    @property
+    def active_revision(self) -> int:
+        return self._active_revision
+
+    def refresh_history(self) -> None:
         self._need_recompose = True
+        self._history_revision += 1
+        self._render_revision += 1
+
+    def refresh_active(self) -> None:
+        self._need_recompose = True
+        self._active_revision += 1
+        self._render_revision += 1
+
+    def refresh_all(self) -> None:
+        self._need_recompose = True
+        self._history_revision += 1
+        self._active_revision += 1
         self._render_revision += 1
 
     def echo_reminder(self, text: str) -> None:
@@ -1092,7 +262,7 @@ class LiveView:
             console.print(reminder)
         else:
             self._flushed_blocks.append(reminder)
-        self.refresh_soon()
+        self.refresh_history()
 
     def echo_user_choice(self, text: str) -> None:
         stripped = text.strip()
@@ -1104,22 +274,24 @@ class LiveView:
             console.print(block)
         else:
             self._flushed_blocks.append(block)
-        self.refresh_soon()
+        self.refresh_history()
 
     def finish_turn(self) -> None:
         if self._turn_spinner is None:
             return
         self._turn_spinner = None
-        self.refresh_soon()
+        self.refresh_active()
 
     def append_skill_reminder(self, skills: Sequence[str]) -> None:
         if not skills:
             return
         self._flushed_blocks.append(_render_skill_reminder_block(skills))
-        self.refresh_soon()
+        self.refresh_history()
 
     @property
     def needs_periodic_refresh(self) -> bool:
+        if self.has_pending_input_request:
+            return False
         if self._turn_spinner is not None:
             return True
         if self._mcp_loading_spinner is not None:
@@ -1199,12 +371,14 @@ class LiveView:
 
     @property
     def input_hint(self) -> str:
-        expand_hint = " Type /more to expand." if self.can_expand_current_panel else ""
+        expand_hint = (
+            " Press Ctrl-E or type /more to expand." if self.can_expand_current_panel else ""
+        )
         match self.input_mode:
             case "approval":
                 return f"Type 1/2/3 and press Enter.{expand_hint}"
             case "question_other":
-                return "Type a custom answer and press Enter."
+                return "Enter the custom answer, then press Enter."
             case "question":
                 panel = self._current_question_panel
                 if panel is not None and panel.is_multi_select:
@@ -1330,7 +504,7 @@ class LiveView:
 
         panel.selected_index = selected_index
         self._submit_approval()
-        self.refresh_soon()
+        self.refresh_active()
         return True
 
     def _resolve_question_submission(
@@ -1343,7 +517,7 @@ class LiveView:
         if all_done:
             panel.request.resolve(panel.get_answers())
             self.show_next_question_request()
-        self.refresh_soon()
+        self.refresh_active()
 
     def _submit_question_line(self, text: str) -> bool:
         panel = self._current_question_panel
@@ -1372,7 +546,7 @@ class LiveView:
             return False
         if panel.is_other_selected:
             self._question_waiting_for_other_text = True
-            self.refresh_soon()
+            self.refresh_active()
             return True
 
         all_done = panel.submit()
@@ -1412,7 +586,7 @@ class LiveView:
             panel.selected_index = other_idx
             panel.set_multi_selected(set(selected_indices) | {other_idx})
             self._question_waiting_for_other_text = True
-            self.refresh_soon()
+            self.refresh_active()
             return True
 
         if not selected_indices:
@@ -1423,29 +597,31 @@ class LiveView:
         self._resolve_question_submission(panel, all_done=all_done)
         return True
 
-    def compose_body(
+    def _history_blocks(
+        self,
+        *,
+        tail_block_limit: int | None = None,
+    ) -> tuple[list[RenderableType], bool]:
+        if tail_block_limit is not None:
+            if tail_block_limit <= 0 and self._flushed_blocks:
+                return [], True
+            if len(self._flushed_blocks) > tail_block_limit:
+                return list(self._flushed_blocks[-tail_block_limit:]), True
+        return list(self._flushed_blocks), False
+
+    def _active_blocks(
         self,
         *,
         include_running_indicators: bool = True,
-        tail_block_limit: int | None = None,
         content_char_limit: int | None = None,
-    ) -> RenderableType:
+    ) -> tuple[list[RenderableType], bool]:
+        blocks: list[RenderableType] = []
         truncated = False
-        focus_pending_input_panel = self.has_pending_input_request and tail_block_limit == 0
-        if tail_block_limit is not None:
-            if tail_block_limit <= 0 and self._flushed_blocks:
-                blocks = []
-                truncated = True
-            elif len(self._flushed_blocks) > tail_block_limit:
-                blocks = list(self._flushed_blocks[-tail_block_limit:])
-                truncated = True
-            else:
-                blocks = list(self._flushed_blocks)
-        else:
-            blocks = list(self._flushed_blocks)
+        focus_pending_input_panel = self.has_pending_input_request
         has_specific_running_indicator = False
+
         if focus_pending_input_panel:
-            truncated = truncated or any(
+            truncated = any(
                 block is not None
                 for block in (
                     self._mcp_loading_spinner,
@@ -1454,8 +630,7 @@ class LiveView:
                     self._current_content_block,
                     self._turn_spinner,
                 )
-            )
-            truncated = truncated or bool(self._tool_call_blocks)
+            ) or bool(self._tool_call_blocks)
         elif self._mcp_loading_spinner is not None:
             if include_running_indicators:
                 blocks.append(self._mcp_loading_spinner)
@@ -1489,6 +664,7 @@ class LiveView:
                 blocks.append(tool_call.compose(show_indicator=include_running_indicators))
                 if not tool_call.finished and include_running_indicators:
                     has_specific_running_indicator = True
+
         if (
             not focus_pending_input_panel
             and include_running_indicators
@@ -1496,16 +672,73 @@ class LiveView:
             and not has_specific_running_indicator
         ):
             blocks.append(self._turn_spinner)
-        # Reminders are appended to the body stream when submitted so they render
-        # inline with normal messages instead of sticking above the footer.
         if self._current_approval_request_panel:
             blocks.append(
                 self._current_approval_request_panel.render(allow_expand=self._allow_expand)
             )
         if self._current_question_panel:
             blocks.append(self._current_question_panel.render(allow_expand=self._allow_expand))
-        if truncated:
-            blocks.insert(0, _render_recent_output_notice())
+        return blocks, truncated
+
+    def should_show_recent_output_notice(
+        self,
+        *,
+        tail_block_limit: int | None = None,
+        content_char_limit: int | None = None,
+    ) -> bool:
+        _, history_truncated = self._history_blocks(tail_block_limit=tail_block_limit)
+        _, active_truncated = self._active_blocks(
+            include_running_indicators=False,
+            content_char_limit=content_char_limit,
+        )
+        return history_truncated or active_truncated
+
+    def compose_history_body(
+        self,
+        *,
+        tail_block_limit: int | None = None,
+    ) -> RenderableType | None:
+        blocks, _ = self._history_blocks(tail_block_limit=tail_block_limit)
+        if not blocks:
+            return None
+        return Group(*blocks)
+
+    def compose_active_body(
+        self,
+        *,
+        include_running_indicators: bool = True,
+        content_char_limit: int | None = None,
+    ) -> RenderableType | None:
+        blocks, _ = self._active_blocks(
+            include_running_indicators=include_running_indicators,
+            content_char_limit=content_char_limit,
+        )
+        if not blocks:
+            return None
+        return Group(*blocks)
+
+    def compose_body(
+        self,
+        *,
+        include_running_indicators: bool = True,
+        tail_block_limit: int | None = None,
+        content_char_limit: int | None = None,
+    ) -> RenderableType:
+        blocks: list[RenderableType] = []
+        if self.should_show_recent_output_notice(
+            tail_block_limit=tail_block_limit,
+            content_char_limit=content_char_limit,
+        ):
+            blocks.append(_render_recent_output_notice())
+        history = self.compose_history_body(tail_block_limit=tail_block_limit)
+        if history is not None:
+            blocks.append(history)
+        active = self.compose_active_body(
+            include_running_indicators=include_running_indicators,
+            content_char_limit=content_char_limit,
+        )
+        if active is not None:
+            blocks.append(active)
         return Group(*blocks)
 
     def compose(
@@ -1532,39 +765,40 @@ class LiveView:
             self.cleanup(is_interrupt=False)
             self._mcp_loading_spinner = None
             self._mooning_spinner = Spinner("moon", "")
-            self.refresh_soon()
+            self.refresh_active()
             return
 
         if self._mooning_spinner is not None:
             # any message other than StepBegin should end the mooning state
             self._mooning_spinner = None
-            self.refresh_soon()
+            self.refresh_active()
 
         match msg:
             case TurnBegin():
                 self.flush_content()
                 self._turn_spinner = Spinner("dots", "Running...")
-                self.refresh_soon()
+                self.refresh_active()
             case TurnEnd():
                 self.finish_turn()
             case FollowUpInput(text=text):
                 self.echo_user_choice(text)
             case CompactionBegin():
                 self._compacting_spinner = Spinner("balloon", "Compacting...")
-                self.refresh_soon()
+                self.refresh_active()
             case CompactionEnd():
                 self._compacting_spinner = None
-                self.refresh_soon()
+                self.refresh_active()
             case MCPLoadingBegin():
                 self._mcp_loading_spinner = Spinner("dots", "Connecting to MCP servers...")
-                self.refresh_soon()
+                self.refresh_active()
             case MCPLoadingEnd():
                 self._mcp_loading_spinner = None
-                self.refresh_soon()
+                self.refresh_active()
             case SkillReminderNotice(skills=skills):
                 self.append_skill_reminder(skills)
             case StatusUpdate():
-                self._status_block.update(msg)
+                if self._status_block.update(msg):
+                    self._need_recompose = True
             case ContentPart():
                 self.append_content(msg)
             case ToolCall():
@@ -1594,15 +828,20 @@ class LiveView:
             panel.multi_selected.add(panel.option_count - 1)
         if panel.should_prompt_other_input():
             self._question_waiting_for_other_text = True
-            self.refresh_soon()
+            self.refresh_active()
             return
         all_done = panel.submit()
         if all_done:
             panel.request.resolve(panel.get_answers())
             self.show_next_question_request()
-        self.refresh_soon()
+        self.refresh_active()
 
     def dispatch_keyboard_event(self, event: KeyEvent) -> None:
+        if event == KeyEvent.CTRL_E and self.can_expand_current_panel:
+            if self.show_more():
+                self.refresh_active()
+            return
+
         # Handle question panel keyboard events
         if self._current_question_panel is not None:
             match event:
@@ -1661,7 +900,7 @@ class LiveView:
                             self._try_submit_question()
                 case _:
                     pass
-            self.refresh_soon()
+            self.refresh_active()
             return
 
         # handle ESC key to cancel the run
@@ -1674,10 +913,10 @@ class LiveView:
             match event:
                 case KeyEvent.UP:
                     self._current_approval_request_panel.move_up()
-                    self.refresh_soon()
+                    self.refresh_active()
                 case KeyEvent.DOWN:
                     self._current_approval_request_panel.move_down()
-                    self.refresh_soon()
+                    self.refresh_active()
                 case KeyEvent.ENTER:
                     self._submit_approval()
                 case KeyEvent.NUM_1 | KeyEvent.NUM_2 | KeyEvent.NUM_3:
@@ -1751,7 +990,7 @@ class LiveView:
             else:
                 self._flushed_blocks.append(rendered)
             self._current_content_block = None
-            self.refresh_soon()
+            self.refresh_all()
 
     def flush_finished_tool_calls(self) -> None:
         """Flush all leading finished tool call blocks."""
@@ -1769,7 +1008,7 @@ class LiveView:
                 self._flushed_blocks.append(rendered)
             if self._last_tool_call_block == block:
                 self._last_tool_call_block = None
-            self.refresh_soon()
+            self.refresh_all()
 
     def append_content(self, part: ContentPart) -> None:
         match part:
@@ -1783,7 +1022,7 @@ class LiveView:
                     self.flush_content()
                     self._current_content_block = _ContentBlock(is_think)
                 self._current_content_block.append(text)
-                self.refresh_soon()
+                self.refresh_active()
             case _:
                 # TODO: support more content part types
                 pass
@@ -1792,21 +1031,22 @@ class LiveView:
         self.flush_content()
         self._tool_call_blocks[tool_call.id] = _ToolCallBlock(tool_call)
         self._last_tool_call_block = self._tool_call_blocks[tool_call.id]
-        self.refresh_soon()
+        self.refresh_active()
 
     def append_tool_call_part(self, part: ToolCallPart) -> None:
         if not part.arguments_part:
             return
         if self._last_tool_call_block is None:
             return
-        self._last_tool_call_block.append_args_part(part.arguments_part)
-        self.refresh_soon()
+        if self._last_tool_call_block.append_args_part(part.arguments_part):
+            self.refresh_active()
 
     def append_tool_result(self, result: ToolResult) -> None:
         if block := self._tool_call_blocks.get(result.tool_call_id):
             block.finish(result.return_value)
             self.flush_finished_tool_calls()
-            self.refresh_soon()
+            if result.tool_call_id in self._tool_call_blocks:
+                self.refresh_active()
 
     def request_approval(self, request: ApprovalRequest) -> None:
         # If we're rejecting all following requests, reject immediately
@@ -1828,7 +1068,7 @@ class LiveView:
         if not self._approval_request_queue:
             if self._current_approval_request_panel is not None:
                 self._current_approval_request_panel = None
-                self.refresh_soon()
+                self.refresh_active()
             return
 
         while self._approval_request_queue:
@@ -1837,13 +1077,13 @@ class LiveView:
                 # skip resolved requests
                 continue
             self._current_approval_request_panel = _ApprovalRequestPanel(request)
-            self.refresh_soon()
+            self.refresh_active()
             break
         else:
             # All queued requests were already resolved
             if self._current_approval_request_panel is not None:
                 self._current_approval_request_panel = None
-                self.refresh_soon()
+                self.refresh_active()
 
     def request_question(self, request: QuestionRequest) -> None:
         self._question_request_queue.append(request)
@@ -1857,7 +1097,7 @@ class LiveView:
             if self._current_question_panel is not None:
                 self._current_question_panel = None
                 self._question_waiting_for_other_text = False
-                self.refresh_soon()
+                self.refresh_active()
             return
 
         while self._question_request_queue:
@@ -1866,14 +1106,14 @@ class LiveView:
                 continue
             self._current_question_panel = _QuestionRequestPanel(request)
             self._question_waiting_for_other_text = False
-            self.refresh_soon()
+            self.refresh_active()
             break
         else:
             # All queued requests were already resolved
             if self._current_question_panel is not None:
                 self._current_question_panel = None
                 self._question_waiting_for_other_text = False
-                self.refresh_soon()
+                self.refresh_active()
 
     def handle_subagent_event(self, event: SubagentEvent) -> None:
         block = self._tool_call_blocks.get(event.task_tool_call_id)
@@ -1887,7 +1127,7 @@ class LiveView:
                 block.append_sub_tool_call_part(tool_call_part)
             case ToolResult() as tool_result:
                 block.finish_sub_tool_call(tool_result)
-                self.refresh_soon()
+                self.refresh_active()
             case _:
                 # ignore other events for now
                 # TODO: may need to handle multi-level nested subagents
