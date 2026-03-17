@@ -634,3 +634,28 @@ async def test_detect_turn_end_question_times_out(
 
 def test_turn_end_question_prompt_mentions_continue_in_chinese() -> None:
     assert '"是否要继续？"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+
+
+def test_turn_end_question_prompt_mentions_multiple_suggestions() -> None:
+    assert (
+        "pick from multiple concrete suggestions"
+        in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert "Treat multiple concrete suggestions or recommended next steps as options" in (
+        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert "without a literal question mark" in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    assert "Mere recommendation lists or next-step suggestions" in (
+        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert "Do not infer has_question=true from a numbered list alone" in (
+        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert '"我建议下一轮做：1. 修交互 2. 提性能 3. 收样式。选一个，我继续。"' in (
+        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert (
+        '"Next steps: 1. Fix interactions 2. Improve performance 3. Tidy styling. '
+        'Choose one for me to do first."'
+        in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )

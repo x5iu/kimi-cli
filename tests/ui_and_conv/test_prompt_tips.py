@@ -40,6 +40,13 @@ def test_build_toolbar_tips_with_clipboard():
     ]
 
 
+def test_shell_style_dict_includes_completion_detail_styles() -> None:
+    style = shell_prompt._shell_style_dict()
+
+    assert style["slash-completion-menu.detail.prefix"]
+    assert style["slash-completion-menu.detail"]
+
+
 def test_frame_title_is_prompt() -> None:
     rendered = CustomPromptSession._render_prompt_title()
     plain = "".join(fragment[1] for fragment in rendered)

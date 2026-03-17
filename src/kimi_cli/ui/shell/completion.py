@@ -440,12 +440,25 @@ class SlashCommandMenuControl(UIControl):
         detail_width = max(0, width - left_padding)
         fragments: FormattedText = FormattedText()
         fragments.append(("class:slash-completion-menu", " " * left_padding))
-        style = (
-            "class:slash-completion-menu.meta.current"
-            if text.strip()
-            else "class:slash-completion-menu"
+        if not text.strip():
+            fragments.append(("class:slash-completion-menu", " " * detail_width))
+            return fragments
+
+        prefix = "╰─ "
+        prefix_width = min(detail_width, get_cwidth(prefix))
+        detail_text_width = max(0, detail_width - prefix_width)
+        fragments.append(
+            (
+                "class:slash-completion-menu.detail.prefix",
+                _truncate_to_width(prefix, prefix_width),
+            )
         )
-        fragments.append((style, _truncate_to_width(text, detail_width)))
+        fragments.append(
+            (
+                "class:slash-completion-menu.detail",
+                _truncate_to_width(text, detail_text_width),
+            )
+        )
         return fragments
 
 

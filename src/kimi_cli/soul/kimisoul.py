@@ -96,8 +96,9 @@ MAX_SKILL_RECOMMENDATIONS = 3
 TURN_END_QUESTION_DETECTOR_PROMPT = (
     "You are a background analyzer that inspects an AI assistant's message.\n"
     "The user will provide the assistant's latest message. Your job is to determine\n"
-    "whether that message ends with a question asking the user to choose between\n"
-    "specific options or make a decision.\n"
+    "whether that message ends with a question or decision prompt\n"
+    "asking the user to choose between specific options, make a decision,\n"
+    "or pick from multiple concrete suggestions.\n"
     "\n"
     "Examples of choice questions:\n"
     '- "Do you want me to proceed with option A or option B?"\n'
@@ -109,16 +110,33 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     '- "Do you want me to continue?" (yes/no — options: Yes, No)\n'
     '- "是否继续？" (yes/no — options: Yes, No)\n'
     '- "是否要继续？" (yes/no — options: Yes, No)\n'
+    '- "下一步我建议做 A、B、C，你想先做哪个？"\n'
+    '- "我有 3 个建议：修交互、提性能、收样式。请选择一个。"\n'
+    '- "接下来有三个建议：A、B、C。请告诉我先做哪个。"\n'
+    '- "下一步可选：修交互 / 提性能 / 收样式，请选一个继续。"\n'
+    '- "我建议下一轮做：1. 修交互 2. 提性能 3. 收样式。选一个，我继续。"\n'
+    '- "Next steps: 1. Fix interactions 2. Improve performance 3. Tidy styling. '
+    'Choose one for me to do first."\n'
     "\n"
     "Do NOT consider these as choice questions:\n"
-    "- General clarifying questions without specific options\n"
+    "- General clarifying questions without specific options or actionable suggestions\n"
     '- Rhetorical questions like "Does that make sense?"\n'
     "- Questions embedded in the middle of the response that were already addressed\n"
+    "- Mere recommendation lists or next-step suggestions "
+    "when the assistant is not asking the user to pick one\n"
+    "- Numbered plans or recommendation lists without a closing choice/decision prompt\n"
     "\n"
     "Return strict JSON with this exact shape:\n"
     '{"has_question": true/false, "questions": '
     '[{"question": "...", "options": [{"label": "...", "description": "..."}]}]}\n'
     "- If has_question is false, questions should be an empty array.\n"
+    "- Treat multiple concrete suggestions or recommended next steps as options "
+    "when the user is implicitly or explicitly expected to pick one.\n"
+    "- Do not infer has_question=true from a numbered list alone; "
+    "the ending still needs a pick-one / choose-next / decision prompt.\n"
+    "- This can still count even without a literal question mark "
+    'if the ending is a decision prompt like "please choose one" '
+    'or "tell me which to do first".\n'
     "- Each question should have 2-4 options extracted from the message.\n"
     "- Option labels should be concise (1-5 words).\n"
     "- Option descriptions should briefly explain the trade-offs if mentioned.\n"

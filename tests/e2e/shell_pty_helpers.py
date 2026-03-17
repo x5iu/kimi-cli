@@ -145,7 +145,10 @@ class ShellPTYProcess:
             "down": b"\x1b[B",
             "left": b"\x1b[D",
             "right": b"\x1b[C",
+            "ctrl_c": b"\x03",
+            "ctrl_e": b"\x05",
             "ctrl_x": b"\x18",
+            "ctrl_l": b"\x0c",
         }
         payload = key_map.get(key)
         if payload is None:
@@ -212,6 +215,7 @@ def start_shell_pty(
     home_dir: Path,
     yolo: bool,
     extra_args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
     columns: int = 120,
     lines: int = 40,
 ) -> ShellPTYProcess:
@@ -228,6 +232,8 @@ def start_shell_pty(
     env["PYTHONUTF8"] = "1"
     env["PROMPT_TOOLKIT_NO_CPR"] = "1"
     env.pop("NO_COLOR", None)
+    if extra_env:
+        env.update(extra_env)
 
     cmd = [sys.executable, "-m", "kimi_cli.cli"]
     if yolo:

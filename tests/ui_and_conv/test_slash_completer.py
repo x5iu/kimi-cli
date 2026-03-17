@@ -236,6 +236,9 @@ def test_completion_menu_height_is_stable_for_selected_description(monkeypatch) 
     assert unselected_height == 10
     assert selected_content.line_count == 6
     assert unselected_content.line_count == 6
+    detail_line = "".join(fragment[1] for fragment in selected_content.get_line(5))
+    assert "╰─" in detail_line
+    assert "Ctrl-O" in detail_line
 
 
 def test_find_prompt_float_container_supports_conditional_container_shape():

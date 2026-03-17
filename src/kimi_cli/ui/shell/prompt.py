@@ -249,6 +249,24 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
 _TIP_SEPARATOR = " | "
 
 
+def _shell_style_dict() -> dict[str, str]:
+    return {
+        "bottom-toolbar": "noreverse",
+        "frame.border": "fg:#38bdf8",
+        "frame.label": "bold",
+        "slash-completion-menu": "",
+        "slash-completion-menu.separator": "fg:#4a5568",
+        "slash-completion-menu.marker": "fg:#4a5568",
+        "slash-completion-menu.marker.current": "fg:#4f9fff",
+        "slash-completion-menu.command": "fg:#a6adba",
+        "slash-completion-menu.meta": "fg:#7c8594",
+        "slash-completion-menu.command.current": "fg:#6fb7ff bold",
+        "slash-completion-menu.meta.current": "fg:#56a4ff",
+        "slash-completion-menu.detail.prefix": "fg:#475569",
+        "slash-completion-menu.detail": "fg:#93c5fd italic",
+    }
+
+
 class CustomPromptSession:
     def __init__(
         self,
@@ -398,19 +416,7 @@ class CustomPromptSession:
             clipboard=clipboard,
             history=history,
             bottom_toolbar=self._render_bottom_toolbar,
-            style=Style.from_dict(
-                {
-                    "bottom-toolbar": "noreverse",
-                    "slash-completion-menu": "",
-                    "slash-completion-menu.separator": "fg:#4a5568",
-                    "slash-completion-menu.marker": "fg:#4a5568",
-                    "slash-completion-menu.marker.current": "fg:#4f9fff",
-                    "slash-completion-menu.command": "fg:#a6adba",
-                    "slash-completion-menu.meta": "fg:#7c8594",
-                    "slash-completion-menu.command.current": "fg:#6fb7ff bold",
-                    "slash-completion-menu.meta.current": "fg:#56a4ff",
-                }
-            ),
+            style=Style.from_dict(_shell_style_dict()),
         )
         # PromptSession defaults to polling terminal size every 0.5s, which causes
         # needless redraws/flicker in our persistent TUI input box. Keep a slower
@@ -1003,7 +1009,7 @@ class CustomPromptSession:
             key_bindings=merge_key_bindings([self._base_key_bindings, accept_kb]),
             clipboard=self._clipboard,
             cursor=STEADY_INPUT_CURSOR,
-            style=Style.from_dict({"frame.border": "fg:#38bdf8", "frame.label": "bold"}),
+            style=Style.from_dict(_shell_style_dict()),
             full_screen=False,
             erase_when_done=True,
             refresh_interval=None,
@@ -1818,7 +1824,7 @@ class CustomPromptSession:
             key_bindings=key_bindings,
             clipboard=self._clipboard,
             cursor=STEADY_INPUT_CURSOR,
-            style=Style.from_dict({"frame.border": "fg:#38bdf8", "frame.label": "bold"}),
+            style=Style.from_dict(_shell_style_dict()),
             full_screen=False,
             erase_when_done=True,
             refresh_interval=None,
