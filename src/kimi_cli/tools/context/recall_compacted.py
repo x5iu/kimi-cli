@@ -110,8 +110,14 @@ class RecallCompactedContext(CallableTool2[Params]):
             return builder.ok(message="No compacted-context matches found", brief="No matches")
 
         limited_hits = hits[: params.max_results]
+        # Pre-load archive messages to avoid redundant IO in _render_hit
+        messages_cache: dict[str, list[Message]] = {}
+        for hit in limited_hits:
+            if hit.record.id not in messages_cache:
+                archive_path = resolve_compaction_archive_path(context_file, hit.record)
+                messages_cache[hit.record.id] = load_archive_messages(archive_path)
         for index, hit in enumerate(limited_hits, start=1):
-            self._render_hit(builder, index, hit, context_file)
+            self._render_hit(builder, index, hit, messages_cache[hit.record.id])
 
         matched_archives = {hit.record.id for hit in limited_hits}
         return builder.ok(
@@ -210,10 +216,8 @@ class RecallCompactedContext(CallableTool2[Params]):
         builder: ToolResultBuilder,
         index: int,
         hit: SearchHit,
-        context_file: Path,
+        messages: Sequence[Message],
     ) -> None:
-        archive_path = resolve_compaction_archive_path(context_file, hit.record)
-        messages = load_archive_messages(archive_path)
         builder.write(
             "Excerpt "
             f"{index} | {hit.record.id} | score {hit.score} | messages "

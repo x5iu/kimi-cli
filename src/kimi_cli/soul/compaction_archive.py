@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +22,6 @@ from kimi_cli.wire.types import (
 
 _MANIFEST_SUFFIX = ".compaction-archives.jsonl"
 _SUMMARY_WIDTH = 280
-_SYSTEM_TAG_RE = re.compile(r"</?(system|system-reminder)>")
 
 
 class CompactionArchiveRecord(BaseModel):
@@ -80,6 +78,8 @@ def register_compaction_archive(
         summary=shorten(summary.strip(), width=_SUMMARY_WIDTH, placeholder="…") if summary else "",
     )
 
+    # NOTE: Assumes single-writer — concurrent compactions on the same trajectory
+    # are not expected.  If that changes, add file-level locking here.
     manifest_path = manifest_path_for_context(context_file)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     with manifest_path.open("a", encoding="utf-8") as f:
@@ -97,7 +97,6 @@ def sanitize_archive_text(text: str) -> str:
     sanitized = sanitized.replace("</system-reminder>", "")
     sanitized = sanitized.replace("<system>", "[system] ")
     sanitized = sanitized.replace("</system>", "")
-    sanitized = _SYSTEM_TAG_RE.sub("", sanitized)
     return sanitized.strip()
 
 
@@ -151,11 +150,16 @@ def stringify_message_for_archive(message: Message, *, include_thinking: bool = 
 def build_compaction_summary(messages: Sequence[Message]) -> str:
     if not messages:
         return ""
-    text = stringify_message_for_archive(messages[0])
     prefix = "[system] Previous context has been compacted. Here is the compaction output:"
-    if text.startswith(prefix):
-        text = text[len(prefix) :].strip()
-    return text
+    for message in messages:
+        text = stringify_message_for_archive(message)
+        if not text:
+            continue
+        if text.startswith(prefix):
+            text = text[len(prefix) :].strip()
+        if text:
+            return text
+    return ""
 
 
 def is_checkpoint_message(message: Message) -> bool:

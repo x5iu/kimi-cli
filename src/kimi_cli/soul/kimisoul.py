@@ -887,7 +887,7 @@ class KimiSoul:
                 self._detect_turn_end_question_inner(assistant_message),
                 timeout=self._TURN_END_DETECT_TIMEOUT,
             )
-        except TimeoutError:
+        except asyncio.TimeoutError:
             logger.warning(
                 "Turn-end question detection timed out after {timeout}s",
                 timeout=self._TURN_END_DETECT_TIMEOUT,
@@ -915,7 +915,6 @@ class KimiSoul:
         ]
 
         for attempt in range(1, self._TURN_END_DETECT_MAX_ATTEMPTS + 1):
-
             async def _run_once():
                 return await kosong.generate(
                     chat_provider=chat_provider,
