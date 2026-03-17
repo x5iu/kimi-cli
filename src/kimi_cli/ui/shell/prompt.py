@@ -1041,7 +1041,7 @@ class CustomPromptSession:
         if text_area.buffer.complete_state is not None:
             text_area.buffer.cancel_completion()
         text_area.buffer.document = Document(text="", cursor_position=0)
-        self._force_turn_full_repaint(app)
+        self._hard_redraw(app)
         return app, text_area
 
     def _open_in_external_editor(self, event: KeyPressEvent) -> None:

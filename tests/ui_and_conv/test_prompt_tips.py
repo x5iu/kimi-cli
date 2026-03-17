@@ -430,6 +430,31 @@ def test_prepare_prompt_application_clears_buffer_and_applies_mode(
     assert prepared_text_area.buffer.completer is prompt_session._shell_mode_completer
 
 
+def test_prepare_prompt_application_uses_hard_redraw(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[],
+        shell_mode_slash_commands=[],
+    )
+
+    app, _ = prompt_session._get_prompt_application()
+    redraw_calls: list[object] = []
+    monkeypatch.setattr(prompt_session, "_hard_redraw", lambda target_app: redraw_calls.append(target_app))
+
+    prompt_session._prepare_prompt_application()
+
+    assert redraw_calls == [app]
+
+
 def test_custom_prompt_app_binds_ctrl_l_to_redraw(
     temp_work_dir,
     tmp_path,
