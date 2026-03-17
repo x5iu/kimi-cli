@@ -82,7 +82,14 @@ from kimi_cli.utils.clipboard import (
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.slashcmd import SlashCommand
 from kimi_cli.utils.string import shorten_middle
-from kimi_cli.wire.types import ContentPart, StepInterrupted
+from kimi_cli.wire.types import (
+    ApprovalResponse,
+    ContentPart,
+    StatusUpdate,
+    StepInterrupted,
+    SubagentEvent,
+    ToolCallPart,
+)
 
 AttachmentCache = prompt_placeholders.AttachmentCache
 CachedAttachment = prompt_placeholders.CachedAttachment
@@ -122,6 +129,25 @@ _INDICATOR_STYLES = {
 }
 _TURN_UI_REFRESH_INTERVAL = 0.1
 _TERMINAL_SIZE_POLLING_INTERVAL = 1.0
+
+def _is_significant_for_render(msg: object) -> bool:
+    """Whether a wire message warrants yielding to let the UI render immediately.
+
+    High-frequency streaming messages (content tokens, tool-call argument
+    chunks, status ticks) are rendered by the periodic *_animate* task
+    (~100 ms).  Yielding after every one of those would cause excessive
+    repaints and hurt throughput.
+
+    Everything else (tool results, new tool calls, lifecycle events, user
+    interaction requests, …) should trigger an immediate render so the
+    user sees them right away.
+    """
+    if isinstance(msg, (ContentPart, ToolCallPart, StatusUpdate, ApprovalResponse)):
+        return False
+    if isinstance(msg, SubagentEvent):
+        return _is_significant_for_render(msg.event)
+    return True
+
 
 
 def _rich_from_ansi(text: str) -> RichText:
@@ -2304,6 +2330,13 @@ class CustomPromptSession:
                 live_view.dispatch_wire_message(msg)
                 feedback_message = ""
                 _refresh_turn_view(app)
+
+                # Yield to the event loop after significant state changes so
+                # prompt_toolkit can repaint immediately.  Without this the
+                # loop drains every queued message before _redraw runs,
+                # delaying tool-result and reminder rendering.
+                if _is_significant_for_render(msg):
+                    await asyncio.sleep(0)
 
         async def _animate() -> None:
             while True:
