@@ -563,6 +563,8 @@ def kimi(
             if e.session_id is None:
                 raise Reload(session_id=session.id) from e
             raise
+        finally:
+            instance.shutdown_background_tasks()
 
         return session, succeeded
 
@@ -779,6 +781,32 @@ def acp():
     from kimi_cli.acp import acp_main
 
     acp_main()
+
+
+@cli.command(name="__background-task-worker", hidden=True)
+def background_task_worker(
+    task_dir: Annotated[Path, typer.Option("--task-dir")],
+    heartbeat_interval_ms: Annotated[int, typer.Option("--heartbeat-interval-ms")] = 5000,
+    control_poll_interval_ms: Annotated[int, typer.Option("--control-poll-interval-ms")] = 500,
+    kill_grace_period_ms: Annotated[int, typer.Option("--kill-grace-period-ms")] = 2000,
+) -> None:
+    """Run background task worker subprocess (internal)."""
+    from kimi_cli.background import run_background_task_worker
+    from kimi_cli.utils.proctitle import set_process_title
+
+    set_process_title("kimi-code-bg-worker")
+
+    from kimi_cli.app import enable_logging
+
+    enable_logging(debug=False)
+    asyncio.run(
+        run_background_task_worker(
+            task_dir,
+            heartbeat_interval_ms=heartbeat_interval_ms,
+            control_poll_interval_ms=control_poll_interval_ms,
+            kill_grace_period_ms=kill_grace_period_ms,
+        )
+    )
 
 
 @cli.command(name="__web-worker", hidden=True)

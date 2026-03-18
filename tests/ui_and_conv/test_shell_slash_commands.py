@@ -264,3 +264,30 @@ class TestNewCommandSessionCleanup:
         assert not dir_b.exists()  # B cleaned up
         session_c = await Session.find(work_dir, session_c_id)
         assert session_c is not None
+
+
+class TestTaskCommand:
+    async def test_task_lists_empty_active_tasks(
+        self, runtime, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from kimi_cli.soul.kimisoul import KimiSoul
+
+        mock_soul = Mock(spec=KimiSoul)
+        runtime.role = "root"
+        mock_soul.runtime = runtime
+        shell = Mock()
+        shell.soul = mock_soul
+
+        printed: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+        monkeypatch.setattr(
+            "kimi_cli.ui.shell.slash.console.print",
+            lambda *args, **kwargs: printed.append((args, kwargs)),
+        )
+
+        cmd = shell_slash_registry.find_command("task")
+        assert cmd is not None
+        await _invoke_slash_command(cmd, shell)
+
+        assert printed
+        assert printed[-1][0][0] == "active_background_tasks: 0\n[no tasks]"
+        assert printed[-1][1].get("markup") is False

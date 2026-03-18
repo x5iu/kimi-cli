@@ -25,6 +25,7 @@ from kosong.utils.typing import JsonType
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from kimi_cli.tools.display import (
+    BackgroundTaskDisplayBlock,
     DiffDisplayBlock,
     ShellDisplayBlock,
     TodoDisplayBlock,
@@ -50,6 +51,7 @@ class TurnEnd(BaseModel):
     """
 
     pass
+
 
 class FollowUpInput(BaseModel):
     """Echo a follow-up user input (e.g. from turn-end question selection)
@@ -509,4 +511,5 @@ __all__ = [
     "TodoDisplayBlock",
     "TodoDisplayItem",
     "ShellDisplayBlock",
+    "BackgroundTaskDisplayBlock",
 ]

@@ -156,6 +156,8 @@ class KimiCLI:
             logger.info("Thinking mode: {thinking}", thinking=thinking)
 
         runtime = await Runtime.create(config, oauth, llm, session, yolo, skills_dir)
+        runtime.notifications.recover()
+        runtime.background_tasks.reconcile()
 
         if agent_file is None:
             agent_file = DEFAULT_AGENT_FILE
@@ -186,6 +188,14 @@ class KimiCLI:
     def session(self) -> Session:
         """Get the Session instance."""
         return self._runtime.session
+
+    def shutdown_background_tasks(self) -> None:
+        """Kill active background tasks on exit, unless keep_alive_on_exit is configured."""
+        if self._runtime.config.background.keep_alive_on_exit:
+            return
+        killed = self._runtime.background_tasks.kill_all_active(reason="CLI session ended")
+        if killed:
+            logger.info("Stopped {n} background task(s) on exit: {ids}", n=len(killed), ids=killed)
 
     @contextlib.asynccontextmanager
     async def _env(self) -> AsyncGenerator[None]:

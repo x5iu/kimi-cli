@@ -18,15 +18,18 @@ from pydantic import SecretStr
 
 from kaos import get_current_kaos, reset_current_kaos, set_current_kaos
 from kimi_cli.auth.oauth import OAuthManager
+from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
 from kimi_cli.llm import ALL_MODEL_CAPABILITIES, LLM
 from kimi_cli.metadata import WorkDirMeta
+from kimi_cli.notifications import NotificationManager
 from kimi_cli.session import Session
 from kimi_cli.session_state import SessionState
 from kimi_cli.soul.agent import Agent, BuiltinSystemPromptArgs, LaborMarket, Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop
 from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
@@ -168,6 +171,10 @@ def runtime(
     environment: Environment,
 ) -> Runtime:
     """Create a Runtime instance."""
+    notifications = NotificationManager(
+        session.context_file.parent / "notifications",
+        config.notifications,
+    )
     rt = Runtime(
         config=config,
         llm=llm,
@@ -177,6 +184,12 @@ def runtime(
         approval=approval,
         labor_market=labor_market,
         environment=environment,
+        notifications=notifications,
+        background_tasks=BackgroundTaskManager(
+            session,
+            config.background,
+            notifications=notifications,
+        ),
         skills={},
         oauth=OAuthManager(config),
         additional_dirs=[],
@@ -245,10 +258,25 @@ def set_todo_list_tool() -> SetTodoList:
 
 
 @pytest.fixture
-def shell_tool(approval: Approval, environment: Environment) -> Generator[Shell]:
+def shell_tool(approval: Approval, environment: Environment, runtime: Runtime) -> Generator[Shell]:
     """Create a Shell tool instance."""
     with tool_call_context("Shell"):
-        yield Shell(approval, environment)
+        yield Shell(approval, environment, runtime)
+
+
+@pytest.fixture
+def task_list_tool(runtime: Runtime) -> TaskList:
+    return TaskList(runtime)
+
+
+@pytest.fixture
+def task_output_tool(runtime: Runtime) -> TaskOutput:
+    return TaskOutput(runtime)
+
+
+@pytest.fixture
+def task_stop_tool(runtime: Runtime, approval: Approval) -> TaskStop:
+    return TaskStop(runtime, approval)
 
 
 @pytest.fixture

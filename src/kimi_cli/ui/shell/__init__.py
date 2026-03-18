@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -15,11 +15,18 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from kimi_cli.notifications import NotificationWatcher
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import check_message
 from kimi_cli.ui.shell.console import console
-from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, TurnSubmitResult, UserInput
+from kimi_cli.ui.shell.prompt import (
+    CustomPromptSession,
+    PromptMode,
+    TurnSubmitResult,
+    UserInput,
+    toast,
+)
 from kimi_cli.ui.shell.replay import replay_recent_history
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.ui.shell.slash import shell_mode_registry
@@ -37,6 +44,7 @@ class Shell:
     def __init__(self, soul: Soul, welcome_info: list[WelcomeInfoItem] | None = None):
         self.soul = soul
         self._welcome_info = list(welcome_info or [])
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         commands = [*soul.available_slash_commands, *shell_slash_registry.list_commands()]
         self._available_slash_commands: dict[str, SlashCommand[Any]] = {
             cmd.name: cmd for cmd in commands
@@ -69,6 +77,19 @@ class Shell:
             return await self.run_soul_command(command)
 
         _print_welcome_info(self.soul.name or "Kimi Code CLI", self._welcome_info)
+
+        if isinstance(self.soul, KimiSoul):
+            watcher = NotificationWatcher(
+                self.soul.runtime.notifications,
+                sink="shell",
+                before_poll=self.soul.runtime.background_tasks.reconcile,
+                on_notification=lambda notification: toast(
+                    f"[{notification.event.type}] {notification.event.title}",
+                    topic="notification",
+                    duration=10.0,
+                ),
+            )
+            self._start_background_task(watcher.run_forever())
 
         if isinstance(self.soul, KimiSoul):
             await replay_recent_history(
@@ -117,6 +138,7 @@ class Shell:
                     if not await self._handle_agent_input(prompt_session, user_input):
                         break
             finally:
+                self._cancel_background_tasks()
                 ensure_tty_sane()
 
         return True
@@ -248,7 +270,9 @@ class Shell:
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
-                console.print(f"[red]Authorization failed, please check your login status: {e}[/red]")
+                console.print(
+                    f"[red]Authorization failed, please check your login status: {e}[/red]"
+                )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
                 console.print("[red]Membership expired, please renew your plan[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 403:
@@ -310,7 +334,9 @@ class Shell:
         except ChatProviderError as e:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
-                console.print(f"[red]Authorization failed, please check your login status: {e}[/red]")
+                console.print(
+                    f"[red]Authorization failed, please check your login status: {e}[/red]"
+                )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
                 console.print("[red]Membership expired, please renew your plan[/red]")
             elif isinstance(e, APIStatusError) and e.status_code == 403:
@@ -387,6 +413,27 @@ class Shell:
             console.print(f"[red]Failed to run shell command: {e}[/red]")
         finally:
             remove_sigint()
+
+    def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+
+        def _cleanup(done: asyncio.Task[Any]) -> None:
+            self._background_tasks.discard(done)
+            try:
+                done.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Background task failed:")
+
+        task.add_done_callback(_cleanup)
+        return task
+
+    def _cancel_background_tasks(self) -> None:
+        for task in self._background_tasks:
+            task.cancel()
+        self._background_tasks.clear()
 
     async def _run_slash_command(self, command_call: SlashCommandCall) -> None:
         from kimi_cli.cli import Reload, SwitchToWeb

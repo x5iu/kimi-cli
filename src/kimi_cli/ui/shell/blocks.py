@@ -18,6 +18,7 @@ from kimi_cli.utils.rich.columns import BulletColumns
 from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.utils.rich.syntax import KimiSyntax
 from kimi_cli.wire.types import (
+    BackgroundTaskDisplayBlock,
     BriefDisplayBlock,
     ContentPart,
     DiffDisplayBlock,
@@ -320,6 +321,14 @@ class _ToolCallBlock:
                 markdown = self._render_todo_markdown(block)
                 if markdown:
                     lines.append(Markdown(markdown, style="grey50"))
+            elif isinstance(block, BackgroundTaskDisplayBlock):
+                last_diff_path = None
+                lines.append(
+                    Markdown(
+                        f"`{block.task_id}` [{block.status}] {block.description}",
+                        style="grey50",
+                    )
+                )
             elif isinstance(block, DiffDisplayBlock):
                 if block.path != last_diff_path:
                     lines.append(Text(block.path, style="bold"))

@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 from jinja2 import Environment as JinjaEnvironment
@@ -15,9 +15,11 @@ from kosong.tooling import Toolset
 
 from kimi_cli.agentspec import load_agent_spec
 from kimi_cli.auth.oauth import OAuthManager
+from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config
 from kimi_cli.exception import MCPConfigError, SystemPromptTemplateError
 from kimi_cli.llm import LLM
+from kimi_cli.notifications import NotificationManager
 from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from kimi_cli.skill import Skill, discover_skills_from_roots, index_skills, resolve_skills_roots
@@ -117,8 +119,11 @@ class Runtime:
     approval: Approval
     labor_market: LaborMarket
     environment: Environment
+    notifications: NotificationManager
+    background_tasks: BackgroundTaskManager
     skills: dict[str, Skill]
     additional_dirs: list[KaosPath]
+    role: Literal["root", "fixed_subagent", "dynamic_subagent"] = "root"
 
     @staticmethod
     async def create(
@@ -198,6 +203,11 @@ class Runtime:
             on_change=_on_approval_change,
         )
 
+        notifications = NotificationManager(
+            session.context_file.parent / "notifications",
+            config.notifications,
+        )
+
         # For openai_responses provider, pass KIMI_AGENTS_MD via the `instructions`
         # parameter instead of embedding it in the system prompt.
         agents_md_in_prompt = agents_md or ""
@@ -232,8 +242,15 @@ class Runtime:
             approval=Approval(state=approval_state),
             labor_market=LaborMarket(),
             environment=environment,
+            notifications=notifications,
+            background_tasks=BackgroundTaskManager(
+                session,
+                config.background,
+                notifications=notifications,
+            ),
             skills=skills_by_name,
             additional_dirs=additional_dirs,
+            role="root",
         )
 
     def copy_for_fixed_subagent(self) -> Runtime:
@@ -248,9 +265,12 @@ class Runtime:
             approval=self.approval.share(),
             labor_market=LaborMarket(),  # fixed subagent has its own LaborMarket
             environment=self.environment,
+            notifications=self.notifications,
+            background_tasks=self.background_tasks.copy_for_role("fixed_subagent"),
             skills=self.skills,
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
+            role="fixed_subagent",
         )
 
     def copy_for_dynamic_subagent(self) -> Runtime:
@@ -265,9 +285,12 @@ class Runtime:
             approval=self.approval.share(),
             labor_market=self.labor_market,  # dynamic subagent shares LaborMarket with main agent
             environment=self.environment,
+            notifications=self.notifications,
+            background_tasks=self.background_tasks.copy_for_role("dynamic_subagent"),
             skills=self.skills,
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
+            role="dynamic_subagent",
         )
 
 
