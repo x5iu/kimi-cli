@@ -1003,6 +1003,76 @@ def test_shell_ctrl_l_keeps_completion_menu_height_stable(tmp_path: Path) -> Non
         shell.close()
 
 
+def test_shell_turn_end_detected_question_keeps_original_reply_visible(
+    tmp_path: Path,
+) -> None:
+    hidden_marker = "TURN-END-DETAIL-LINE-4"
+    assistant_lines = [
+        "PREVIEW-LINE-1",
+        "PREVIEW-LINE-2",
+        "PREVIEW-LINE-3",
+        hidden_marker,
+        "如果你想，我可以直接继续改下去。",
+    ]
+    detector_payload = {
+        "has_question": True,
+        "questions": [
+            {
+                "question": "要继续应用这个修复吗？",
+                "options": [
+                    {"label": "继续", "description": "继续按当前方案处理"},
+                    {"label": "先别", "description": "先停在说明阶段"},
+                ],
+            }
+        ],
+    }
+    scripts = [
+        "\n".join(f"text: {line}" for line in assistant_lines),
+        f"text: {json.dumps(detector_payload, ensure_ascii=False)}",
+    ]
+    config_path = write_scripted_config(tmp_path, scripts)
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+    shell = start_shell_pty(
+        config_path=config_path,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+        extra_env={"PAGER": "cat"},
+    )
+
+    try:
+        shell.read_until_contains("Welcome to Kimi Code CLI!")
+        _read_until_prompt(shell, after=shell.mark())
+
+        turn_mark = shell.mark()
+        shell.send_line("show detected turn-end question")
+        shell.read_until_contains("要继续应用这个修复吗？", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("PREVIEW-LINE-1", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("PREVIEW-LINE-2", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("PREVIEW-LINE-3", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("Ctrl-E", after=turn_mark, timeout=15.0)
+
+        expand_mark = shell.mark()
+        shell.send_key("ctrl_e")
+        shell.read_until_contains(hidden_marker, after=expand_mark, timeout=15.0)
+
+        dismiss_mark = shell.mark()
+        shell.send_key("escape")
+        _read_until_prompt(shell, after=dismiss_mark, timeout=15.0)
+
+        wait_for_wire_message_count(
+            home_dir,
+            work_dir,
+            message_type="TurnEnd",
+            expected_count=1,
+        )
+        assert count_wire_messages(home_dir, work_dir, "TurnEnd") == 1
+        assert list_turn_begin_inputs(home_dir, work_dir) == ["show detected turn-end question"]
+    finally:
+        shell.close()
+
+
 def test_shell_ctrl_e_expands_question_body_in_pager(tmp_path: Path) -> None:
     hidden_marker = "QUESTION-BODY-LINE-5"
     exit_plan_tool_call = {

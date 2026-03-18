@@ -331,6 +331,7 @@ async def test_maybe_ask_turn_end_question_sends_question_request(
     question_requests = [m for m in sent_messages if isinstance(m, QuestionRequest)]
     assert len(question_requests) == 1
     assert question_requests[0].questions[0].question == "Pick A or B?"
+    assert question_requests[0].questions[0].body == "Should I do A or B?"
 
 
 @pytest.mark.asyncio
@@ -641,7 +642,10 @@ def test_turn_end_question_prompt_mentions_soft_permission_phrases() -> None:
     assert '"如果你愿意，我可以继续直接做下一轮。"' in (
         kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
-    assert 'Chinese "是否 + action clause" / "如果你愿意，我可以..."' in (
+    assert '"如果你想，我可以直接继续改下去。"' in (
+        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert 'Chinese "是否 + action clause" / "如果你愿意，我可以..." / "如果你想，我可以..."' in (
         kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
 

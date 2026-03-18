@@ -124,6 +124,8 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     '- "是否需要我按上面的步骤直接开始修改？" (yes/no — options: Yes, No)\n'
     '- "如果你愿意，我可以继续直接做下一轮。" (yes/no — options: Continue, Stop)\n'
     '- "如果你愿意，我就按这个方案开始处理。" (yes/no — options: Proceed, Don\'t proceed)\n'
+    '- "如果你想，我可以直接继续改下去。" (yes/no — options: Continue, Stop)\n'
+    '- "如果你想，我现在就可以按这个方案开始修改。" (yes/no — options: Proceed, Don\'t proceed)\n'
     '- "下一步我建议做 A、B、C，你想先做哪个？"\n'
     '- "我有 3 个建议：修交互、提性能、收样式。请选择一个。"\n'
     '- "接下来有三个建议：A、B、C。请告诉我先做哪个。"\n'
@@ -151,7 +153,7 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     "- This can still count even without a literal question mark "
     'if the ending is a decision prompt like "please choose one", '
     '"tell me which to do first", or a soft permission prompt like '
-    'Chinese "是否 + action clause" / "如果你愿意，我可以...".\n'
+    'Chinese "是否 + action clause" / "如果你愿意，我可以..." / "如果你想，我可以...".\n'
     "- Each question should have 2-4 options extracted from the message.\n"
     "- Option labels should be concise (1-5 words).\n"
     "- Option descriptions should briefly explain the trade-offs if mentioned.\n"
@@ -1067,12 +1069,15 @@ class KimiSoul:
         if wire is None:
             return None
 
+        assistant_reply_body = outcome.final_message.extract_text(sep="\n").strip()
+
         questions = [
             QuestionItem(
                 question=q.question,
                 options=[
                     QuestionOption(label=o.label, description=o.description) for o in q.options
                 ],
+                body=assistant_reply_body,
             )
             for q in detection.questions
         ]
