@@ -636,6 +636,16 @@ def test_turn_end_question_prompt_mentions_continue_in_chinese() -> None:
     assert '"是否要继续？"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
 
 
+def test_turn_end_question_prompt_mentions_soft_permission_phrases() -> None:
+    assert '"是否要按照这个方案继续？"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    assert '"如果你愿意，我可以继续直接做下一轮。"' in (
+        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert 'Chinese "是否 + action clause" / "如果你愿意，我可以..."' in (
+        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+
+
 def test_turn_end_question_prompt_mentions_multiple_suggestions() -> None:
     assert (
         "pick from multiple concrete suggestions"

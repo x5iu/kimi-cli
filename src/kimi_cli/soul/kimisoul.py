@@ -120,6 +120,10 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     '- "Do you want me to continue?" (yes/no — options: Yes, No)\n'
     '- "是否继续？" (yes/no — options: Yes, No)\n'
     '- "是否要继续？" (yes/no — options: Yes, No)\n'
+    '- "是否要按照这个方案继续？" (yes/no — options: Yes, No)\n'
+    '- "是否需要我按上面的步骤直接开始修改？" (yes/no — options: Yes, No)\n'
+    '- "如果你愿意，我可以继续直接做下一轮。" (yes/no — options: Continue, Stop)\n'
+    '- "如果你愿意，我就按这个方案开始处理。" (yes/no — options: Proceed, Don\'t proceed)\n'
     '- "下一步我建议做 A、B、C，你想先做哪个？"\n'
     '- "我有 3 个建议：修交互、提性能、收样式。请选择一个。"\n'
     '- "接下来有三个建议：A、B、C。请告诉我先做哪个。"\n'
@@ -145,8 +149,9 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     "- Do not infer has_question=true from a numbered list alone; "
     "the ending still needs a pick-one / choose-next / decision prompt.\n"
     "- This can still count even without a literal question mark "
-    'if the ending is a decision prompt like "please choose one" '
-    'or "tell me which to do first".\n'
+    'if the ending is a decision prompt like "please choose one", '
+    '"tell me which to do first", or a soft permission prompt like '
+    'Chinese "是否 + action clause" / "如果你愿意，我可以...".\n'
     "- Each question should have 2-4 options extracted from the message.\n"
     "- Option labels should be concise (1-5 words).\n"
     "- Option descriptions should briefly explain the trade-offs if mentioned.\n"
