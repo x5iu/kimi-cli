@@ -12,7 +12,7 @@ from typing import Any
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.subprocess_env import get_clean_env
 
-from .models import TaskControl
+from .models import TaskControl, TaskRuntime
 from .store import BackgroundTaskStore
 
 
@@ -26,6 +26,41 @@ def terminate_process_tree_windows(pid: int, *, force: bool) -> None:
         stderr=subprocess.DEVNULL,
         check=False,
     )
+
+
+def finalize_task_runtime(
+    runtime: TaskRuntime,
+    *,
+    control: TaskControl,
+    returncode: int,
+    finished_at: float,
+    process_exited_at: float | None,
+    timed_out: bool,
+    timeout_reason: str | None,
+) -> TaskRuntime:
+    final_runtime = runtime.model_copy()
+    final_runtime.finished_at = finished_at
+    final_runtime.updated_at = finished_at
+    final_runtime.exit_code = returncode
+    final_runtime.heartbeat_at = finished_at
+    if timed_out:
+        final_runtime.status = "failed"
+        final_runtime.interrupted = True
+        final_runtime.timed_out = True
+        final_runtime.failure_reason = timeout_reason
+    elif control.kill_requested_at is not None and (
+        process_exited_at is None or control.kill_requested_at <= process_exited_at
+    ):
+        final_runtime.status = "killed"
+        final_runtime.interrupted = True
+        final_runtime.failure_reason = control.kill_reason or "Killed"
+    elif returncode == 0:
+        final_runtime.status = "completed"
+        final_runtime.failure_reason = None
+    else:
+        final_runtime.status = "failed"
+        final_runtime.failure_reason = f"Command failed with exit code {returncode}"
+    return final_runtime
 
 
 async def run_background_task_worker(
@@ -73,6 +108,7 @@ async def run_background_task_worker(
     kill_sent_at: float | None = None
     timed_out = False
     timeout_reason: str | None = None
+    process_exited_at: float | None = None
 
     async def _heartbeat_loop() -> None:
         while not stop_event.is_set():
@@ -168,6 +204,7 @@ async def run_background_task_worker(
                     except TimeoutError:
                         await _terminate_process(force=True)
                         returncode = await process.wait()
+            process_exited_at = time.time()
     except Exception as exc:
         logger.exception("Background task worker failed")
         runtime = store.read_runtime(task_id)
@@ -185,25 +222,14 @@ async def run_background_task_worker(
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
-    runtime = last_known_runtime.model_copy()
     control = store.read_control(task_id)
-    runtime.finished_at = time.time()
-    runtime.updated_at = runtime.finished_at
-    runtime.exit_code = returncode
-    runtime.heartbeat_at = runtime.finished_at
-    if timed_out:
-        runtime.status = "failed"
-        runtime.interrupted = True
-        runtime.timed_out = True
-        runtime.failure_reason = timeout_reason
-    elif control.kill_requested_at is not None:
-        runtime.status = "killed"
-        runtime.interrupted = True
-        runtime.failure_reason = control.kill_reason or "Killed"
-    elif returncode == 0:
-        runtime.status = "completed"
-        runtime.failure_reason = None
-    else:
-        runtime.status = "failed"
-        runtime.failure_reason = f"Command failed with exit code {returncode}"
+    runtime = finalize_task_runtime(
+        last_known_runtime,
+        control=control,
+        returncode=returncode,
+        finished_at=time.time(),
+        process_exited_at=process_exited_at,
+        timed_out=timed_out,
+        timeout_reason=timeout_reason,
+    )
     store.write_runtime(task_id, runtime)
