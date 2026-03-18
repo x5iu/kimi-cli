@@ -12,6 +12,7 @@ Kimi Code CLI shell mode supports the following keyboard shortcuts.
 | `Ctrl-J` | Insert newline |
 | `Alt-Enter` | Insert newline (same as `Ctrl-J`) |
 | `Ctrl-L` | Redraw the whole TUI |
+| `Ctrl-Y` | Toggle frozen full-history view during a live turn |
 | `Ctrl-V` | Paste (supports images and video files) |
 | `Ctrl-E` | Expand full approval request content |
 | `1`–`3` | Quick select approval option |
@@ -78,6 +79,14 @@ Press `Ctrl-L` to redraw the current TUI in place while preserving terminal scro
 During an active agent turn, `Ctrl-L` also scrolls the output area to the end of the currently displayable content so the latest text comes back on screen, while still letting you scroll up to inspect earlier output.
 
 This is a useful manual recovery shortcut when window switching, terminal resizing, or focus changes leave behind stale borders, duplicate frames, or a misplaced input box.
+
+### `Ctrl-Y`: Toggle frozen full-history view
+
+During an active agent turn, press `Ctrl-Y` to switch the output area into a frozen full-history view. This shows the full flushed history collected so far and stops rendering new live steps into the body.
+
+While the frozen view is on, the hint line shows the current top-line position within the frozen history. You can navigate with `↑` / `↓` or `j` / `k` by line, `PageUp` / `PageDown` by page, `Home` / `End` or `g` / `G` to jump to the top or bottom, and the mouse wheel to scroll.
+
+Press `Ctrl-Y` again to return to the normal live view and resume rendering new steps. While the frozen view is on, the turn keeps running in the background; only the body is paused on history.
 
 ## Clipboard operations
 

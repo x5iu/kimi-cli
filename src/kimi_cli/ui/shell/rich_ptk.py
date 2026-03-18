@@ -133,10 +133,12 @@ class _StackedRichRenderableControl(UIControl):
         *,
         get_cursor_line: Callable[[int], int | None] | None = None,
         get_max_line_count: Callable[[int], int | None] | None = None,
+        get_window_start: Callable[[int, int], int | None] | None = None,
     ) -> None:
         self._sections = list(sections)
         self._get_cursor_line = get_cursor_line or (lambda _line_count: None)
         self._get_max_line_count = get_max_line_count or (lambda _width: None)
+        self._get_window_start = get_window_start or (lambda _line_count, _visible_count: None)
 
     def _visible_window(
         self,
@@ -152,6 +154,16 @@ class _StackedRichRenderableControl(UIControl):
             return 0, line_count, self._get_cursor_line(line_count)
 
         visible_count = min(line_count, max_line_count)
+        max_start = max(0, line_count - visible_count)
+        start_override = self._get_window_start(line_count, visible_count)
+        if start_override is not None:
+            start = max(0, min(max_start, start_override))
+            cursor_line = self._get_cursor_line(line_count)
+            if cursor_line is None:
+                return start, start + visible_count, None
+            clamped_cursor = max(start, min(start + visible_count - 1, cursor_line))
+            return start, start + visible_count, clamped_cursor - start
+
         cursor_line = self._get_cursor_line(line_count)
         if cursor_line is None:
             start = line_count - visible_count
@@ -169,8 +181,11 @@ class _StackedRichRenderableControl(UIControl):
     def _section_lines(self, width: int) -> list[tuple[tuple[tuple[str, str], ...], ...]]:
         return [section._render_lines(width) for section in self._sections]
 
+    def total_line_count(self, width: int) -> int:
+        return sum(len(lines) for lines in self._section_lines(width))
+
     def line_count(self, width: int) -> int:
-        total_lines = sum(len(lines) for lines in self._section_lines(width))
+        total_lines = self.total_line_count(width)
         start, end, _ = self._visible_window(width=width, line_count=total_lines)
         return end - start
 

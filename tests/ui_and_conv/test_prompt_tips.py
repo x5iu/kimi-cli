@@ -25,6 +25,7 @@ def test_build_toolbar_tips_without_clipboard():
         "ctrl-o: editor",
         "ctrl-j: newline",
         "ctrl-l: redraw",
+        "ctrl-y: history view",
         "@: mention files",
     ]
 
@@ -36,6 +37,7 @@ def test_build_toolbar_tips_with_clipboard():
         "ctrl-o: editor",
         "ctrl-j: newline",
         "ctrl-l: redraw",
+        "ctrl-y: history view",
         "ctrl-v: paste clipboard",
         "@: mention files",
     ]
@@ -53,6 +55,24 @@ def test_frame_title_is_prompt() -> None:
     plain = "".join(fragment[1] for fragment in rendered)
 
     assert "PROMPT" in plain
+
+
+def test_history_view_position_formatter_handles_empty_and_nonempty() -> None:
+    assert CustomPromptSession._format_history_view_position(top_line=0, total_lines=0) == "0/0"
+    assert CustomPromptSession._format_history_view_position(top_line=3, total_lines=10) == "3/10"
+    assert CustomPromptSession._format_history_view_position(top_line=99, total_lines=10) == "10/10"
+
+
+def test_history_view_hint_and_notice_include_position_and_controls() -> None:
+    hint = CustomPromptSession._format_history_view_hint(top_line=3, total_lines=10)
+    notice = CustomPromptSession._format_history_view_notice(top_line=3, total_lines=10)
+
+    assert "3/10" in hint
+    assert "PgUp/PgDn" in hint
+    assert "Home/End" in hint
+    assert "Ctrl-Y" in hint
+    assert "3/10" in notice
+    assert "Ctrl-Y" in notice
 
 
 def test_turn_prompt_title_reflects_pending_input_mode() -> None:
@@ -226,13 +246,19 @@ def test_turn_ui_refresh_interval_only_bursts_for_visible_text_stream() -> None:
         CustomPromptSession._turn_ui_refresh_interval(thinking_view, burst_active=True)
         == shell_prompt._TURN_UI_FAST_REFRESH_INTERVAL
     )
-    assert CustomPromptSession._turn_ui_refresh_interval(
-        SimpleNamespace(activity_indicator=("tool", "Using Shell")),
-        burst_active=True,
-    ) == shell_prompt._TURN_UI_REFRESH_INTERVAL
-    assert CustomPromptSession._turn_ui_refresh_interval(
-        SimpleNamespace(activity_indicator=("approval", "Awaiting approval..."))
-    ) == shell_prompt._TURN_UI_REFRESH_INTERVAL
+    assert (
+        CustomPromptSession._turn_ui_refresh_interval(
+            SimpleNamespace(activity_indicator=("tool", "Using Shell")),
+            burst_active=True,
+        )
+        == shell_prompt._TURN_UI_REFRESH_INTERVAL
+    )
+    assert (
+        CustomPromptSession._turn_ui_refresh_interval(
+            SimpleNamespace(activity_indicator=("approval", "Awaiting approval..."))
+        )
+        == shell_prompt._TURN_UI_REFRESH_INTERVAL
+    )
 
 
 def test_turn_stream_push_thresholds_prioritize_visible_text_stream() -> None:
@@ -280,63 +306,84 @@ def test_turn_stream_refresh_metrics_count_visible_stream_updates() -> None:
 def test_turn_stream_burst_kind_only_treats_visible_text_as_burstable() -> None:
     assert CustomPromptSession._turn_stream_burst_kind(TextPart(text="hello")) == "composing"
     assert CustomPromptSession._turn_stream_burst_kind(ThinkPart(think="thought")) is None
-    assert CustomPromptSession._turn_stream_burst_kind(
-        ToolCallPart(arguments_part='{"command":"echo hi"}')
-    ) is None
+    assert (
+        CustomPromptSession._turn_stream_burst_kind(
+            ToolCallPart(arguments_part='{"command":"echo hi"}')
+        )
+        is None
+    )
 
 
 def test_should_start_turn_stream_burst_for_new_or_resumed_visible_text() -> None:
-    assert CustomPromptSession._should_start_turn_stream_burst(
-        active_kind="composing",
-        msg_kind="composing",
-        current_burst_kind=None,
-        now=10.0,
-        burst_until=0.0,
-        last_burstable_stream_at=0.0,
-    ) is True
-    assert CustomPromptSession._should_start_turn_stream_burst(
-        active_kind="composing",
-        msg_kind="composing",
-        current_burst_kind="composing",
-        now=10.0,
-        burst_until=10.2,
-        last_burstable_stream_at=9.95,
-    ) is False
-    assert CustomPromptSession._should_start_turn_stream_burst(
-        active_kind="composing",
-        msg_kind="composing",
-        current_burst_kind="composing",
-        now=10.0,
-        burst_until=9.7,
-        last_burstable_stream_at=10.0 - shell_prompt._TURN_UI_STREAM_RESUME_BURST_GAP - 0.01,
-    ) is True
+    assert (
+        CustomPromptSession._should_start_turn_stream_burst(
+            active_kind="composing",
+            msg_kind="composing",
+            current_burst_kind=None,
+            now=10.0,
+            burst_until=0.0,
+            last_burstable_stream_at=0.0,
+        )
+        is True
+    )
+    assert (
+        CustomPromptSession._should_start_turn_stream_burst(
+            active_kind="composing",
+            msg_kind="composing",
+            current_burst_kind="composing",
+            now=10.0,
+            burst_until=10.2,
+            last_burstable_stream_at=9.95,
+        )
+        is False
+    )
+    assert (
+        CustomPromptSession._should_start_turn_stream_burst(
+            active_kind="composing",
+            msg_kind="composing",
+            current_burst_kind="composing",
+            now=10.0,
+            burst_until=9.7,
+            last_burstable_stream_at=10.0 - shell_prompt._TURN_UI_STREAM_RESUME_BURST_GAP - 0.01,
+        )
+        is True
+    )
 
 
 def test_should_not_start_turn_stream_burst_for_non_visible_or_too_soon_resume() -> None:
-    assert CustomPromptSession._should_start_turn_stream_burst(
-        active_kind="thinking",
-        msg_kind="composing",
-        current_burst_kind=None,
-        now=10.0,
-        burst_until=0.0,
-        last_burstable_stream_at=0.0,
-    ) is False
-    assert CustomPromptSession._should_start_turn_stream_burst(
-        active_kind="composing",
-        msg_kind=None,
-        current_burst_kind="composing",
-        now=10.0,
-        burst_until=9.7,
-        last_burstable_stream_at=9.0,
-    ) is False
-    assert CustomPromptSession._should_start_turn_stream_burst(
-        active_kind="composing",
-        msg_kind="composing",
-        current_burst_kind="composing",
-        now=10.0,
-        burst_until=9.7,
-        last_burstable_stream_at=10.0 - shell_prompt._TURN_UI_STREAM_RESUME_BURST_GAP + 0.01,
-    ) is False
+    assert (
+        CustomPromptSession._should_start_turn_stream_burst(
+            active_kind="thinking",
+            msg_kind="composing",
+            current_burst_kind=None,
+            now=10.0,
+            burst_until=0.0,
+            last_burstable_stream_at=0.0,
+        )
+        is False
+    )
+    assert (
+        CustomPromptSession._should_start_turn_stream_burst(
+            active_kind="composing",
+            msg_kind=None,
+            current_burst_kind="composing",
+            now=10.0,
+            burst_until=9.7,
+            last_burstable_stream_at=9.0,
+        )
+        is False
+    )
+    assert (
+        CustomPromptSession._should_start_turn_stream_burst(
+            active_kind="composing",
+            msg_kind="composing",
+            current_burst_kind="composing",
+            now=10.0,
+            burst_until=9.7,
+            last_burstable_stream_at=10.0 - shell_prompt._TURN_UI_STREAM_RESUME_BURST_GAP + 0.01,
+        )
+        is False
+    )
 
 
 def test_custom_prompt_app_uses_slow_terminal_size_polling(
@@ -448,7 +495,9 @@ def test_prepare_prompt_application_uses_hard_redraw(
 
     app, _ = prompt_session._get_prompt_application()
     redraw_calls: list[object] = []
-    monkeypatch.setattr(prompt_session, "_hard_redraw", lambda target_app: redraw_calls.append(target_app))
+    monkeypatch.setattr(
+        prompt_session, "_hard_redraw", lambda target_app: redraw_calls.append(target_app)
+    )
 
     prompt_session._prepare_prompt_application()
 
@@ -577,21 +626,39 @@ def test_turn_body_cursor_line_pins_pending_questions_to_top_until_output_reveal
         )
         is None
     )
-    assert CustomPromptSession._turn_body_cursor_line(
-        7,
-        has_pending_input_request=True,
-        reveal_latest_output=False,
-    ) == 0
-    assert CustomPromptSession._turn_body_cursor_line(
-        7,
-        has_pending_input_request=True,
-        reveal_latest_output=True,
-    ) == 6
-    assert CustomPromptSession._turn_body_cursor_line(
-        7,
-        has_pending_input_request=False,
-        reveal_latest_output=False,
-    ) == 6
+    assert (
+        CustomPromptSession._turn_body_cursor_line(
+            7,
+            has_pending_input_request=True,
+            reveal_latest_output=False,
+        )
+        == 0
+    )
+    assert (
+        CustomPromptSession._turn_body_cursor_line(
+            7,
+            has_pending_input_request=True,
+            reveal_latest_output=True,
+        )
+        == 6
+    )
+    assert (
+        CustomPromptSession._turn_body_cursor_line(
+            7,
+            has_pending_input_request=False,
+            reveal_latest_output=False,
+        )
+        == 6
+    )
+    assert (
+        CustomPromptSession._turn_body_cursor_line(
+            7,
+            has_pending_input_request=False,
+            reveal_latest_output=True,
+            history_view_enabled=True,
+        )
+        == 0
+    )
 
 
 def test_immediate_toast_replaces_older_messages() -> None:

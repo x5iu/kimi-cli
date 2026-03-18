@@ -44,6 +44,7 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame, TextArea
 from pydantic import BaseModel, ValidationError
 from rich.style import Style as _RichStyle
+from rich.text import Text as RichText
 
 from kimi_cli.llm import ModelCapability
 from kimi_cli.share import get_share_dir
@@ -243,6 +244,7 @@ class InputBoxState:
 
 
 _REFRESH_INTERVAL = 1.0
+_TURN_HISTORY_VIEW_EMPTY_POSITION = "0/0"
 
 
 def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
@@ -252,6 +254,7 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
         "ctrl-o: editor",
         "ctrl-j: newline",
         "ctrl-l: redraw",
+        "ctrl-y: history view",
     ]
     if clipboard_available:
         tips.append("ctrl-v: paste clipboard")
@@ -1314,12 +1317,37 @@ class CustomPromptSession:
         *,
         has_pending_input_request: bool,
         reveal_latest_output: bool,
+        history_view_enabled: bool = False,
     ) -> int | None:
         if line_count <= 0:
             return None
+        if history_view_enabled:
+            return 0
         if has_pending_input_request and not reveal_latest_output:
             return 0
         return line_count - 1
+
+    @staticmethod
+    def _format_history_view_position(*, top_line: int, total_lines: int) -> str:
+        if total_lines <= 0:
+            return _TURN_HISTORY_VIEW_EMPTY_POSITION
+        return f"{max(1, min(top_line, total_lines))}/{total_lines}"
+
+    @classmethod
+    def _format_history_view_hint(cls, *, top_line: int, total_lines: int) -> str:
+        position = cls._format_history_view_position(top_line=top_line, total_lines=total_lines)
+        return (
+            f"History view {position} — ↑/↓ scroll, PgUp/PgDn page, "
+            "Home/End jump, Ctrl-Y resumes live output."
+        )
+
+    @classmethod
+    def _format_history_view_notice(cls, *, top_line: int, total_lines: int) -> str:
+        position = cls._format_history_view_position(top_line=top_line, total_lines=total_lines)
+        return (
+            f"… history view frozen at {position}; "
+            "new steps stay hidden until you press Ctrl-Y again"
+        )
 
     @staticmethod
     def _shorten_footer_path(path: str, width: int) -> str:
@@ -1514,6 +1542,10 @@ class CustomPromptSession:
         self._mode = PromptMode.AGENT
         feedback_message = ""
         reveal_latest_output = False
+        history_view_enabled = False
+        history_view_snapshot: Any = None
+        history_view_revision = 0
+        history_view_scroll_offset = 0
         body_window: Window | None = None
         last_layout_signature: tuple[object, ...] | None = None
         stream_refresh_parts = 0
@@ -1567,6 +1599,11 @@ class CustomPromptSession:
             return self._render_turn_prompt_title(live_view)
 
         def _turn_hint_text() -> str:
+            if history_view_enabled and not text_area.buffer.text:
+                if feedback_message:
+                    return self._truncate_text(feedback_message, 160)
+                top_line, total_lines = _history_view_position()
+                return self._format_history_view_hint(top_line=top_line, total_lines=total_lines)
             return self._turn_input_hint_text(
                 live_view=live_view,
                 buffer_text=text_area.buffer.text,
@@ -1629,17 +1666,49 @@ class CustomPromptSession:
                 return MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS
             return max(MAX_ACTIVE_TURN_FLUSHED_BLOCKS, _turn_body_line_budget())
 
-        recent_notice_control = _RichRenderableControl(
+        def _history_view_body_width() -> int:
+            return (
+                body_window.render_info.window_width
+                if body_window is not None and body_window.render_info is not None
+                else _app_columns()
+            )
+
+        def _history_view_position() -> tuple[int, int]:
+            body_width = _history_view_body_width()
+            total_lines = history_body_control.line_count(body_width)
+            top_line = history_view_scroll_offset + 1 if total_lines > 0 else 0
+            return top_line, total_lines
+
+        history_notice_control = _RichRenderableControl(
             lambda: (
-                _render_recent_output_notice()
-                if not (live_view.has_pending_input_request and not reveal_latest_output)
-                and live_view.should_show_recent_output_notice(
-                    tail_block_limit=_turn_tail_block_limit(),
-                    content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
+                RichText(
+                    self._format_history_view_notice(
+                        top_line=_history_view_position()[0],
+                        total_lines=_history_view_position()[1],
+                    ),
+                    style="grey50 italic",
                 )
+                if history_view_enabled
                 else None
             ),
+            get_cache_revision=lambda: (history_view_enabled, history_view_revision),
+        )
+        recent_notice_control = _RichRenderableControl(
+            lambda: (
+                None
+                if history_view_enabled
+                else (
+                    _render_recent_output_notice()
+                    if not (live_view.has_pending_input_request and not reveal_latest_output)
+                    and live_view.should_show_recent_output_notice(
+                        tail_block_limit=_turn_tail_block_limit(),
+                        content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
+                    )
+                    else None
+                )
+            ),
             get_cache_revision=lambda: (
+                history_view_enabled,
                 getattr(live_view, "history_revision", 0),
                 getattr(live_view, "active_revision", 0),
                 live_view.has_pending_input_request,
@@ -1647,21 +1716,33 @@ class CustomPromptSession:
             ),
         )
         history_body_control = _RichRenderableControl(
-            lambda: live_view.compose_history_body(
-                tail_block_limit=_turn_tail_block_limit(),
+            lambda: (
+                history_view_snapshot
+                if history_view_enabled
+                else live_view.compose_history_body(
+                    tail_block_limit=_turn_tail_block_limit(),
+                )
             ),
             get_cache_revision=lambda: (
-                getattr(live_view, "history_revision", 0),
-                _turn_tail_block_limit(),
+                history_view_enabled,
+                history_view_revision
+                if history_view_enabled
+                else getattr(live_view, "history_revision", 0),
+                None if history_view_enabled else _turn_tail_block_limit(),
             ),
         )
         active_body_control = _RichRenderableControl(
-            lambda: live_view.compose_active_body(
-                include_running_indicators=False,
-                content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
-                focus_pending_input_panel=not reveal_latest_output,
+            lambda: (
+                None
+                if history_view_enabled
+                else live_view.compose_active_body(
+                    include_running_indicators=False,
+                    content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
+                    focus_pending_input_panel=not reveal_latest_output,
+                )
             ),
             get_cache_revision=lambda: (
+                history_view_enabled,
                 getattr(live_view, "active_revision", 0),
                 live_view.has_pending_input_request,
                 live_view.input_mode,
@@ -1670,6 +1751,8 @@ class CustomPromptSession:
         )
 
         def _turn_body_cursor_line(line_count: int) -> int | None:
+            if history_view_enabled:
+                return history_view_scroll_offset
             return self._turn_body_cursor_line(
                 line_count,
                 has_pending_input_request=live_view.has_pending_input_request,
@@ -1677,12 +1760,64 @@ class CustomPromptSession:
             )
 
         body_control = _StackedRichRenderableControl(
-            [recent_notice_control, history_body_control, active_body_control],
+            [
+                history_notice_control,
+                recent_notice_control,
+                history_body_control,
+                active_body_control,
+            ],
             get_cursor_line=_turn_body_cursor_line,
             get_max_line_count=_turn_body_line_budget,
+            get_window_start=lambda _line_count, _visible_count: (
+                history_view_scroll_offset if history_view_enabled else None
+            ),
         )
 
-        def _turn_layout_signature() -> tuple[int, int, int, int, bool, bool, int, int]:
+        def _history_view_total_lines(width: int | None = None) -> int:
+            body_width = width or (
+                body_window.render_info.window_width
+                if body_window is not None and body_window.render_info is not None
+                else _app_columns()
+            )
+            return body_control.total_line_count(body_width)
+
+        def _history_view_visible_lines(width: int | None = None) -> int:
+            body_width = width or (
+                body_window.render_info.window_width
+                if body_window is not None and body_window.render_info is not None
+                else _app_columns()
+            )
+            return max(1, body_control.line_count(body_width))
+
+        def _clamp_history_view_scroll_offset(value: int, width: int | None = None) -> int:
+            total_lines = _history_view_total_lines(width)
+            visible_lines = _history_view_visible_lines(width)
+            max_start = max(0, total_lines - visible_lines)
+            return max(0, min(max_start, value))
+
+        def _scroll_history_view(delta: int) -> None:
+            nonlocal history_view_scroll_offset, history_view_revision
+            next_offset = _clamp_history_view_scroll_offset(history_view_scroll_offset + delta)
+            if next_offset == history_view_scroll_offset:
+                return
+            history_view_scroll_offset = next_offset
+            history_view_revision += 1
+
+        def _page_history_view(direction: int) -> None:
+            page_size = max(1, _history_view_visible_lines() - 1)
+            _scroll_history_view(direction * page_size)
+
+        def _jump_history_view(to_end: bool) -> None:
+            nonlocal history_view_scroll_offset, history_view_revision
+            next_offset = _clamp_history_view_scroll_offset(
+                _history_view_total_lines() if to_end else 0
+            )
+            if next_offset == history_view_scroll_offset:
+                return
+            history_view_scroll_offset = next_offset
+            history_view_revision += 1
+
+        def _turn_layout_signature() -> tuple[object, ...]:
             body_width = (
                 body_window.render_info.window_width
                 if body_window is not None and body_window.render_info is not None
@@ -1698,6 +1833,9 @@ class CustomPromptSession:
             has_hint = bool(_turn_hint_text())
             return (
                 getattr(live_view, "render_revision", 0),
+                history_view_enabled,
+                history_view_revision if history_view_enabled else None,
+                history_view_scroll_offset if history_view_enabled else None,
                 body_width,
                 _app_rows(),
                 _turn_body_line_budget(body_width),
@@ -1804,6 +1942,20 @@ class CustomPromptSession:
             nonlocal reveal_latest_output
             reveal_latest_output = True
 
+        def _toggle_history_view() -> None:
+            nonlocal history_view_enabled, history_view_snapshot, history_view_revision
+            nonlocal history_view_scroll_offset
+            _clear_turn_output_reveal()
+            history_view_enabled = not history_view_enabled
+            if history_view_enabled:
+                history_view_snapshot = live_view.compose_history_body(tail_block_limit=None)
+                history_view_scroll_offset = 0
+                toast("history view ON", topic="turn_history_view", duration=2.0, immediate=True)
+            else:
+                history_view_snapshot = None
+                toast("history view OFF", topic="turn_history_view", duration=2.0, immediate=True)
+            history_view_revision += 1
+
         def _has_turn_activity() -> bool:
             return (
                 not getattr(live_view, "has_pending_input_request", False)
@@ -1815,7 +1967,13 @@ class CustomPromptSession:
 
         key_bindings = KeyBindings()
         route_live_navigation = Condition(
-            lambda: self._should_route_live_navigation(live_view, text_area.buffer.text)
+            lambda: not history_view_enabled
+            and self._should_route_live_navigation(live_view, text_area.buffer.text)
+        )
+        route_history_view_navigation = Condition(
+            lambda: history_view_enabled
+            and not text_area.buffer.text.strip()
+            and text_area.buffer.complete_state is None
         )
 
         def _dispatch_live_key(event: KeyPressEvent, event_type: KeyEvent) -> None:
@@ -1886,6 +2044,66 @@ class CustomPromptSession:
         _bind_live_digit("4", KeyEvent.NUM_4)
         _bind_live_digit("5", KeyEvent.NUM_5)
 
+        @key_bindings.add("up", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _scroll_history_view(-1)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("down", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _scroll_history_view(1)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("k", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _scroll_history_view(-1)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("j", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _scroll_history_view(1)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("pageup", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _page_history_view(-1)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("pagedown", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _page_history_view(1)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("home", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _jump_history_view(to_end=False)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("end", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _jump_history_view(to_end=True)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("g", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _jump_history_view(to_end=False)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add("G", filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _jump_history_view(to_end=True)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add(Keys.ScrollUp, filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _scroll_history_view(-1)
+            _refresh_turn_view(event.app)
+
+        @key_bindings.add(Keys.ScrollDown, filter=route_history_view_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _scroll_history_view(1)
+            _refresh_turn_view(event.app)
+
         @key_bindings.add("c-e", filter=expand_panel, eager=True)
         def _(event: KeyPressEvent) -> None:
             nonlocal feedback_message
@@ -1939,6 +2157,11 @@ class CustomPromptSession:
         def _(event: KeyPressEvent) -> None:
             _reveal_turn_output_tail()
             self._hard_redraw(event.app)
+
+        @key_bindings.add("c-y", eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _toggle_history_view()
+            _refresh_turn_view(event.app)
 
         if self._clipboard is not None:
 
@@ -2027,6 +2250,7 @@ class CustomPromptSession:
             full_screen=False,
             erase_when_done=True,
             refresh_interval=None,
+            mouse_support=Condition(lambda: history_view_enabled),
             terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
         last_layout_signature = _turn_layout_signature()
