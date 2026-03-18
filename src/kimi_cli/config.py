@@ -105,8 +105,8 @@ class BackgroundConfig(BaseModel):
     worker_stale_after_ms: int = Field(default=15_000, ge=1000)
     kill_grace_period_ms: int = Field(default=2_000, ge=100)
     keep_alive_on_exit: bool = Field(
-        default=False,
-        description="Keep background tasks alive when CLI exits. Default: kill on exit.",
+        default=True,
+        description="Keep background tasks alive when CLI exits. Default: keep alive.",
     )
 
 

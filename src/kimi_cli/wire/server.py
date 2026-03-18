@@ -12,6 +12,7 @@ from kosong.tooling import ToolError, ToolResult
 from kosong.utils.typing import JsonType
 
 from kimi_cli.constant import USER_AGENT
+from kimi_cli.notifications import NotificationWatcher
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import KimiToolset, WireExternalTool
@@ -22,6 +23,7 @@ from kimi_cli.wire import Wire
 from kimi_cli.wire.types import (
     ApprovalRequest,
     ApprovalResponse,
+    NotificationNotice,
     QuestionNotSupported,
     QuestionRequest,
     QuestionResponse,
@@ -70,6 +72,7 @@ class WireServer:
 
         # outward
         self._write_task: asyncio.Task[None] | None = None
+        self._notification_task: asyncio.Task[None] | None = None
         self._write_queue: Queue[JSONRPCOutMessage] = Queue()
 
         # inward
@@ -268,6 +271,12 @@ class WireServer:
             self._cancel_event.set()
             self._cancel_event = None
 
+        if self._notification_task is not None:
+            self._notification_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._notification_task
+            self._notification_task = None
+
         self._write_queue.shutdown()
         if self._write_task is not None:
             with contextlib.suppress(asyncio.CancelledError):
@@ -314,6 +323,31 @@ class WireServer:
             await self._write_queue.put(msg)
         except QueueShutDown:
             logger.error("Send queue shut down; dropping message: {msg}", msg=msg)
+
+    async def _send_notification(self, view) -> None:
+        notice = NotificationNotice(
+            id=view.event.id,
+            category=view.event.category,
+            type=view.event.type,
+            source_kind=view.event.source_kind,
+            source_id=view.event.source_id,
+            title=view.event.title,
+            body=view.event.body,
+            severity=view.event.severity,
+            payload=view.event.payload,
+        )
+        await self._send_msg(JSONRPCEventMessage(params=notice))
+
+    def _ensure_notification_watcher(self) -> None:
+        if self._notification_task is not None or not isinstance(self._soul, KimiSoul):
+            return
+        watcher = NotificationWatcher(
+            self._soul.runtime.notifications,
+            sink="wire",
+            before_poll=self._soul.runtime.background_tasks.reconcile,
+            on_notification=self._send_notification,
+        )
+        self._notification_task = asyncio.create_task(watcher.run_forever())
 
     @property
     def _is_streaming(self) -> bool:
@@ -393,6 +427,8 @@ class WireServer:
             JsonType,
             {"supports_question": True},
         )
+
+        self._ensure_notification_watcher()
 
         return JSONRPCSuccessResponse(
             id=msg.id,
@@ -555,6 +591,7 @@ class WireServer:
             id=msg.id,
             result={"status": Statuses.STEERED},
         )
+
     async def _handle_set_plan_mode(
         self, msg: JSONRPCSetPlanModeMessage
     ) -> JSONRPCSuccessResponse | JSONRPCErrorResponse:

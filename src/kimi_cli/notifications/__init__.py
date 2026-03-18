@@ -1,4 +1,9 @@
-from .llm import build_notification_message, extract_notification_ids, is_notification_message
+from .llm import (
+    build_notification_message,
+    extract_notification_ids,
+    is_notification_message,
+    render_notification_text,
+)
 from .manager import NotificationManager
 from .models import (
     NotificationCategory,
@@ -25,6 +30,7 @@ __all__ = [
     "NotificationStore",
     "NotificationView",
     "NotificationWatcher",
+    "render_notification_text",
     "build_notification_message",
     "extract_notification_ids",
     "is_notification_message",

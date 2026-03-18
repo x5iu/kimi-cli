@@ -16,6 +16,7 @@ from kimi_cli.acp.convert import (
 )
 from kimi_cli.acp.types import ACPContentBlock
 from kimi_cli.app import KimiCLI
+from kimi_cli.notifications import NotificationWatcher, render_notification_text
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled
 from kimi_cli.tools import extract_key_argument
 from kimi_cli.utils.logging import logger
@@ -129,6 +130,14 @@ class ACPSession:
         self._conn = acp_conn
         self._kaos = kaos
         self._turn_state: _TurnState | None = None
+        self._cli.soul.runtime.background_notification_targets = ("llm", "acp")
+        watcher = NotificationWatcher(
+            self._cli.soul.runtime.notifications,
+            sink="acp",
+            before_poll=self._cli.soul.runtime.background_tasks.reconcile,
+            on_notification=self._send_notification,
+        )
+        self._notification_task = asyncio.create_task(watcher.run_forever())
 
     @property
     def id(self) -> str:
@@ -253,6 +262,9 @@ class ACPSession:
                 session_update="agent_message_chunk",
             ),
         )
+
+    async def _send_notification(self, view) -> None:
+        await self._send_text(render_notification_text(view, self._cli.soul.runtime))
 
     async def _send_tool_call(self, tool_call: ToolCall):
         """Send tool call to client."""

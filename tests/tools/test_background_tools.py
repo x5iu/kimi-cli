@@ -33,7 +33,9 @@ def _write_task(runtime, task_id: str, *, status: TaskStatus, output: str = ""):
 
 
 @pytest.mark.asyncio
-async def test_shell_background_starts_task(shell_tool, runtime, monkeypatch):
+async def test_shell_background_starts_task_without_live_notifications(
+    shell_tool, runtime, monkeypatch
+):
     monkeypatch.setattr(runtime.background_tasks, "_launch_worker", lambda task_dir: 9898)
 
     result = await shell_tool(
@@ -48,9 +50,31 @@ async def test_shell_background_starts_task(shell_tool, runtime, monkeypatch):
     assert not result.is_error
     assert "task_id:" in result.output
     assert "status: starting" in result.output
-    assert "automatic_notification: true" in result.output
+    assert "automatic_notification: false" in result.output
     assert "human_shell_hint:" in result.output
-    assert "/task list" in result.output
+    assert "the only task-management slash command is /task" in result.output
+    assert "/task list" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_shell_background_starts_task_with_live_notifications(
+    shell_tool, runtime, monkeypatch
+):
+    runtime.background_notification_targets = ("llm", "shell")
+    monkeypatch.setattr(runtime.background_tasks, "_launch_worker", lambda task_dir: 9898)
+
+    result = await shell_tool(
+        Params(
+            command="sleep 1",
+            timeout=10,
+            run_in_background=True,
+            description="sleep task",
+        )
+    )
+
+    assert not result.is_error
+    assert "automatic_notification: true" in result.output
+    assert "automatically notified in this session" in result.output
 
 
 @pytest.mark.asyncio

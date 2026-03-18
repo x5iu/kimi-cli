@@ -10,6 +10,7 @@ from kosong.tooling.empty import EmptyToolset
 
 from kimi_cli.background import TaskRuntime, TaskSpec
 from kimi_cli.llm import LLM
+from kimi_cli.notifications import NotificationEvent
 from kimi_cli.soul import run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
@@ -119,6 +120,28 @@ def _write_completed_task(runtime: Runtime, task_id: str) -> None:
             updated_at=time.time(),
         ),
     )
+
+
+def test_notification_publish_merges_new_targets(runtime: Runtime) -> None:
+    event = NotificationEvent(
+        id=runtime.notifications.new_id(),
+        category="task",
+        type="task.completed",
+        source_kind="background_task",
+        source_id="b9999999",
+        title="Background task completed",
+        body="done",
+        dedupe_key="task:b9999999:completed",
+        targets=["llm"],
+    )
+    runtime.notifications.publish(event)
+
+    merged = runtime.notifications.publish(
+        event.model_copy(update={"id": runtime.notifications.new_id(), "targets": ["llm", "shell"]})
+    )
+
+    assert merged.event.targets == ["llm", "shell"]
+    assert set(merged.delivery.sinks) == {"llm", "shell"}
 
 
 @pytest.mark.asyncio

@@ -114,6 +114,20 @@ class SkillReminderNotice(BaseModel):
     skills: list[str]
 
 
+class NotificationNotice(BaseModel):
+    """Indicates that a background/runtime notification was pushed to the client."""
+
+    id: str
+    category: str
+    type: str
+    source_kind: str
+    source_id: str
+    title: str
+    body: str
+    severity: str = "info"
+    payload: dict[str, JsonType] = Field(default_factory=dict)
+
+
 class StatusUpdate(BaseModel):
     """
     An update on the current status of the soul.
@@ -391,6 +405,7 @@ type Event = (
     | MCPLoadingBegin
     | MCPLoadingEnd
     | SkillReminderNotice
+    | NotificationNotice
     | StatusUpdate
     | ContentPart
     | ToolCall

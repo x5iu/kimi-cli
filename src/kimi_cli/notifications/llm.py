@@ -14,13 +14,9 @@ if TYPE_CHECKING:
 _NOTIFICATION_ID_RE = re.compile(r'<notification id="([^"]+)"')
 
 
-def build_notification_message(view: NotificationView, runtime: Runtime) -> Message:
+def _notification_text_lines(view: NotificationView, runtime: Runtime) -> list[str]:
     event = view.event
     lines = [
-        (
-            f'<notification id="{event.id}" category="{event.category}" '
-            f'type="{event.type}" source_kind="{event.source_kind}" source_id="{event.source_id}">'
-        ),
         f"Title: {event.title}",
         f"Severity: {event.severity}",
         event.body,
@@ -50,8 +46,35 @@ def build_notification_message(view: NotificationView, runtime: Runtime) -> Mess
             if tail:
                 lines.extend(["Output tail:", tail])
             lines.append("</task-notification>")
+    return lines
 
-    lines.append("</notification>")
+
+def render_notification_text(view: NotificationView, runtime: Runtime) -> str:
+    event = view.event
+    lines = [f"[{event.type}] {event.title}", event.body]
+    if event.category == "task" and event.source_kind == "background_task":
+        task_view = runtime.background_tasks.get_task(event.source_id)
+        if task_view is not None:
+            tail = runtime.background_tasks.store.tail_output(
+                task_view.spec.id,
+                max_bytes=runtime.config.background.notification_tail_chars,
+                max_lines=runtime.config.background.notification_tail_lines,
+            )
+            if tail:
+                lines.extend(["Output tail:", tail])
+    return "\n".join(lines)
+
+
+def build_notification_message(view: NotificationView, runtime: Runtime) -> Message:
+    event = view.event
+    lines = [
+        (
+            f'<notification id="{event.id}" category="{event.category}" '
+            f'type="{event.type}" source_kind="{event.source_kind}" source_id="{event.source_id}">'
+        ),
+        *_notification_text_lines(view, runtime),
+        "</notification>",
+    ]
     return Message(role="user", content=[TextPart(text="\n".join(lines))])
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import warnings
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +16,7 @@ from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.cli import InputFormat, OutputFormat
 from kimi_cli.config import Config, LLMModel, LLMProvider, load_config
 from kimi_cli.llm import augment_provider_with_env_vars, create_llm, model_display_name
+from kimi_cli.notifications import NotificationSink
 from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import run_soul
@@ -197,6 +198,16 @@ class KimiCLI:
         if killed:
             logger.info("Stopped {n} background task(s) on exit: {ids}", n=len(killed), ids=killed)
 
+    @contextlib.contextmanager
+    def _background_notification_targets(self, *targets: NotificationSink) -> Iterator[None]:
+        previous = self._runtime.background_notification_targets
+        normalized = tuple(dict.fromkeys(targets)) or ("llm",)
+        self._runtime.background_notification_targets = normalized
+        try:
+            yield
+        finally:
+            self._runtime.background_notification_targets = previous
+
     @contextlib.asynccontextmanager
     async def _env(self) -> AsyncGenerator[None]:
         original_cwd = KaosPath.cwd()
@@ -310,9 +321,13 @@ class KimiCLI:
                     level=WelcomeInfoItem.Level.INFO,
                 )
             )
+        notification_targets: tuple[NotificationSink, ...] = (
+            ("llm", "shell") if command is None else ("llm",)
+        )
         async with self._env():
-            shell = Shell(self._soul, welcome_info=welcome_info)
-            return await shell.run(command)
+            with self._background_notification_targets(*notification_targets):
+                shell = Shell(self._soul, welcome_info=welcome_info)
+                return await shell.run(command)
 
     async def run_print(
         self,
@@ -348,5 +363,6 @@ class KimiCLI:
         from kimi_cli.wire.server import WireServer
 
         async with self._env():
-            server = WireServer(self._soul)
-            await server.serve()
+            with self._background_notification_targets("llm", "wire"):
+                server = WireServer(self._soul)
+                await server.serve()

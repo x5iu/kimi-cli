@@ -19,7 +19,7 @@ from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config
 from kimi_cli.exception import MCPConfigError, SystemPromptTemplateError
 from kimi_cli.llm import LLM
-from kimi_cli.notifications import NotificationManager
+from kimi_cli.notifications import NotificationManager, NotificationSink
 from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from kimi_cli.skill import Skill, discover_skills_from_roots, index_skills, resolve_skills_roots
@@ -124,6 +124,16 @@ class Runtime:
     skills: dict[str, Skill]
     additional_dirs: list[KaosPath]
     role: Literal["root", "fixed_subagent", "dynamic_subagent"] = "root"
+    background_notification_targets: tuple[NotificationSink, ...] = ("llm",)
+
+    def __post_init__(self) -> None:
+        self.background_tasks.bind_notification_targets(
+            lambda: self.background_notification_targets
+        )
+
+    @property
+    def has_live_background_notifications(self) -> bool:
+        return any(target != "llm" for target in self.background_notification_targets)
 
     @staticmethod
     async def create(
@@ -271,6 +281,7 @@ class Runtime:
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
             role="fixed_subagent",
+            background_notification_targets=self.background_notification_targets,
         )
 
     def copy_for_dynamic_subagent(self) -> Runtime:
@@ -291,6 +302,7 @@ class Runtime:
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
             role="dynamic_subagent",
+            background_notification_targets=self.background_notification_targets,
         )
 
 

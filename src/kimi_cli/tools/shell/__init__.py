@@ -161,12 +161,21 @@ class Shell(CallableTool2[Params]):
 
     def _background_ok(self, view: TaskView) -> ToolReturnValue:
         builder = ToolResultBuilder()
+        live_notification = self._runtime.has_live_background_notifications
+        notification_line = (
+            "next_step: You will be automatically notified in this session when it completes."
+            if live_notification
+            else (
+                "next_step: No live notification channel is active for this run; "
+                "use TaskOutput or reopen the session later to inspect the task."
+            )
+        )
         builder.write(
             "\n".join(
                 [
                     format_task(view, include_command=True),
-                    "automatic_notification: true",
-                    "next_step: You will be automatically notified when it completes.",
+                    f"automatic_notification: {str(live_notification).lower()}",
+                    notification_line,
                     (
                         "next_step: Use TaskOutput with this task_id "
                         "if you need progress or want to wait."
@@ -174,8 +183,7 @@ class Shell(CallableTool2[Params]):
                     "next_step: Use TaskStop only if the task must be cancelled.",
                     (
                         "human_shell_hint: For users in the interactive shell, "
-                        "the only task-management slash command is /task. "
-                        "Do not suggest /task list, /task output, /task stop, or /tasks."
+                        "the only task-management slash command is /task."
                     ),
                 ]
             )

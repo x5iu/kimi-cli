@@ -44,7 +44,7 @@ def test_default_config_dump():
                 "worker_heartbeat_interval_ms": 5000,
                 "worker_stale_after_ms": 15000,
                 "kill_grace_period_ms": 2000,
-                "keep_alive_on_exit": False,
+                "keep_alive_on_exit": True,
             },
             "notifications": {"claim_stale_after_ms": 15000},
             "services": {"moonshot_search": None, "moonshot_fetch": None},

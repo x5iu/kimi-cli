@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,7 @@ class BackgroundTaskManager:
         self._notifications = notifications
         self._owner_role = owner_role
         self._store = BackgroundTaskStore(session.context_file.parent / "tasks")
+        self._notification_targets_getter: Callable[[], tuple[str, ...]] | None = None
 
     @property
     def store(self) -> BackgroundTaskStore:
@@ -51,13 +53,19 @@ class BackgroundTaskManager:
     def role(self) -> str:
         return self._owner_role
 
+    def bind_notification_targets(self, getter: Callable[[], tuple[str, ...]]) -> None:
+        self._notification_targets_getter = getter
+
     def copy_for_role(self, role: str) -> BackgroundTaskManager:
-        return BackgroundTaskManager(
+        copied = BackgroundTaskManager(
             self._session,
             self._config,
             notifications=self._notifications,
             owner_role=role,
         )
+        if self._notification_targets_getter is not None:
+            copied.bind_notification_targets(self._notification_targets_getter)
+        return copied
 
     def _ensure_root(self) -> None:
         if self._owner_role != "root":
@@ -71,6 +79,12 @@ class BackgroundTaskManager:
         return sum(
             1 for view in self._store.list_views() if not is_terminal_status(view.runtime.status)
         )
+
+    def _notification_targets(self) -> list[str]:
+        if self._notification_targets_getter is None:
+            return ["llm", "shell"]
+        targets = list(dict.fromkeys(self._notification_targets_getter()))
+        return targets or ["llm"]
 
     def _worker_command(self, task_dir: Path) -> list[str]:
         if getattr(sys, "frozen", False):
@@ -395,6 +409,7 @@ class BackgroundTaskManager:
                 },
                 dedupe_key=f"background_task:{view.spec.id}:{terminal_reason}",
             )
+            event.targets = self._notification_targets()
             notification = self._notifications.publish(event)
             if notification.event.id == event.id:
                 published.append(notification.event.id)

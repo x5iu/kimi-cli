@@ -38,11 +38,29 @@ class NotificationManager:
                 return view
         return None
 
+    def _merge_targets(
+        self,
+        view: NotificationView,
+        *,
+        targets: list[str],
+    ) -> NotificationView:
+        merged_targets = list(dict.fromkeys([*view.event.targets, *targets]))
+        if merged_targets == view.event.targets:
+            return view
+
+        event = view.event.model_copy(update={"targets": merged_targets})
+        delivery = view.delivery.model_copy(deep=True)
+        for sink in merged_targets:
+            delivery.sinks.setdefault(sink, NotificationSinkState())
+        self._store.write_event(view.event.id, event)
+        self._store.write_delivery(view.event.id, delivery)
+        return NotificationView(event=event, delivery=delivery)
+
     def publish(self, event: NotificationEvent) -> NotificationView:
         if event.dedupe_key:
             existing = self.find_by_dedupe_key(event.dedupe_key)
             if existing is not None:
-                return existing
+                return self._merge_targets(existing, targets=event.targets)
         delivery = self._initial_delivery(event)
         self._store.create_notification(event, delivery)
         return NotificationView(event=event, delivery=delivery)

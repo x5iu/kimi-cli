@@ -72,8 +72,8 @@ class NotificationStore:
             self.event_path(notification_id).read_text(encoding="utf-8")
         )
 
-    def write_event(self, event: NotificationEvent) -> None:
-        atomic_json_write(event.model_dump(mode="json"), self.event_path(event.id))
+    def write_event(self, notification_id: str, event: NotificationEvent) -> None:
+        atomic_json_write(event.model_dump(mode="json"), self.event_path(notification_id))
 
     def read_delivery(self, notification_id: str) -> NotificationDelivery:
         path = self.delivery_path(notification_id)
