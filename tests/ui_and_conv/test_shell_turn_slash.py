@@ -57,6 +57,7 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
     monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
 
     async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
+        assert kwargs["turn_prompt"] == "hello"
         assert submit_handler(
             UserInput(
                 mode=PromptMode.AGENT,
@@ -118,6 +119,7 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
     ]
 
     async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
+        assert kwargs["turn_prompt"] == "hello"
         assert submit_handler(
             UserInput(
                 mode=PromptMode.AGENT,

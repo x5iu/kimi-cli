@@ -132,15 +132,47 @@ class _StackedRichRenderableControl(UIControl):
         sections: Sequence[_RichRenderableControl],
         *,
         get_cursor_line: Callable[[int], int | None] | None = None,
+        get_max_line_count: Callable[[int], int | None] | None = None,
     ) -> None:
         self._sections = list(sections)
         self._get_cursor_line = get_cursor_line or (lambda _line_count: None)
+        self._get_max_line_count = get_max_line_count or (lambda _width: None)
+
+    def _visible_window(
+        self,
+        *,
+        width: int,
+        line_count: int,
+    ) -> tuple[int, int, int | None]:
+        if line_count <= 0:
+            return 0, 0, None
+
+        max_line_count = self._get_max_line_count(width)
+        if max_line_count is None or max_line_count <= 0 or line_count <= max_line_count:
+            return 0, line_count, self._get_cursor_line(line_count)
+
+        visible_count = min(line_count, max_line_count)
+        cursor_line = self._get_cursor_line(line_count)
+        if cursor_line is None:
+            start = line_count - visible_count
+            return start, start + visible_count, None
+
+        clamped_cursor = max(0, min(line_count - 1, cursor_line))
+        if clamped_cursor <= 0:
+            start = 0
+        elif clamped_cursor >= line_count - 1:
+            start = line_count - visible_count
+        else:
+            start = max(0, min(clamped_cursor - visible_count // 2, line_count - visible_count))
+        return start, start + visible_count, clamped_cursor - start
 
     def _section_lines(self, width: int) -> list[tuple[tuple[tuple[str, str], ...], ...]]:
         return [section._render_lines(width) for section in self._sections]
 
     def line_count(self, width: int) -> int:
-        return sum(len(lines) for lines in self._section_lines(width))
+        total_lines = sum(len(lines) for lines in self._section_lines(width))
+        start, end, _ = self._visible_window(width=width, line_count=total_lines)
+        return end - start
 
     def preferred_height(
         self,
@@ -160,22 +192,30 @@ class _StackedRichRenderableControl(UIControl):
             offsets.append((line_offset, lines))
             line_offset += len(lines)
 
+        visible_start, visible_end, visible_cursor_line = self._visible_window(
+            width=normalized_width,
+            line_count=line_offset,
+        )
+        visible_line_count = max(0, visible_end - visible_start)
+
         def _get_line(i: int) -> list[tuple[str, str]]:
+            actual_index = visible_start + i
             for start, lines in offsets:
                 end = start + len(lines)
-                if start <= i < end:
-                    return list(lines[i - start])
+                if start <= actual_index < end:
+                    return list(lines[actual_index - start])
             return []
 
         cursor_position = None
-        if line_offset > 0:
-            cursor_line = self._get_cursor_line(line_offset)
-            if cursor_line is not None:
-                cursor_position = Point(x=0, y=max(0, min(line_offset - 1, cursor_line)))
+        if visible_line_count > 0 and visible_cursor_line is not None:
+            cursor_position = Point(
+                x=0,
+                y=max(0, min(visible_line_count - 1, visible_cursor_line)),
+            )
 
         return UIContent(
             get_line=_get_line,
-            line_count=line_offset,
+            line_count=visible_line_count,
             show_cursor=False,
             cursor_position=cursor_position,
         )

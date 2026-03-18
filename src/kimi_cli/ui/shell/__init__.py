@@ -147,6 +147,12 @@ class Shell:
     def _display_user_input(user_input: UserInput) -> str:
         return message_stringify(Message(role="user", content=user_input.content))
 
+    @staticmethod
+    def _display_turn_prompt(user_input: str | list[ContentPart]) -> str:
+        if isinstance(user_input, str):
+            return user_input
+        return message_stringify(Message(role="user", content=user_input))
+
     def _echo_agent_input(self, user_input: UserInput) -> None:
         if user_input.mode != PromptMode.AGENT:
             return
@@ -255,6 +261,7 @@ class Shell:
                     live_view=live_view,
                     submit_handler=_submit_handler,
                     cancel_handler=_cancel_handler,
+                    turn_prompt=self._display_turn_prompt(user_input),
                 ),
                 cancel_event,
                 self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,

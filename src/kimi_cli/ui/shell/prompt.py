@@ -73,6 +73,7 @@ from kimi_cli.ui.shell.visualize import (
     MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS,
     _render_recent_output_notice,
     is_significant_for_render,
+    render_user_prompt_block,
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.clipboard import (
@@ -1174,9 +1175,7 @@ class CustomPromptSession:
         kind, _ = indicator
         if kind == "composing":
             return (
-                _TURN_UI_BURST_REFRESH_INTERVAL
-                if burst_active
-                else _TURN_UI_FAST_REFRESH_INTERVAL
+                _TURN_UI_BURST_REFRESH_INTERVAL if burst_active else _TURN_UI_FAST_REFRESH_INTERVAL
             )
         if kind == "thinking":
             return _TURN_UI_FAST_REFRESH_INTERVAL
@@ -1497,6 +1496,7 @@ class CustomPromptSession:
         live_view: Any,
         submit_handler: Callable[[UserInput], TurnSubmitResult],
         cancel_handler: Callable[[], None],
+        turn_prompt: str | None = None,
     ) -> None:
         self._mode = PromptMode.AGENT
         feedback_message = ""
@@ -1513,6 +1513,15 @@ class CustomPromptSession:
         def _app_columns(app: Application[Any] | None = None) -> int:
             current_app = get_app_or_none() if app is None else app
             return current_app.output.get_size().columns if current_app is not None else 80
+
+        def _app_rows(app: Application[Any] | None = None) -> int:
+            current_app = get_app_or_none() if app is None else app
+            return current_app.output.get_size().rows if current_app is not None else 24
+
+        prompt_block_control = _RichRenderableControl(
+            lambda: render_user_prompt_block(turn_prompt) if turn_prompt else None,
+            get_cache_revision=lambda: turn_prompt,
+        )
 
         text_area = TextArea(
             text="",
@@ -1561,12 +1570,49 @@ class CustomPromptSession:
             status = self._status_provider()
             return self._render_turn_footer(_app_columns(), status=status)
 
-        def _turn_tail_block_limit() -> int:
-            return (
-                MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS
-                if live_view.has_pending_input_request
-                else MAX_ACTIVE_TURN_FLUSHED_BLOCKS
+        def _turn_prompt_height(width: int) -> int:
+            if not turn_prompt:
+                return 0
+            return prompt_block_control.line_count(width)
+
+        def _turn_completion_menu_height() -> int:
+            complete_state = text_area.buffer.complete_state
+            if complete_state is None or not complete_state.completions:
+                return 0
+            return min(10, len(complete_state.completions))
+
+        def _turn_fixed_height(width: int) -> int:
+            input_height = (
+                text_area.window.render_info.window_height
+                if text_area.window.render_info is not None
+                else _input_box_height()
             )
+            hint_height = 1 if bool(_turn_hint_text()) else 0
+            activity_height = 1 if _has_turn_activity() else 0
+            toast_height = 1 if self._has_toasts() else 0
+            footer_height = 1
+            input_frame_height = input_height + hint_height + 2
+            return (
+                _turn_prompt_height(width)
+                + activity_height
+                + _turn_completion_menu_height()
+                + input_frame_height
+                + toast_height
+                + footer_height
+            )
+
+        def _turn_body_line_budget(width: int | None = None) -> int:
+            body_width = width or (
+                body_window.render_info.window_width
+                if body_window is not None and body_window.render_info is not None
+                else _app_columns()
+            )
+            return max(1, _app_rows() - _turn_fixed_height(body_width))
+
+        def _turn_tail_block_limit() -> int:
+            if live_view.has_pending_input_request:
+                return MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS
+            return max(MAX_ACTIVE_TURN_FLUSHED_BLOCKS, _turn_body_line_budget())
 
         recent_notice_control = _RichRenderableControl(
             lambda: (
@@ -1581,6 +1627,7 @@ class CustomPromptSession:
                 getattr(live_view, "history_revision", 0),
                 getattr(live_view, "active_revision", 0),
                 live_view.has_pending_input_request,
+                _turn_tail_block_limit(),
             ),
         )
         history_body_control = _RichRenderableControl(
@@ -1614,9 +1661,10 @@ class CustomPromptSession:
         body_control = _StackedRichRenderableControl(
             [recent_notice_control, history_body_control, active_body_control],
             get_cursor_line=_turn_body_cursor_line,
+            get_max_line_count=_turn_body_line_budget,
         )
 
-        def _turn_layout_signature() -> tuple[int, int, int, bool, bool, int]:
+        def _turn_layout_signature() -> tuple[int, int, int, int, bool, bool, int, int]:
             body_width = (
                 body_window.render_info.window_width
                 if body_window is not None and body_window.render_info is not None
@@ -1633,6 +1681,8 @@ class CustomPromptSession:
             return (
                 getattr(live_view, "render_revision", 0),
                 body_width,
+                _app_rows(),
+                _turn_body_line_budget(body_width),
                 body_line_count,
                 has_activity,
                 has_hint,
