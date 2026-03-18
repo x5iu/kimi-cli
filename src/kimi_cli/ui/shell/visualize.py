@@ -617,10 +617,12 @@ class LiveView:
         *,
         include_running_indicators: bool = True,
         content_char_limit: int | None = None,
+        focus_pending_input_panel: bool | None = None,
     ) -> tuple[list[RenderableType], bool]:
         blocks: list[RenderableType] = []
         truncated = False
-        focus_pending_input_panel = self.has_pending_input_request
+        if focus_pending_input_panel is None:
+            focus_pending_input_panel = self.has_pending_input_request
         has_specific_running_indicator = False
 
         if focus_pending_input_panel:
@@ -675,11 +677,11 @@ class LiveView:
             and not has_specific_running_indicator
         ):
             blocks.append(self._turn_spinner)
-        if self._current_approval_request_panel:
+        if focus_pending_input_panel and self._current_approval_request_panel:
             blocks.append(
                 self._current_approval_request_panel.render(allow_expand=self._allow_expand)
             )
-        if self._current_question_panel:
+        if focus_pending_input_panel and self._current_question_panel:
             blocks.append(self._current_question_panel.render(allow_expand=self._allow_expand))
         return blocks, truncated
 
@@ -716,10 +718,12 @@ class LiveView:
         *,
         include_running_indicators: bool = True,
         content_char_limit: int | None = None,
+        focus_pending_input_panel: bool | None = None,
     ) -> RenderableType | None:
         blocks, _ = self._active_blocks(
             include_running_indicators=include_running_indicators,
             content_char_limit=content_char_limit,
+            focus_pending_input_panel=focus_pending_input_panel,
         )
         if not blocks:
             return None

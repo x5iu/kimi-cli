@@ -568,6 +568,32 @@ def test_turn_input_hint_text_hides_when_buffer_has_text() -> None:
     assert hint == ""
 
 
+def test_turn_body_cursor_line_pins_pending_questions_to_top_until_output_reveal() -> None:
+    assert (
+        CustomPromptSession._turn_body_cursor_line(
+            0,
+            has_pending_input_request=True,
+            reveal_latest_output=False,
+        )
+        is None
+    )
+    assert CustomPromptSession._turn_body_cursor_line(
+        7,
+        has_pending_input_request=True,
+        reveal_latest_output=False,
+    ) == 0
+    assert CustomPromptSession._turn_body_cursor_line(
+        7,
+        has_pending_input_request=True,
+        reveal_latest_output=True,
+    ) == 6
+    assert CustomPromptSession._turn_body_cursor_line(
+        7,
+        has_pending_input_request=False,
+        reveal_latest_output=False,
+    ) == 6
+
+
 def test_immediate_toast_replaces_older_messages() -> None:
     _toast_queues["left"].clear()
 

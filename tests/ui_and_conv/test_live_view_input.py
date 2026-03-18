@@ -705,6 +705,38 @@ def test_live_view_compose_body_hides_streaming_content_while_waiting_for_input(
     assert "recent output only during live turn" in rendered
 
 
+def test_live_view_compose_active_body_can_reveal_streaming_content_behind_question() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_content(TextPart(text="streaming block"))
+    view.request_question(
+        QuestionRequest(
+            id="question-reveal-streaming",
+            tool_call_id="tool-reveal-streaming",
+            questions=[
+                QuestionItem(
+                    question="Which format should I use?",
+                    options=[
+                        QuestionOption(label="JSON"),
+                        QuestionOption(label="YAML"),
+                    ],
+                )
+            ],
+        )
+    )
+
+    rendered = view._renderable_to_ansi(
+        view.compose_active_body(
+            include_running_indicators=False,
+            focus_pending_input_panel=False,
+        ),
+        80,
+    )
+
+    assert "streaming block" in rendered
+    assert "Which format should I use?" not in rendered
+
+
 def test_live_view_compose_body_hides_tool_calls_while_waiting_for_input() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
 

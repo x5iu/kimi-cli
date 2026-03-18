@@ -834,6 +834,73 @@ def test_shell_long_stream_tail_appears_before_turn_end(tmp_path: Path) -> None:
         shell.close()
 
 
+def test_shell_question_panel_stays_visible_in_small_terminal(tmp_path: Path) -> None:
+    tail_marker = "QTAILQ"
+    question_payload = [
+        {
+            "question": "Continue?",
+            "options": [
+                {"label": "Yes", "description": "Keep going"},
+                {"label": "No", "description": "Stop"},
+            ],
+        }
+    ]
+    config_path = write_scripted_config(
+        tmp_path,
+        [
+            "\n".join(
+                [
+                    *[f"text: Body line {i}" for i in range(1, 20)],
+                    f"text: {tail_marker}",
+                    build_ask_user_tool_call("tc-small-question", question_payload),
+                ]
+            ),
+            "text: Small terminal question flow complete.",
+        ],
+    )
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+    shell = start_shell_pty(
+        config_path=config_path,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+        lines=12,
+    )
+
+    try:
+        shell.read_until_contains("Welcome to Kimi Code CLI!")
+        _read_until_prompt(shell, after=shell.mark())
+
+        turn_mark = shell.mark()
+        shell.send_line("exercise small terminal question")
+        shell.read_until_contains("Enter to choose", after=turn_mark, timeout=15.0)
+        time.sleep(0.3)
+
+        transcript = shell.normalized_text()[turn_mark:]
+        hint_index = transcript.rfind("Enter to choose")
+        assert hint_index != -1
+        panel_excerpt = transcript[max(0, hint_index - 4000) : hint_index + 500]
+        assert "Continue?" in panel_excerpt
+        assert "[1] Yes" in panel_excerpt
+
+        shell.send_key("1")
+        shell.read_until_contains(
+            "Small terminal question flow complete.",
+            after=turn_mark,
+            timeout=15.0,
+        )
+        _read_until_prompt(shell, after=shell.mark())
+
+        output = find_tool_result_output(home_dir, work_dir, "tc-small-question")
+        assert isinstance(output, str)
+        assert json.loads(output) == {"answers": {"Continue?": "Yes"}}
+    finally:
+        shell.close()
+
+
+
+
 def test_shell_ctrl_l_reveals_latest_output_during_question_prompt(tmp_path: Path) -> None:
     tail_marker = "ZTAILZ"
     question_payload = [

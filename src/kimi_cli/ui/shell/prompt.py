@@ -1309,6 +1309,19 @@ class CustomPromptSession:
         return self._truncate_text(hint, 160)
 
     @staticmethod
+    def _turn_body_cursor_line(
+        line_count: int,
+        *,
+        has_pending_input_request: bool,
+        reveal_latest_output: bool,
+    ) -> int | None:
+        if line_count <= 0:
+            return None
+        if has_pending_input_request and not reveal_latest_output:
+            return 0
+        return line_count - 1
+
+    @staticmethod
     def _shorten_footer_path(path: str, width: int) -> str:
         if width <= 0:
             return ""
@@ -1610,6 +1623,8 @@ class CustomPromptSession:
             return max(1, _app_rows() - _turn_fixed_height(body_width))
 
         def _turn_tail_block_limit() -> int:
+            if live_view.has_pending_input_request and not reveal_latest_output:
+                return 0
             if live_view.has_pending_input_request:
                 return MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS
             return max(MAX_ACTIVE_TURN_FLUSHED_BLOCKS, _turn_body_line_budget())
@@ -1617,7 +1632,8 @@ class CustomPromptSession:
         recent_notice_control = _RichRenderableControl(
             lambda: (
                 _render_recent_output_notice()
-                if live_view.should_show_recent_output_notice(
+                if not (live_view.has_pending_input_request and not reveal_latest_output)
+                and live_view.should_show_recent_output_notice(
                     tail_block_limit=_turn_tail_block_limit(),
                     content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
                 )
@@ -1643,20 +1659,22 @@ class CustomPromptSession:
             lambda: live_view.compose_active_body(
                 include_running_indicators=False,
                 content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
+                focus_pending_input_panel=not reveal_latest_output,
             ),
             get_cache_revision=lambda: (
                 getattr(live_view, "active_revision", 0),
                 live_view.has_pending_input_request,
                 live_view.input_mode,
+                reveal_latest_output,
             ),
         )
 
         def _turn_body_cursor_line(line_count: int) -> int | None:
-            if line_count <= 0:
-                return None
-            if getattr(live_view, "has_pending_input_request", False) and not reveal_latest_output:
-                return 0
-            return line_count - 1
+            return self._turn_body_cursor_line(
+                line_count,
+                has_pending_input_request=live_view.has_pending_input_request,
+                reveal_latest_output=reveal_latest_output,
+            )
 
         body_control = _StackedRichRenderableControl(
             [recent_notice_control, history_body_control, active_body_control],
