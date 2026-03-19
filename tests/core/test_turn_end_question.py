@@ -140,12 +140,13 @@ async def test_detect_turn_end_question_calls_generate(
     assert len(result.questions) == 1
     assert result.questions[0].question == "A or B?"
     # The side-channel should wrap text in a user message for the detector
-    assert captured["history"] == [
-        Message(
-            role="user",
-            content="Analyze the following assistant message:\n\nShould I do A or B?",
-        )
-    ]
+    history = captured["history"]
+    assert len(history) == 1
+    assert history[0].role == "user"
+    history_text = history[0].extract_text()
+    assert "Ending excerpt:" in history_text
+    assert "Full message:" in history_text
+    assert "Should I do A or B?" in history_text
 
 
 # -- Integration: _maybe_ask_turn_end_question --
@@ -565,6 +566,105 @@ async def test_detect_turn_end_question_gives_up_after_max_attempts(
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_uses_heuristic_for_if_you_want_continue(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        return SimpleNamespace(
+            message=Message(role="assistant", content='{"has_question": false, "questions": []}')
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    assistant_msg = Message(
+        role="assistant",
+        content="前面的分析已经完成。\n\n如果你要，我可以继续直接做下去。",
+    )
+    result = await soul._detect_turn_end_question(assistant_msg)
+
+    assert result is not None
+    assert result.has_question is True
+    assert result.questions[0].question == "要我继续吗？"
+    assert result.questions[0].options[0].label == "继续"
+    assert result.questions[0].options[1].label == "先别"
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_uses_heuristic_for_if_continue(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        return SimpleNamespace(
+            message=Message(role="assistant", content='{"has_question": false, "questions": []}')
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    assistant_msg = Message(role="assistant", content="如果继续，我可以先处理 A。")
+    result = await soul._detect_turn_end_question(assistant_msg)
+
+    assert result is not None
+    assert result.has_question is True
+    assert result.questions[0].question == "要我继续吗？"
+    assert result.questions[0].options[0].label == "继续"
+    assert result.questions[0].options[1].label == "先别"
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_ignores_conditional_analysis_statement(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        return SimpleNamespace(
+            message=Message(role="assistant", content='{"has_question": false, "questions": []}')
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    assistant_msg = Message(role="assistant", content="如果继续这样做，风险会更高。")
+    result = await soul._detect_turn_end_question(assistant_msg)
+
+    assert result is not None
+    assert result.has_question is False
+
+
 # -- Yes/No question detection tests --
 
 
@@ -645,12 +745,20 @@ def test_turn_end_question_prompt_mentions_soft_permission_phrases() -> None:
     assert '"如果你想，我可以直接继续改下去。"' in (
         kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
-    assert 'Chinese "是否 + action clause" / "如果你愿意，我可以..." / "如果你想，我可以..."' in (
+    assert '"如果你要，我可以继续直接做下去。"' in (
         kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
+    assert '"如果继续，我可以先处理 A。"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    assert (
+        'Chinese "是否 + action clause" / "如果你愿意，我可以..." / "如果你想，我可以..." / '
+        '"如果你要，我可以..." / "如果继续，我可以..."'
+        in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    )
+    assert "synthesize two concise options" in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
 
 
 def test_turn_end_question_prompt_mentions_multiple_suggestions() -> None:
+    assert '"如果继续这样做，风险会更高。"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     assert (
         "pick from multiple concrete suggestions"
         in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT

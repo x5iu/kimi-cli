@@ -119,6 +119,188 @@ def test_question_request_answer(tmp_path) -> None:
         wire.close()
 
 
+def test_turn_end_question_request_uses_heuristic_and_runs_follow_up(tmp_path) -> None:
+    scripts = [
+        "text: 如果你要，我可以继续直接做下去。",
+        "text: 收到，我继续处理。",
+    ]
+    config_path = write_scripted_config(tmp_path, scripts)
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+
+    wire = start_wire(
+        config_path=config_path,
+        config_text=None,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+    )
+    try:
+        send_initialize(wire, capabilities={"supports_question": True})
+        wire.send_json(
+            {
+                "jsonrpc": "2.0",
+                "id": "prompt-heuristic-1",
+                "method": "prompt",
+                "params": {"user_input": "继续"},
+            }
+        )
+
+        resp, messages = collect_until_response(
+            wire,
+            "prompt-heuristic-1",
+            request_handler=_question_request_handler({"要我继续吗？": "继续"}),
+        )
+        assert resp.get("result", {}).get("status") == "finished"
+
+        summary = summarize_messages(messages)
+        question_requests = [m for m in summary if m.get("type") == "QuestionRequest"]
+        assert len(question_requests) == 1
+        question_payload = question_requests[0]["payload"]
+        assert question_payload["tool_call_id"].startswith("turn-end-")
+        assert question_payload["questions"] == [
+            {
+                "question": "要我继续吗？",
+                "header": "",
+                "options": [
+                    {"label": "继续", "description": "继续按当前方案往下做"},
+                    {"label": "先别", "description": "先不要继续"},
+                ],
+                "multi_select": False,
+                "body": "如果你要，我可以继续直接做下去。",
+                "other_label": "",
+                "other_description": "",
+            }
+        ]
+
+        follow_ups = [m for m in summary if m.get("type") == "FollowUpInput"]
+        assert follow_ups == [
+            {"method": "event", "type": "FollowUpInput", "payload": {"text": "继续"}}
+        ]
+
+        content_parts = [m for m in summary if m.get("type") == "ContentPart"]
+        assert [part["payload"] for part in content_parts] == [
+            {"type": "text", "text": "如果你要，我可以继续直接做下去。"},
+            {"type": "text", "text": "收到，我继续处理。"},
+        ]
+    finally:
+        wire.close()
+
+
+def test_turn_end_question_request_handles_if_continue_phrase(tmp_path) -> None:
+    scripts = [
+        "text: 如果继续，我可以先处理 A。",
+        "text: 收到，我先处理 A。",
+    ]
+    config_path = write_scripted_config(tmp_path, scripts)
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+
+    wire = start_wire(
+        config_path=config_path,
+        config_text=None,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+    )
+    try:
+        send_initialize(wire, capabilities={"supports_question": True})
+        wire.send_json(
+            {
+                "jsonrpc": "2.0",
+                "id": "prompt-heuristic-2",
+                "method": "prompt",
+                "params": {"user_input": "继续"},
+            }
+        )
+
+        resp, messages = collect_until_response(
+            wire,
+            "prompt-heuristic-2",
+            request_handler=_question_request_handler({"要我继续吗？": "继续"}),
+        )
+        assert resp.get("result", {}).get("status") == "finished"
+
+        summary = summarize_messages(messages)
+        question_requests = [m for m in summary if m.get("type") == "QuestionRequest"]
+        assert len(question_requests) == 1
+        question_payload = question_requests[0]["payload"]
+        assert question_payload["tool_call_id"].startswith("turn-end-")
+        assert question_payload["questions"] == [
+            {
+                "question": "要我继续吗？",
+                "header": "",
+                "options": [
+                    {"label": "继续", "description": "继续按当前方案往下做"},
+                    {"label": "先别", "description": "先不要继续"},
+                ],
+                "multi_select": False,
+                "body": "如果继续，我可以先处理 A。",
+                "other_label": "",
+                "other_description": "",
+            }
+        ]
+
+        follow_ups = [m for m in summary if m.get("type") == "FollowUpInput"]
+        assert follow_ups == [
+            {"method": "event", "type": "FollowUpInput", "payload": {"text": "继续"}}
+        ]
+
+        content_parts = [m for m in summary if m.get("type") == "ContentPart"]
+        assert [part["payload"] for part in content_parts] == [
+            {"type": "text", "text": "如果继续，我可以先处理 A。"},
+            {"type": "text", "text": "收到，我先处理 A。"},
+        ]
+    finally:
+        wire.close()
+
+
+def test_turn_end_question_request_ignores_conditional_analysis(tmp_path) -> None:
+    scripts = ["text: 如果继续这样做，风险会更高。"]
+    config_path = write_scripted_config(tmp_path, scripts)
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+
+    wire = start_wire(
+        config_path=config_path,
+        config_text=None,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+    )
+    try:
+        send_initialize(wire, capabilities={"supports_question": True})
+        wire.send_json(
+            {
+                "jsonrpc": "2.0",
+                "id": "prompt-heuristic-3",
+                "method": "prompt",
+                "params": {"user_input": "继续"},
+            }
+        )
+
+        resp, messages = collect_until_response(
+            wire,
+            "prompt-heuristic-3",
+            request_handler=_question_request_handler({"要我继续吗？": "继续"}),
+        )
+        assert resp.get("result", {}).get("status") == "finished"
+
+        summary = summarize_messages(messages)
+        question_requests = [m for m in summary if m.get("type") == "QuestionRequest"]
+        assert question_requests == []
+
+        follow_ups = [m for m in summary if m.get("type") == "FollowUpInput"]
+        assert follow_ups == []
+
+        content_parts = [m for m in summary if m.get("type") == "ContentPart"]
+        assert [part["payload"] for part in content_parts] == [
+            {"type": "text", "text": "如果继续这样做，风险会更高。"}
+        ]
+    finally:
+        wire.close()
+
+
 def test_question_request_error_response(tmp_path) -> None:
     """Test that a JSON-RPC error response resolves to empty answers without crash."""
     question = _make_question()

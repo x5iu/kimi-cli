@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -126,6 +127,10 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     '- "如果你愿意，我就按这个方案开始处理。" (yes/no — options: Proceed, Don\'t proceed)\n'
     '- "如果你想，我可以直接继续改下去。" (yes/no — options: Continue, Stop)\n'
     '- "如果你想，我现在就可以按这个方案开始修改。" (yes/no — options: Proceed, Don\'t proceed)\n'
+    '- "如果你要，我可以继续直接做下去。" (yes/no — options: Continue, Stop)\n'
+    '- "如果你要，我现在就按这个方案开始改。" (yes/no — options: Proceed, Don\'t proceed)\n'
+    '- "如果继续，我可以先处理 A。" (yes/no — options: Continue, Stop)\n'
+    '- "如果要继续，我现在就开始处理。" (yes/no — options: Proceed, Don\'t proceed)\n'
     '- "下一步我建议做 A、B、C，你想先做哪个？"\n'
     '- "我有 3 个建议：修交互、提性能、收样式。请选择一个。"\n'
     '- "接下来有三个建议：A、B、C。请告诉我先做哪个。"\n'
@@ -141,6 +146,9 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     "- Mere recommendation lists or next-step suggestions "
     "when the assistant is not asking the user to pick one\n"
     "- Numbered plans or recommendation lists without a closing choice/decision prompt\n"
+    '- Conditional analysis statements like "如果继续这样做，风险会更高。" '
+    'when the assistant is describing consequences, not asking for permission '
+    'or a decision\n'
     "\n"
     "Return strict JSON with this exact shape:\n"
     '{"has_question": true/false, "questions": '
@@ -153,8 +161,15 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     "- This can still count even without a literal question mark "
     'if the ending is a decision prompt like "please choose one", '
     '"tell me which to do first", or a soft permission prompt like '
-    'Chinese "是否 + action clause" / "如果你愿意，我可以..." / "如果你想，我可以...".\n'
-    "- Each question should have 2-4 options extracted from the message.\n"
+    'Chinese "是否 + action clause" / "如果你愿意，我可以..." / '
+    '"如果你想，我可以..." / "如果你要，我可以..." / '
+    '"如果继续，我可以...".\n'
+    "- For clear binary permission prompts without explicit options, synthesize "
+    "two concise options that preserve the intent, such as 继续/先别 or "
+    "开始/先不要.\n"
+    "- Each question should have 2-4 options, extracted from the message "
+    "when explicit, or synthesized for clear binary permission prompts "
+    "when implicit.\n"
     "- Option labels should be concise (1-5 words).\n"
     "- Option descriptions should briefly explain the trade-offs if mentioned.\n"
     "- Do not include markdown or any extra text.\n"
@@ -931,7 +946,97 @@ class KimiSoul:
                 "Turn-end question detection timed out after {timeout}s",
                 timeout=self._TURN_END_DETECT_TIMEOUT,
             )
+            return self._heuristic_turn_end_question(assistant_message.extract_text(" "))
+
+    def _turn_end_question_excerpt(self, text: str) -> str:
+        units = [
+            unit.strip()
+            for unit in re.split(r"(?:\r?\n)+|(?<=[。！？!?])\s*", text)
+            if unit.strip()
+        ]
+        if not units:
+            return text.strip()
+        return "\n".join(units[-3:])
+
+    def _heuristic_turn_end_question(
+        self,
+        assistant_text: str,
+    ) -> TurnEndQuestionDetection | None:
+        excerpt = self._turn_end_question_excerpt(assistant_text)
+        units = [
+            unit.strip().strip('"“”\'`')
+            for unit in re.split(r"(?:\r?\n)+|(?<=[。！？!?])\s*", excerpt)
+            if unit.strip()
+        ]
+        if not units:
             return None
+
+        for unit in reversed(units):
+            normalized = re.sub(r"\s+", "", unit)
+            if not normalized:
+                continue
+            if not any(
+                token in normalized
+                for token in (
+                    "如果你要",
+                    "如果你想",
+                    "如果你愿意",
+                    "如果你希望",
+                    "如果继续",
+                    "如果要继续",
+                )
+            ):
+                continue
+            if not any(
+                token in normalized
+                for token in (
+                    "我可以",
+                    "我就",
+                    "我会",
+                    "我现在就",
+                    "我现在可以",
+                    "我现在就可以",
+                )
+            ):
+                continue
+            if not any(
+                token in normalized
+                for token in (
+                    "继续",
+                    "开始",
+                    "按这个方案",
+                    "修改",
+                    "处理",
+                    "推进",
+                    "做下去",
+                    "改下去",
+                    "做下一轮",
+                    "做下一步",
+                )
+            ):
+                continue
+
+            continue_like = any(
+                token in normalized
+                for token in ("继续", "做下去", "改下去", "做下一轮", "做下一步")
+            )
+            if continue_like:
+                question = "要我继续吗？"
+                options = (
+                    TurnEndQuestionOption(label="继续", description="继续按当前方案往下做"),
+                    TurnEndQuestionOption(label="先别", description="先不要继续"),
+                )
+            else:
+                question = "要我现在开始吗？"
+                options = (
+                    TurnEndQuestionOption(label="开始", description="现在开始处理"),
+                    TurnEndQuestionOption(label="先别", description="先不要开始"),
+                )
+            return TurnEndQuestionDetection(
+                has_question=True,
+                questions=(TurnEndQuestionItem(question=question, options=options),),
+            )
+        return None
 
     async def _detect_turn_end_question_inner(
         self,
@@ -943,13 +1048,22 @@ class KimiSoul:
 
         # Strip thinking/reasoning content – only send text parts to the
         # side-channel so the detector sees the actual reply, not chain-of-thought.
+        # Focus the detector on the tail of the reply because the turn-end prompt
+        # is often only present in the last 1-3 sentences.
         # Wrap in a user message so the detector model clearly sees it as content
         # to analyze, not as its own prior output.
         text_only = assistant_message.extract_text(" ")
+        heuristic_detection = self._heuristic_turn_end_question(text_only)
+        excerpt = self._turn_end_question_excerpt(text_only)
         history: list[Message] = [
             Message(
                 role="user",
-                content=f"Analyze the following assistant message:\n\n{text_only}",
+                content=(
+                    "Analyze the following assistant message. Focus on the ending, "
+                    "but use the full message if earlier lines contain the options.\n\n"
+                    f"Ending excerpt:\n{excerpt}\n\n"
+                    f"Full message:\n{text_only}"
+                ),
             )
         ]
 
@@ -973,11 +1087,13 @@ class KimiSoul:
                 raise
             except Exception as exc:
                 logger.warning("Turn-end question detection failed: {error}", error=exc)
-                return None
+                return heuristic_detection
 
             raw_text = result.message.extract_text(" ")
             detection = self._parse_turn_end_question_payload(raw_text)
             if detection is not None:
+                if heuristic_detection is not None and not detection.has_question:
+                    return heuristic_detection
                 return detection
 
             if attempt < self._TURN_END_DETECT_MAX_ATTEMPTS:
@@ -993,7 +1109,7 @@ class KimiSoul:
                     attempts=self._TURN_END_DETECT_MAX_ATTEMPTS,
                 )
 
-        return None
+        return heuristic_detection
 
     def _parse_turn_end_question_payload(self, text: str) -> TurnEndQuestionDetection | None:
         payload_text = self._extract_json_payload(text)
