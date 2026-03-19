@@ -6,7 +6,7 @@ This repository uses VitePress for the documentation site. The current docs are 
 
 - Locales live under `docs/en/` and `docs/zh/` with mirrored paths and filenames.
 - Main sections (nav + sidebar) are:
-  - Guides: getting-started, use-cases, interaction, sessions, ides, integrations
+  - Guides: getting-started, use-cases, interaction, sessions, integrations
   - Customization: mcp, skills, agents, print-mode, wire-mode
   - Configuration: config-files, providers, overrides, env-vars, data-locations
   - Reference: kimi-command, kimi-acp, kimi-mcp, slash-commands, keyboard, tools, exit-codes

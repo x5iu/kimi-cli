@@ -12,8 +12,6 @@ from kimi_cli.constant import VERSION
 
 from .info import cli as info_cli
 from .mcp import cli as mcp_cli
-from .vis import cli as vis_cli
-from .web import cli as web_cli
 
 
 class Reload(Exception):
@@ -21,14 +19,6 @@ class Reload(Exception):
 
     def __init__(self, session_id: str | None = None):
         super().__init__("reload")
-        self.session_id = session_id
-
-
-class SwitchToWeb(Exception):
-    """Switch to web interface."""
-
-    def __init__(self, session_id: str | None = None):
-        super().__init__("switch_to_web")
         self.session_id = session_id
 
 
@@ -41,7 +31,7 @@ LLM friendly version: https://moonshotai.github.io/kimi-cli/llms.txt""",
     help="Kimi, your next CLI agent.",
 )
 
-UIMode = Literal["shell", "print", "acp", "wire"]
+UIMode = Literal["shell", "print", "wire"]
 InputFormat = Literal["text", "stream-json"]
 OutputFormat = Literal["text", "stream-json"]
 
@@ -185,13 +175,6 @@ def kimi(
             help=(
                 "Run in print mode (non-interactive). Note: print mode implicitly adds `--yolo`."
             ),
-        ),
-    ] = False,
-    acp_mode: Annotated[
-        bool,
-        typer.Option(
-            "--acp",
-            help="(Deprecated, use `kimi acp` instead) Run as ACP server.",
         ),
     ] = False,
     wire_mode: Annotated[
@@ -359,9 +342,9 @@ def kimi(
             raise typer.BadParameter("Session ID cannot be empty", param_hint="--session")
 
     if quiet:
-        if acp_mode or wire_mode:
+        if wire_mode:
             raise typer.BadParameter(
-                "Quiet mode cannot be combined with ACP or Wire UI",
+                "Quiet mode cannot be combined with Wire UI",
                 param_hint="--quiet",
             )
         if output_format not in (None, "text"):
@@ -376,7 +359,6 @@ def kimi(
     conflict_option_sets = [
         {
             "--print": print_mode,
-            "--acp": acp_mode,
             "--wire": wire_mode,
         },
         {
@@ -410,8 +392,6 @@ def kimi(
     ui: UIMode = "shell"
     if print_mode:
         ui = "print"
-    elif acp_mode:
-        ui = "acp"
     elif wire_mode:
         ui = "wire"
 
@@ -549,11 +529,6 @@ def kimi(
                         prompt,
                         final_only=final_message_only,
                     )
-                case "acp":
-                    if prompt is not None:
-                        logger.warning("ACP server ignores prompt argument")
-                    await instance.run_acp()
-                    succeeded = True
                 case "wire":
                     if prompt is not None:
                         logger.warning("Wire server ignores prompt argument")
@@ -597,11 +572,7 @@ def kimi(
 
         save_metadata(metadata)
 
-    async def _reload_loop(session_id: str | None) -> bool:
-        """
-        Returns:
-            True if should switch to web interface, False otherwise.
-        """
+    async def _reload_loop(session_id: str | None) -> None:
         while True:
             try:
                 last_session, succeeded = await _run(session_id)
@@ -609,17 +580,10 @@ def kimi(
             except Reload as e:
                 session_id = e.session_id
                 continue
-            except SwitchToWeb as e:
-                if e.session_id is not None:
-                    session = await Session.find(work_dir, e.session_id)
-                    if session is not None:
-                        await _post_run(session, True)
-                return True
         await _post_run(last_session, succeeded)
-        return False
 
     try:
-        switch_to_web = asyncio.run(_reload_loop(session_id))
+        asyncio.run(_reload_loop(session_id))
     except (typer.BadParameter, typer.Exit):
         # Let Typer/Click format these errors (rich panel + correct exit code).
         raise
@@ -643,24 +607,6 @@ def kimi(
             # In non-debug mode, print a concise error and point users to logs.
             _emit_fatal_error(f"{exc}\nSee logs: {log_path}")
         raise typer.Exit(code=1) from exc
-    if switch_to_web:
-        from kimi_cli.utils.logging import restore_stderr
-
-        restore_stderr()
-
-        # Restore default SIGINT handler and terminal state after the shell's
-        # asyncio.run() to ensure Ctrl+C works in the uvicorn web server.
-        import signal
-
-        signal.signal(signal.SIGINT, signal.default_int_handler)
-
-        from kimi_cli.utils.term import ensure_tty_sane
-
-        ensure_tty_sane()
-
-        from kimi_cli.web.app import run_web_server
-
-        run_web_server(open_browser=True)
 
 
 cli.add_typer(info_cli, name="info")
@@ -765,24 +711,6 @@ def logout(
         raise typer.Exit(code=1)
 
 
-@cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def term(
-    ctx: typer.Context,
-) -> None:
-    """Run Toad TUI backed by Kimi Code CLI ACP server."""
-    from .toad import run_term
-
-    run_term(ctx)
-
-
-@cli.command()
-def acp():
-    """Run Kimi Code CLI ACP server."""
-    from kimi_cli.acp import acp_main
-
-    acp_main()
-
-
 @cli.command(name="__background-task-worker", hidden=True)
 def background_task_worker(
     task_dir: Annotated[Path, typer.Option("--task-dir")],
@@ -809,30 +737,7 @@ def background_task_worker(
     )
 
 
-@cli.command(name="__web-worker", hidden=True)
-def web_worker(session_id: str) -> None:
-    """Run web worker subprocess (internal)."""
-    from uuid import UUID
-
-    from kimi_cli.utils.proctitle import set_process_title
-
-    set_process_title("kimi-code-worker")
-
-    from kimi_cli.app import enable_logging
-    from kimi_cli.web.runner.worker import run_worker
-
-    try:
-        parsed_session_id = UUID(session_id)
-    except ValueError as exc:
-        raise typer.BadParameter(f"Invalid session ID: {session_id}") from exc
-
-    enable_logging(debug=False)
-    asyncio.run(run_worker(parsed_session_id))
-
-
 cli.add_typer(mcp_cli, name="mcp")
-cli.add_typer(vis_cli, name="vis")
-cli.add_typer(web_cli, name="web")
 
 
 if __name__ == "__main__":

@@ -55,7 +55,7 @@ def get_project_skills_dir_candidates(work_dir: KaosPath) -> tuple[KaosPath, ...
 def _supports_builtin_skills() -> bool:
     """Return True when the active KAOS backend can read bundled skills."""
     current_name = get_current_kaos().name
-    return current_name in (local_kaos.name, "acp")
+    return current_name == local_kaos.name
 
 
 async def find_first_existing_dir(candidates: Iterable[KaosPath]) -> KaosPath | None:

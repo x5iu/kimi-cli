@@ -4,7 +4,7 @@ Wire mode is Kimi Code CLI's low-level communication protocol for structured bid
 
 ## What is Wire
 
-Wire is the message-passing layer used internally by Kimi Code CLI. When you interact via terminal, the Shell UI receives AI output through Wire and displays it; when you integrate with IDEs via ACP, the ACP server also communicates with the agent core through Wire.
+Wire is the message-passing layer used internally by Kimi Code CLI. When you interact via terminal, the Shell UI receives AI output through Wire and displays it; when you use `--wire`, external programs can communicate with the agent core through the same protocol.
 
 Wire mode (`--wire`) exposes this communication protocol, allowing external programs to interact directly with Kimi Code CLI. This is suitable for building custom UIs or embedding Kimi Code CLI into other applications.
 
@@ -855,7 +855,7 @@ Kimi Agent (Rust) is the Rust implementation of the Kimi Code CLI kernel, design
 
 ### Limitations
 
-- **Wire mode only**: No Shell/Print/ACP UI
+- **Wire mode only**: No Shell or Print UI
 - **Kimi provider only**: Does not support OpenAI, Anthropic, or other providers
 - **No Kimi account login**: No `login`/`logout` subcommands or `/login`, `/logout` slash commands; requires manual API key configuration
 - **No `--prompt`/`--command`**: Wire server does not accept initial prompts

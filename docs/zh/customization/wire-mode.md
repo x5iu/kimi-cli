@@ -4,7 +4,7 @@ Wire 模式是 Kimi Code CLI 的底层通信协议，用于与外部程序进行
 
 ## Wire 是什么
 
-Wire 是 Kimi Code CLI 内部使用的消息传递层。当你使用终端交互时，Shell UI 通过 Wire 接收 AI 的输出并显示；当你使用 ACP 集成到 IDE 时，ACP 服务器也通过 Wire 与 Agent 核心通信。
+Wire 是 Kimi Code CLI 内部使用的消息传递层。当你通过终端交互时，Shell UI 通过 Wire 接收 AI 的输出并显示；当你使用 `--wire` 时，外部程序也可以通过同一协议直接与 Agent 核心通信。
 
 Wire 模式（`--wire`）将这个通信协议暴露出来，允许外部程序直接与 Kimi Code CLI 交互。这适用于构建自定义 UI 或将 Kimi Code CLI 嵌入到其他应用中。
 
@@ -855,7 +855,7 @@ Kimi Agent (Rust) 是 Kimi Code CLI 内核的 Rust 实现，专为 Wire 模式�
 
 ### 限制
 
-- **仅支持 Wire 模式**：没有 Shell/Print/ACP UI
+- **仅支持 Wire 模式**：没有 Shell 或 Print UI
 - **仅支持 Kimi 供应商**：不支持 OpenAI、Anthropic 等其他供应商
 - **无 Kimi 账号登录功能**：没有 `login`/`logout` 子命令和 `/login`、`/logout` 斜杠命令，需要手动配置 API 密钥
 - **不支持 `--prompt`/`--command`**：Wire 服务器不接受初始提示词

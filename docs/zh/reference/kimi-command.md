@@ -88,10 +88,9 @@ kimi [OPTIONS] COMMAND [ARGS]
 |------|------|
 | `--print` | 以 Print 模式运行（非交互式），隐式启用 `--yolo` |
 | `--quiet` | `--print --output-format text --final-message-only` 的快捷方式 |
-| `--acp` | 以 ACP 服务器模式运行（已弃用，请使用 `kimi acp`） |
 | `--wire` | 以 Wire 服务器模式运行（实验性） |
 
-四个选项互斥，只能选择一个。默认使用 Shell 模式。详见 [Print 模式](../customization/print-mode.md) 和 [Wire 模式](../customization/wire-mode.md)。
+三个选项互斥，只能选择一个。默认使用 Shell 模式。详见 [Print 模式](../customization/print-mode.md) 和 [Wire 模式](../customization/wire-mode.md)。
 
 ## Print 模式选项
 
@@ -150,11 +149,7 @@ Thinking 模式需要模型支持。如果不指定，使用上次会话的设�
 | [`kimi login`](#kimi-login) | 登录 Kimi 账号 |
 | [`kimi logout`](#kimi-logout) | 登出 Kimi 账号 |
 | [`kimi info`](./kimi-info.md) | 显示版本和协议信息 |
-| [`kimi acp`](./kimi-acp.md) | 启动多会话 ACP 服务器 |
 | [`kimi mcp`](./kimi-mcp.md) | 管理 MCP 服务器配置 |
-| [`kimi term`](./kimi-term.md) | 启动 Toad 终端 UI |
-| [`kimi vis`](./kimi-vis.md) | 启动 Agent Tracing Visualizer（技术预览） |
-| [`kimi web`](./kimi-web.md) | 启动 Web UI 服务器 |
 
 ### `kimi login`
 
@@ -171,58 +166,3 @@ kimi login
 ```sh
 kimi logout
 ```
-
-### `kimi vis`
-
-::: warning 注意
-技术预览功能，可能不稳定。
-:::
-
-启动 Agent Tracing Visualizer，通过浏览器查看和分析会话追踪数据。
-
-```sh
-kimi vis [OPTIONS]
-```
-
-| 选项 | 简写 | 说明 |
-|------|------|------|
-| `--port INTEGER` | `-p` | 绑定的端口号（默认：`5495`） |
-| `--open / --no-open` | | 自动打开浏览器（默认：启用） |
-| `--reload` | | 启用自动重载（开发模式） |
-
-详见 [Agent Tracing Visualizer](./kimi-vis.md)。
-
-### `kimi web`
-
-启动 Web UI 服务器，通过浏览器访问 Kimi Code CLI。
-
-```sh
-kimi web [OPTIONS]
-```
-
-如果默认端口被占用，服务器会自动尝试下一个可用端口（默认范围 `5494`–`5503`），并在终端打印提示。
-
-| 选项 | 简写 | 说明 |
-|------|------|------|
-| `--host TEXT` | `-h` | 绑定的主机地址（默认：`127.0.0.1`） |
-| `--port INTEGER` | `-p` | 绑定的端口号（默认：`5494`） |
-| `--reload` | | 启用自动重载（开发模式） |
-| `--open / --no-open` | | 自动打开浏览器（默认：启用） |
-
-示例：
-
-```sh
-# 默认启动，自动打开浏览器
-kimi web
-
-# 指定端口
-kimi web --port 8080
-
-# 不自动打开浏览器
-kimi web --no-open
-
-# 绑定到所有网络接口（允许局域网访问）
-kimi web --host 0.0.0.0
-```
-
-详见 [Web UI](./kimi-web.md)。

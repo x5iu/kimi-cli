@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from kimi_cli.soul.message import INTERNAL_USER_NAME
-from kimi_cli.web.api.sessions import truncate_context_at_turn
+from kimi_cli.utils.session_history import truncate_context_at_turn
 
 
 def _write_context(path: Path, records: list[dict[str, object]]) -> None:

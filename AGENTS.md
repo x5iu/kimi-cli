@@ -14,7 +14,7 @@ If running tools directly, use `uv run ...`.
 ## Project overview
 
 Kimi Code CLI is a Python CLI agent for software engineering workflows. It supports an interactive
-shell UI, ACP server mode for IDE integrations, and MCP tool loading.
+shell UI, print/wire execution modes, and MCP tool loading.
 
 ## Tech stack
 
@@ -57,8 +57,8 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
 - **Approvals**: `src/kimi_cli/soul/approval.py` mediates user approvals for tool actions; the
   soul forwards approval requests over `Wire` for UI handling.
 - **UI/Wire**: `src/kimi_cli/soul/run_soul` connects `KimiSoul` to a `Wire`
-  (`src/kimi_cli/wire/`) so UI loops can stream events. UIs live in `src/kimi_cli/ui/`
-  (shell/print/acp/wire).
+  (`src/kimi_cli/wire/`) so UI loops can stream events. Interactive frontends live in
+  `src/kimi_cli/ui/` (shell/print), and Wire stdio serving lives under `src/kimi_cli/wire/`.
 - **Shell UI**: `src/kimi_cli/ui/shell/` handles interactive TUI input, shell command mode,
   slash command autocomplete, background-task toasts, and the persistent bottom input box.
   During an active turn, the shell now switches into a single prompt_toolkit Application that
@@ -89,7 +89,7 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
 - `src/kimi_cli/soul/context.py`: conversation history + checkpoints; used by DMail for
   checkpointed replies.
 - `src/kimi_cli/soul/toolset.py`: load tools, run tool calls, bridge to MCP tools.
-- `src/kimi_cli/ui/*`: shell/print/acp frontends; they consume `Wire` messages.
+- `src/kimi_cli/ui/*`: shell/print frontends; they consume `Wire` messages.
 - `src/kimi_cli/wire/*`: event types and transport used between soul and UI.
 
 ## Repo map
@@ -100,8 +100,8 @@ shell UI, ACP server mode for IDE integrations, and MCP tool loading.
 - `src/kimi_cli/background/`: background bash task models, store, manager, worker
 - `src/kimi_cli/notifications/`: notification persistence, delivery, and shell/LLM adapters
 - `src/kimi_cli/tools/`: built-in tools, including compacted-context recall and background task tools
-- `src/kimi_cli/ui/`: UI frontends (shell/print/acp/wire)
-- `src/kimi_cli/acp/`: ACP server components
+- `src/kimi_cli/ui/`: UI frontends (shell/print)
+- `src/kimi_cli/wire/`: Wire protocol and stdio server
 - `packages/kosong/`, `packages/kaos/`: workspace deps
   + Kosong is an LLM abstraction layer designed for modern AI agent applications.
     It unifies message structures, asynchronous tool orchestration, and pluggable

@@ -487,12 +487,12 @@ def test_wire_message_type_alias():
 
 
 def test_read_wire_lines_request_id(tmp_path: Path):
-    """Verify _read_wire_lines emits a top-level JSON-RPC ``id`` for request messages.
+    """Verify ``read_wire_lines`` emits a top-level JSON-RPC ``id`` for request messages.
 
     wire.jsonl stores messages as ``{"type": "QuestionRequest", "payload": {"id": ..., ...}}``.
-    The ``id`` lives inside ``payload``, NOT at the top of ``message``.  _read_wire_lines
-    must extract it to the top-level ``id`` field of the JSON-RPC envelope so that the
-    frontend client can correlate responses.
+    The ``id`` lives inside ``payload``, NOT at the top of ``message``. ``read_wire_lines``
+    must extract it to the top-level ``id`` field of the JSON-RPC envelope so that callers
+    can correlate responses.
 
     Regression test for a bug where ``message_raw.get("id")`` was used instead of
     ``message.id``, always producing an empty string.
@@ -500,7 +500,7 @@ def test_read_wire_lines_request_id(tmp_path: Path):
     import json
     import time
 
-    from kimi_cli.web.api.sessions import _read_wire_lines
+    from kimi_cli.utils.session_history import read_wire_lines
 
     # Build a realistic wire.jsonl with request and event messages
     wire_file = tmp_path / "wire.jsonl"
@@ -536,7 +536,7 @@ def test_read_wire_lines_request_id(tmp_path: Path):
     wire_file.write_text("\n".join(records) + "\n")
 
     # Parse
-    lines = _read_wire_lines(wire_file)
+    lines = read_wire_lines(wire_file)
     assert len(lines) == 3
 
     parsed = [json.loads(line) for line in lines]

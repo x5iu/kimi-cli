@@ -17,19 +17,19 @@ from rich.text import Text
 
 from kimi_cli.notifications import NotificationWatcher
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
+from kimi_cli.soul.input_validation import validate_live_user_input
 from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.soul.message import check_message
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.prompt import (
     CustomPromptSession,
     PromptMode,
     TurnSubmitResult,
     UserInput,
-    toast,
 )
 from kimi_cli.ui.shell.replay import replay_recent_history
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.ui.shell.slash import shell_mode_registry
+from kimi_cli.ui.shell.toast import toast
 from kimi_cli.ui.shell.visualize import LiveView, render_user_prompt_block, visualize
 from kimi_cli.utils.logging import open_original_stderr
 from kimi_cli.utils.message import message_stringify
@@ -237,13 +237,12 @@ class Shell:
                 return TurnSubmitResult.accept()
             if not isinstance(self.soul, KimiSoul):
                 return TurnSubmitResult.reject()
-            if self.soul.runtime.llm is None:
+            try:
+                validate_live_user_input(self.soul.runtime.llm, turn_input.content)
+            except LLMNotSet:
                 return TurnSubmitResult.reject('LLM not set, send "/login" to login')
-            reminder_message = Message(role="user", content=turn_input.content)
-            if missing_caps := check_message(reminder_message, self.soul.runtime.llm.capabilities):
-                return TurnSubmitResult.reject(
-                    str(LLMNotSupported(self.soul.runtime.llm, list(missing_caps)))
-                )
+            except LLMNotSupported as e:
+                return TurnSubmitResult.reject(str(e))
             self.soul.steer(turn_input.content)
             live_view.echo_reminder(self._display_user_input(turn_input))
             return TurnSubmitResult.accept(persist_history=True)
@@ -443,7 +442,7 @@ class Shell:
         self._background_tasks.clear()
 
     async def _run_slash_command(self, command_call: SlashCommandCall) -> None:
-        from kimi_cli.cli import Reload, SwitchToWeb
+        from kimi_cli.cli import Reload
 
         if command_call.name not in self._slash_command_lookup:
             logger.info("Unknown slash command /{command}", command=command_call.name)
@@ -469,7 +468,7 @@ class Shell:
             ret = command.func(self, command_call.args)
             if isinstance(ret, Awaitable):
                 await ret
-        except (Reload, SwitchToWeb):
+        except Reload:
             # just propagate
             raise
         except (asyncio.CancelledError, KeyboardInterrupt):

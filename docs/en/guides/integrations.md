@@ -1,6 +1,6 @@
 # Integrations with Tools
 
-Besides using in the terminal and IDEs, Kimi Code CLI can also be integrated with other tools.
+Besides using in the terminal, Kimi Code CLI can also be integrated with other tools.
 
 ## Zsh plugin
 

@@ -201,7 +201,7 @@ Kimi reads REDLINING.md or OOXML.md only when the user needs those features.
 ## Skill Locations and Discovery
 
 Kimi Code CLI loads skills in layers (built-in -> user -> project). Within each layer, it uses the
-first existing directory in priority order. Built-in skills only load for LocalKaos or ACPKaos.
+first existing directory in priority order. Built-in skills only load for LocalKaos.
 
 **User level** (by priority):
 - `~/.config/agents/skills/` (recommended)

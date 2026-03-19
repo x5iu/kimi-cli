@@ -26,8 +26,6 @@ def test_pyinstaller_datas():
         for path, dst in datas
     ]
 
-    datas = [(p, d) for p, d in datas if "web/static" not in d]
-
     expected_datas = [
         (
             f"{site_packages}/dateparser/data/dateparser_tz_cache.pkl",
@@ -81,13 +79,30 @@ def test_pyinstaller_datas():
         ),
         ("src/kimi_cli/tools/ask_user/description.md", "kimi_cli/tools/ask_user"),
         (
+            "src/kimi_cli/tools/background/list.md",
+            "kimi_cli/tools/background",
+        ),
+        (
+            "src/kimi_cli/tools/background/output.md",
+            "kimi_cli/tools/background",
+        ),
+        (
+            "src/kimi_cli/tools/background/stop.md",
+            "kimi_cli/tools/background",
+        ),
+        (
+            "src/kimi_cli/tools/context/description.md",
+            "kimi_cli/tools/context",
+        ),
+        (
             "src/kimi_cli/tools/dmail/dmail.md",
             "kimi_cli/tools/dmail",
         ),
         (
             "src/kimi_cli/tools/file/edit.md",
             "kimi_cli/tools/file",
-        ),        (
+        ),
+        (
             "src/kimi_cli/tools/file/glob.md",
             "kimi_cli/tools/file",
         ),
@@ -148,6 +163,9 @@ def test_pyinstaller_hiddenimports():
         [
             "kimi_cli.tools",
             "kimi_cli.tools.ask_user",
+            "kimi_cli.tools.background",
+            "kimi_cli.tools.context",
+            "kimi_cli.tools.context.recall_compacted",
             "kimi_cli.tools.display",
             "kimi_cli.tools.dmail",
             "kimi_cli.tools.file",

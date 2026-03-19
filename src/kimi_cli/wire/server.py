@@ -3,17 +3,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import sys
 from typing import Any, cast
 
-import acp
 import pydantic
 from kosong.chat_provider import ChatProviderError
 from kosong.tooling import ToolError, ToolResult
 from kosong.utils.typing import JsonType
 
 from kimi_cli.constant import USER_AGENT
-from kimi_cli.notifications import NotificationWatcher
+from kimi_cli.notifications import NotificationView, NotificationWatcher
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
+from kimi_cli.soul.input_validation import validate_live_user_input
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import KimiToolset, WireExternalTool
 from kimi_cli.utils.aioqueue import Queue, QueueShutDown
@@ -56,19 +57,68 @@ from .jsonrpc import (
     Statuses,
 )
 
-# Maximum buffer size for the asyncio StreamReader used for stdio.
-# Passed as the `limit` argument to `acp.stdio_streams`, this caps how much
-# data can be buffered when reading from stdin (e.g., large tool or model
-# outputs sent over JSON-RPC). A 100MB limit is large enough for typical
-# interactive use while still protecting the process from unbounded memory
-# growth or buffer-overrun errors when peers send unexpectedly large payloads.
+# Maximum line size to read from stdin for Wire-over-stdio.
+# A 100MB limit is large enough for typical interactive use while still
+# protecting the process from unbounded memory growth when peers send
+# unexpectedly large payloads.
 STDIO_BUFFER_LIMIT = 100 * 1024 * 1024
+
+
+def _stdin_readline(limit: int) -> bytes:
+    stream = getattr(sys.stdin, "buffer", None)
+    if stream is not None:
+        return stream.readline(limit)
+    line = sys.stdin.readline(limit)
+    return line.encode("utf-8", errors="replace")
+
+
+def _stdout_write(data: bytes) -> None:
+    stream = getattr(sys.stdout, "buffer", None)
+    if stream is not None:
+        stream.write(data)
+        stream.flush()
+        return
+    sys.stdout.write(data.decode("utf-8", errors="replace"))
+    sys.stdout.flush()
+
+
+class _AsyncStdioReader:
+    def __init__(self, *, limit: int) -> None:
+        self._limit = limit
+
+    async def readline(self) -> bytes:
+        return await asyncio.to_thread(_stdin_readline, self._limit)
+
+
+class _AsyncStdioWriter:
+    def __init__(self) -> None:
+        self._closed = False
+        self._buffer = bytearray()
+
+    def write(self, data: bytes) -> None:
+        if self._closed:
+            raise RuntimeError("Wire stdio writer is closed")
+        self._buffer.extend(data)
+
+    async def drain(self) -> None:
+        if self._closed or not self._buffer:
+            return
+        data = bytes(self._buffer)
+        self._buffer.clear()
+        await asyncio.to_thread(_stdout_write, data)
+
+    def close(self) -> None:
+        self._closed = True
+        self._buffer.clear()
+
+    async def wait_closed(self) -> None:
+        return
 
 
 class WireServer:
     def __init__(self, soul: Soul):
-        self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
+        self._reader: _AsyncStdioReader | None = None
+        self._writer: _AsyncStdioWriter | None = None
 
         # outward
         self._write_task: asyncio.Task[None] | None = None
@@ -91,7 +141,8 @@ class WireServer:
     async def serve(self) -> None:
         logger.info("Starting Wire server on stdio")
 
-        self._reader, self._writer = await acp.stdio_streams(limit=STDIO_BUFFER_LIMIT)
+        self._reader = _AsyncStdioReader(limit=STDIO_BUFFER_LIMIT)
+        self._writer = _AsyncStdioWriter()
         self._write_task = asyncio.create_task(self._write_loop())
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -324,7 +375,7 @@ class WireServer:
         except QueueShutDown:
             logger.error("Send queue shut down; dropping message: {msg}", msg=msg)
 
-    async def _send_notification(self, view) -> None:
+    async def _send_notification(self, view: NotificationView) -> None:
         notice = NotificationNotice(
             id=view.event.id,
             category=view.event.category,
@@ -515,6 +566,7 @@ class WireServer:
                 ),
             )
 
+        self._ensure_notification_watcher()
         self._cancel_event = asyncio.Event()
         try:
             await run_soul(
@@ -583,6 +635,22 @@ class WireServer:
                 error=JSONRPCErrorObject(
                     code=ErrorCodes.INVALID_STATE,
                     message="No agent turn is in progress",
+                ),
+            )
+
+        try:
+            validate_live_user_input(self._soul.runtime.llm, msg.params.user_input)
+        except LLMNotSet:
+            return JSONRPCErrorResponse(
+                id=msg.id,
+                error=JSONRPCErrorObject(code=ErrorCodes.LLM_NOT_SET, message="LLM is not set"),
+            )
+        except LLMNotSupported as e:
+            return JSONRPCErrorResponse(
+                id=msg.id,
+                error=JSONRPCErrorObject(
+                    code=ErrorCodes.LLM_NOT_SUPPORTED,
+                    message=str(e),
                 ),
             )
 

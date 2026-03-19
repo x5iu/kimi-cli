@@ -13,14 +13,10 @@ Kimi Code CLI is suited for:
 Kimi Code CLI supports the following usage modes:
 
 - **[Interactive CLI (`kimi`)](../reference/kimi-command.md)**: Chat with AI in the terminal using natural language or execute shell commands directly
-- **[Browser UI (`kimi web`)](../reference/kimi-web.md)**: Open a graphical interface in your local browser, with session management, file references, code highlighting, and more
-- **[Agent integration (`kimi acp`)](../reference/kimi-acp.md)**: Run as a service and integrate with [IDEs](./ides.md) and other local agent clients via the [Agent Client Protocol]
 
 ::: info Tip
 If you encounter issues or have suggestions, please provide feedback on [GitHub Issues](https://github.com/MoonshotAI/kimi-cli/issues).
 :::
-
-[Agent Client Protocol]: https://agentclientprotocol.com/
 
 ## Installation
 

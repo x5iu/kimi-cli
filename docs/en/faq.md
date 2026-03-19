@@ -42,17 +42,6 @@ Solutions:
 - **Switch to an image-capable model**: Use a model that supports the `image_in` capability.
 - **Check clipboard content**: Make sure the clipboard contains actual image data, not just a file path to an image.
 
-## ACP issues
-
-### IDE cannot connect to Kimi Code CLI
-
-If your IDE (like Zed or JetBrains IDEs) cannot connect to Kimi Code CLI, check the following:
-
-- **Confirm Kimi Code CLI is installed**: Run `kimi --version` to confirm successful installation.
-- **Check configuration path**: Ensure the Kimi Code CLI path in IDE configuration is correct. You can typically use `kimi acp` as the command.
-- **Check uv path**: If installed via uv, ensure `~/.local/bin` is in PATH. You can use an absolute path like `/Users/yourname/.local/bin/kimi acp`.
-- **Check logs**: Examine error messages in `~/.kimi/logs/kimi.log`.
-
 ## MCP issues
 
 ### MCP server startup fails

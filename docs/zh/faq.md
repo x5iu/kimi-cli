@@ -42,17 +42,6 @@ API 密钥无效可能的原因：
 - **切换到支持图片的模型**：使用支持 `image_in` 能力的模型。
 - **检查剪贴板内容**：确保剪贴板中确实有图片数据，而非图片文件的路径。
 
-## ACP 问题
-
-### IDE 无法连接到 Kimi Code CLI
-
-如果 IDE（如 Zed 或 JetBrains IDE）无法连接到 Kimi Code CLI，请检查以下几点：
-
-- **确认 Kimi Code CLI 已安装**：运行 `kimi --version` 确认安装成功。
-- **检查配置路径**：确保 IDE 配置中的 Kimi Code CLI 路径正确。通常可以使用 `kimi acp` 作为命令。
-- **检查 uv 路径**：如果使用 uv 安装，确保 `~/.local/bin` 在 PATH 中。可以使用绝对路径，如 `/Users/yourname/.local/bin/kimi acp`。
-- **查看日志**：检查 `~/.kimi/logs/kimi.log` 中的错误信息。
-
 ## MCP 问题
 
 ### MCP 服务启动失败

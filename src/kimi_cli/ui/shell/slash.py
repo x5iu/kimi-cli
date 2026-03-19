@@ -7,7 +7,7 @@ from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 
 from kimi_cli.auth.platforms import get_platform_name_for_provider, refresh_managed_models
 from kimi_cli.background import format_task_list, list_task_views
-from kimi_cli.cli import Reload, SwitchToWeb
+from kimi_cli.cli import Reload
 from kimi_cli.config import load_config, save_config
 from kimi_cli.exception import ConfigError
 from kimi_cli.session import Session
@@ -489,14 +489,6 @@ def task(app: Shell, args: str):
 
     active = list_task_views(soul.runtime.background_tasks, active_only=True, limit=20)
     console.print(format_task_list(active, active_only=True), markup=False)
-
-
-@registry.command
-def web(app: Shell, args: str):
-    """Open Kimi Code Web UI in browser"""
-    soul = ensure_kimi_soul(app)
-    session_id = soul.runtime.session.id if soul else None
-    raise SwitchToWeb(session_id=session_id)
 
 
 @registry.command
