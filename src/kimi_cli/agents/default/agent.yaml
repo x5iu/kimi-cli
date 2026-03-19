@@ -11,6 +11,7 @@ agent:
     # - "kimi_cli.tools.think:Think"
     - "kimi_cli.tools.ask_user:AskUserQuestion"
     - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.todo:ExecuteTodo"
     - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.background:TaskList"
     - "kimi_cli.tools.background:TaskOutput"

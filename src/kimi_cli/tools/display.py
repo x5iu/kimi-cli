@@ -3,6 +3,9 @@ from typing import Literal
 from kosong.tooling import DisplayBlock
 from pydantic import BaseModel
 
+TodoStatus = Literal["pending", "in_progress", "done", "blocked"]
+TodoExecutor = Literal["main", "task", "background_shell"]
+
 
 class DiffDisplayBlock(DisplayBlock):
     """Display block describing a file diff."""
@@ -17,7 +20,10 @@ class DiffDisplayBlock(DisplayBlock):
 
 class TodoDisplayItem(BaseModel):
     title: str
-    status: Literal["pending", "in_progress", "done"]
+    status: TodoStatus
+    executor: TodoExecutor | None = None
+    subagent_name: str | None = None
+    done_when: str | None = None
 
 
 class TodoDisplayBlock(DisplayBlock):

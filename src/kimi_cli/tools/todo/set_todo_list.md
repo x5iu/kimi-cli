@@ -1,10 +1,20 @@
 Update the whole todo list.
 
-Todo list is a simple yet powerful tool to help you get things done. You typically want to use this tool when the given task involves multiple subtasks/milestones, or, multiple tasks are given in a single request. This tool can help you to break down the task and track the progress.
+Todo list is a simple yet powerful tool to help you get things done. You typically want to use this tool when the given task involves multiple subtasks/milestones, or, multiple tasks are given in a single request. This tool can help you break down the work, track the progress, and coordinate delegated work.
 
-This is the only todo list tool available to you. That said, each time you want to operate on the todo list, you need to update the whole. Make sure to maintain the todo items and their statuses properly.
+This is the only todo list tool available to you. That said, each time you want to operate on the todo list, you need to update the whole. Make sure to maintain the todo items and their statuses properly. Valid statuses are `pending`, `in_progress`, `done`, and `blocked`.
 
-Once you finished a subtask/milestone, remember to update the todo list to reflect the progress. Also, you can give yourself a self-encouragement to keep you motivated.
+Todo items can also act as a lightweight execution plan:
+
+- Prefer `executor="task"` for narrow, independent work that a subagent can finish and summarize back.
+- If multiple todo items are independent, you may launch multiple `Task` calls in the same response.
+- Keep todo titles unique when you plan to execute them later via `ExecuteTodo`.
+- Set `subagent_name` when you already know which subagent should do the work.
+- Use `done_when` to record a short completion criterion when it helps keep the plan grounded.
+- When a stored task-backed todo should run now, prefer `ExecuteTodo` over manually chaining `SetTodoList` -> `Task` -> `SetTodoList`.
+- After each `Task` returns, update the whole todo list to reflect progress or blockers.
+
+The root agent owns the todo list. Subagents must not update it directly.
 
 Abusing this tool to track too small steps will just waste your time and make your context messy. For example, here are some cases you should not use this tool:
 

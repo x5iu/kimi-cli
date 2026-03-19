@@ -9,7 +9,9 @@ Here are some scenarios you may want this tool for context isolation:
 - You wrote some code and it did not work as expected. In this case you can spawn a subagent to fix the code, asking the subagent to return how it is fixed. This can potentially benefit because the detailed process of fixing the code may not be relevant to your main goal, and may clutter your context.
 - When you need some latest knowledge of a specific library, framework or technology to proceed with your task, you can spawn a subagent to search on the internet for the needed information and return to you the gathered relevant information, for example code examples, API references, etc. This can avoid ton of irrelevant search results in your own context.
 
-DO NOT directly forward the user prompt to Task tool. DO NOT simply spawn Task tool for each todo item. This will cause the user confused because the user cannot see what the subagent do. Only you can see the response from the subagent. So, only spawn subagents for very specific and narrow tasks like fixing a compilation error, or searching for a specific solution.
+DO NOT directly forward the user prompt to Task tool. Do not blindly spawn one subagent for every todo item. Only use subagents for very specific and narrow tasks with clear inputs and expected outputs, such as fixing a compilation error or searching for a specific solution. It is appropriate to use `Task` for todo items that are narrow, independent, and easy to summarize back to the user.
+
+When working with `SetTodoList`, the root agent should keep the todo list aligned with delegated work: mark delegated items `in_progress` when you start them, and update them to `done` or `blocked` after the subagent returns. If the todo already exists in the stored session todo list, prefer `ExecuteTodo` so the state update is handled for you.
 
 **Parallel Multi-Tasking**
 

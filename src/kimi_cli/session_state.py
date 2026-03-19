@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -21,7 +22,19 @@ class DynamicSubagentSpec(BaseModel):
     system_prompt: str
 
 
+class TodoStateItem(BaseModel):
+    title: str
+    status: Literal["pending", "in_progress", "done", "blocked"]
+    executor: Literal["main", "task", "background_shell"] | None = None
+    subagent_name: str | None = None
+    done_when: str | None = None
+
+
 def _default_dynamic_subagents() -> list[DynamicSubagentSpec]:
+    return []
+
+
+def _default_todos() -> list[TodoStateItem]:
     return []
 
 
@@ -31,6 +44,7 @@ class SessionState(BaseModel):
     dynamic_subagents: list[DynamicSubagentSpec] = Field(default_factory=_default_dynamic_subagents)
     additional_dirs: list[str] = Field(default_factory=list)
     plan_mode: bool = False
+    todos: list[TodoStateItem] = Field(default_factory=_default_todos)
 
 
 def load_session_state(session_dir: Path) -> SessionState:

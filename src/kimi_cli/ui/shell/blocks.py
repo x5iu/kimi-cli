@@ -13,6 +13,7 @@ from rich.text import Text
 
 from kimi_cli.soul import format_context_status
 from kimi_cli.tools import extract_key_argument
+from kimi_cli.tools.todo_text import ready_to_execute_todo_text, todo_label
 from kimi_cli.utils.rich.columns import BulletColumns
 from kimi_cli.utils.rich.diff import EDIT_DIFF_LINE_NUMBER_TOOLS, render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
@@ -24,6 +25,7 @@ from kimi_cli.wire.types import (
     StatusUpdate,
     TextPart,
     TodoDisplayBlock,
+    TodoDisplayItem,
     ToolCall,
     ToolCallPart,
     ToolResult,
@@ -33,6 +35,26 @@ from kimi_cli.wire.types import (
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
+
+
+_TOOL_HEADLINE_VERBS: dict[str, tuple[str, str]] = {
+    "SetTodoList": ("Updating", "Updated"),
+    "ExecuteTodo": ("Executing", "Executed"),
+}
+
+_TOOL_HEADLINE_NAMES: dict[str, str] = {
+    "SetTodoList": "Todo List",
+    "ExecuteTodo": "Todo",
+}
+
+
+def _set_todo_list_activity_argument(argument: str | None) -> str | None:
+    if not argument:
+        return None
+    marker = "; ready: "
+    if marker not in argument:
+        return None
+    return f"ready: {argument.split(marker, 1)[1]}"
 
 
 class _ContentBlock:
@@ -264,18 +286,26 @@ class _ToolCallBlock:
 
     @property
     def status_text(self) -> str:
+        if self._tool_name == "SetTodoList":
+            activity_argument = _set_todo_list_activity_argument(self._argument)
+            if activity_argument:
+                return f"Updating Todo List ({activity_argument})"
         return self._headline_plain(finished=False)
 
     def _headline_plain(self, *, finished: bool) -> str:
-        text = f"{'Used' if finished else 'Using'} {self._tool_name}"
+        present, past = _TOOL_HEADLINE_VERBS.get(self._tool_name, ("Using", "Used"))
+        display_name = _TOOL_HEADLINE_NAMES.get(self._tool_name, self._tool_name)
+        text = f"{past if finished else present} {display_name}"
         if self._argument:
             text += f" ({self._argument})"
         return text
 
     def _build_headline_text(self) -> Text:
+        present, past = _TOOL_HEADLINE_VERBS.get(self._tool_name, ("Using", "Used"))
+        display_name = _TOOL_HEADLINE_NAMES.get(self._tool_name, self._tool_name)
         text = Text()
-        text.append("Used " if self.finished else "Using ")
-        text.append(self._tool_name, style="blue")
+        text.append(f"{past if self.finished else present} ")
+        text.append(display_name, style="blue")
         if self._argument:
             text.append(" (", style="grey50")
             arg_style = Style(color="grey50", link=self._full_url) if self._full_url else "grey50"
@@ -384,19 +414,50 @@ class _ToolCallBlock:
             return "".join(part.text for part in output if isinstance(part, TextPart))
         return ""
 
+    @staticmethod
+    def _render_todo_meta(todo: TodoDisplayItem) -> str:
+        details: list[str] = []
+        match todo.executor:
+            case "task":
+                target = f":{todo.subagent_name}" if todo.subagent_name else ""
+                details.append(f"`Task{target}`")
+            case "background_shell":
+                details.append("`Shell(bg)`")
+            case "main":
+                details.append("`main`")
+        if todo.done_when:
+            details.append(f"when: {todo.done_when}")
+        return f" — {' · '.join(details)}" if details else ""
+
+    @staticmethod
+    def _short_todo_label(todo: TodoDisplayItem) -> str:
+        return todo_label(todo.title, todo.subagent_name)
+
     def _render_todo_markdown(self, block: TodoDisplayBlock) -> str:
         lines: list[str] = []
         for todo in block.items:
+            meta = self._render_todo_meta(todo)
             normalized = todo.status.replace("_", " ").lower()
             match normalized:
                 case "pending":
-                    lines.append(f"- {todo.title}")
+                    lines.append(f"- {todo.title}{meta}")
                 case "in progress":
-                    lines.append(f"- {todo.title} ←")
+                    lines.append(f"- {todo.title}{meta} ←")
                 case "done":
-                    lines.append(f"- ~~{todo.title}~~")
+                    lines.append(f"- ~~{todo.title}~~{meta}")
+                case "blocked":
+                    lines.append(f"- {todo.title}{meta} (blocked)")
                 case _:
-                    lines.append(f"- {todo.title}")
+                    lines.append(f"- {todo.title}{meta}")
+
+        ready_to_execute = [
+            self._short_todo_label(todo)
+            for todo in block.items
+            if todo.executor == "task" and todo.status == "pending"
+        ]
+        if len(ready_to_execute) == 1:
+            lines.extend(["", ready_to_execute_todo_text(ready_to_execute[0])])
+
         return "\n".join(lines)
 
 

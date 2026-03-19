@@ -1,10 +1,11 @@
 import json
-from typing import cast
+from typing import Any, cast
 
 import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 from kaos.path import KaosPath
 from kosong.utils.typing import JsonType
 
+from kimi_cli.tools.todo_text import todo_label
 from kimi_cli.utils.string import shorten_middle
 
 
@@ -12,6 +13,54 @@ class SkipThisTool(Exception):
     """Raised when a tool decides to skip itself from the loading process."""
 
     pass
+
+
+def _todo_label_from_dict(todo: dict[str, Any]) -> str | None:
+    title = todo.get("title")
+    if not title:
+        return None
+    subagent_name = todo.get("subagent_name")
+    return todo_label(
+        str(title),
+        str(subagent_name) if subagent_name else None,
+    )
+
+
+def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
+    todos = curr_args.get("todos")
+    if not isinstance(todos, list):
+        return None
+    if not todos:
+        return "empty"
+
+    ready_task_todos: list[str] = []
+    n_in_progress = 0
+    for todo in todos:
+        if not isinstance(todo, dict):
+            continue
+        if todo.get("status") == "in_progress":
+            n_in_progress += 1
+        label = _todo_label_from_dict(todo)
+        if todo.get("executor") == "task" and todo.get("status") == "pending" and label:
+            ready_task_todos.append(label)
+
+    summary = f"{len(todos)} todos"
+    if len(ready_task_todos) == 1:
+        return f"{summary}; ready: {ready_task_todos[0]}"
+    if n_in_progress:
+        return f"{summary}; active={n_in_progress}"
+    return summary
+
+
+def _summarize_execute_todo_argument(curr_args: dict[str, Any]) -> str | None:
+    title = curr_args.get("title")
+    if not title:
+        return None
+    key_argument = str(title)
+    subagent_name = curr_args.get("subagent_name")
+    if subagent_name:
+        key_argument += f" @{subagent_name}"
+    return key_argument
 
 
 def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str) -> str | None:
@@ -43,7 +92,17 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
                 return None
             key_argument = str(curr_args["thought"])
         case "SetTodoList":
-            return None
+            if not isinstance(curr_args, dict):
+                return None
+            key_argument = _summarize_set_todo_list_argument(curr_args)
+            if key_argument is None:
+                return None
+        case "ExecuteTodo":
+            if not isinstance(curr_args, dict):
+                return None
+            key_argument = _summarize_execute_todo_argument(curr_args)
+            if key_argument is None:
+                return None
         case "Shell":
             if not isinstance(curr_args, dict) or not curr_args.get("command"):
                 return None
