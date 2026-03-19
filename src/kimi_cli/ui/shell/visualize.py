@@ -985,12 +985,16 @@ class LiveView:
         while self._approval_request_queue:
             # should not happen, but just in case
             self._approval_request_queue.popleft().resolve("reject")
-        self._current_approval_request_panel = None
+        if self._current_approval_request_panel is not None:
+            self._current_approval_request_panel.request.resolve("reject")
+            self._current_approval_request_panel = None
         self._reject_all_following = False
 
         while self._question_request_queue:
             self._question_request_queue.popleft().resolve({})
-        self._current_question_panel = None
+        if self._current_question_panel is not None:
+            self._current_question_panel.request.resolve({})
+            self._current_question_panel = None
         self._question_waiting_for_other_text = False
 
     def flush_content(self) -> None:

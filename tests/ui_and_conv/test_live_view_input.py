@@ -725,13 +725,12 @@ def test_live_view_compose_active_body_can_reveal_streaming_content_behind_quest
         )
     )
 
-    rendered = view._renderable_to_ansi(
-        view.compose_active_body(
-            include_running_indicators=False,
-            focus_pending_input_panel=False,
-        ),
-        80,
+    body = view.compose_active_body(
+        include_running_indicators=False,
+        focus_pending_input_panel=False,
     )
+    assert body is not None
+    rendered = view._renderable_to_ansi(body, 80)
 
     assert "streaming block" in rendered
     assert "Which format should I use?" not in rendered
@@ -807,3 +806,176 @@ def test_live_view_renders_skill_reminder_notice() -> None:
     assert "╭" in rendered
     assert "/skill:gen-docs" in rendered
     assert "main flow" in rendered
+
+
+@pytest.mark.asyncio
+async def test_live_view_approve_for_session_resolves_matching_queued_approvals() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)
+    request1 = ApprovalRequest(
+        id="req-1",
+        tool_call_id="tool-1",
+        sender="WriteFile",
+        action="edit files",
+        description="Apply the requested changes.",
+    )
+    request2 = ApprovalRequest(
+        id="req-2",
+        tool_call_id="tool-2",
+        sender="Edit",
+        action="edit files",
+        description="Apply the requested changes.",
+    )
+    request3 = ApprovalRequest(
+        id="req-3",
+        tool_call_id="tool-3",
+        sender="Shell",
+        action="run command",
+        description="Run command.",
+    )
+
+    view.request_approval(request1)
+    view.request_approval(request2)
+    view.request_approval(request3)
+
+    assert view.try_submit_line("2") is True
+    assert await request1.wait() == "approve_for_session"
+    assert await request2.wait() == "approve_for_session"
+    assert request3.resolved is False
+    assert view._current_approval_request_panel is not None
+    assert view._current_approval_request_panel.request is request3
+
+    view.cleanup(is_interrupt=False)
+    assert await request3.wait() == "reject"
+
+
+@pytest.mark.asyncio
+async def test_live_view_rejects_queued_and_following_approvals() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)
+    request1 = ApprovalRequest(
+        id="req-1",
+        tool_call_id="tool-1",
+        sender="WriteFile",
+        action="edit files",
+        description="Apply the requested changes.",
+    )
+    request2 = ApprovalRequest(
+        id="req-2",
+        tool_call_id="tool-2",
+        sender="Edit",
+        action="edit files",
+        description="Apply the requested changes.",
+    )
+    request3 = ApprovalRequest(
+        id="req-3",
+        tool_call_id="tool-3",
+        sender="Shell",
+        action="run command",
+        description="Run command.",
+    )
+
+    view.request_approval(request1)
+    view.request_approval(request2)
+
+    assert view.try_submit_line("3") is True
+    assert await request1.wait() == "reject"
+    assert await request2.wait() == "reject"
+
+    view.request_approval(request3)
+    assert await request3.wait() == "reject"
+
+
+@pytest.mark.asyncio
+async def test_live_view_cleanup_rejects_current_and_queued_approvals() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)
+    request1 = ApprovalRequest(
+        id="req-1",
+        tool_call_id="tool-1",
+        sender="WriteFile",
+        action="edit files",
+        description="Apply the requested changes.",
+    )
+    request2 = ApprovalRequest(
+        id="req-2",
+        tool_call_id="tool-2",
+        sender="Shell",
+        action="run command",
+        description="Run command.",
+    )
+
+    view.request_approval(request1)
+    view.request_approval(request2)
+    view.cleanup(is_interrupt=True)
+
+    assert await request1.wait() == "reject"
+    assert await request2.wait() == "reject"
+
+
+@pytest.mark.asyncio
+async def test_live_view_advances_to_next_queued_question_request() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)
+    request1 = QuestionRequest(
+        id="question-1",
+        tool_call_id="tool-1",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[QuestionOption(label="JSON"), QuestionOption(label="YAML")],
+            )
+        ],
+    )
+    request2 = QuestionRequest(
+        id="question-2",
+        tool_call_id="tool-2",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                options=[QuestionOption(label="format"), QuestionOption(label="lint")],
+            )
+        ],
+    )
+
+    view.request_question(request1)
+    view.request_question(request2)
+
+    assert view.try_submit_line("1") is True
+    assert await request1.wait() == {"Which format should I use?": "JSON"}
+    assert view._current_question_panel is not None
+    assert view._current_question_panel.request is request2
+    assert view.has_pending_input_request is True
+
+    assert view.try_submit_line("2") is True
+    assert await request2.wait() == {"Which checks should I run?": "lint"}
+    assert view.has_pending_input_request is False
+
+
+@pytest.mark.asyncio
+async def test_live_view_cleanup_resolves_current_and_queued_questions() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)
+    request1 = QuestionRequest(
+        id="question-1",
+        tool_call_id="tool-1",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[QuestionOption(label="JSON"), QuestionOption(label="YAML")],
+            )
+        ],
+    )
+    request2 = QuestionRequest(
+        id="question-2",
+        tool_call_id="tool-2",
+        questions=[
+            QuestionItem(
+                question="Which checks should I run?",
+                options=[QuestionOption(label="format"), QuestionOption(label="lint")],
+            )
+        ],
+    )
+
+    view.request_question(request1)
+    view.request_question(request2)
+    view.cleanup(is_interrupt=True)
+
+    assert await request1.wait() == {}
+    assert await request2.wait() == {}
+    assert view.has_pending_input_request is False

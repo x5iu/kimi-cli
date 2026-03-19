@@ -17,7 +17,7 @@ from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell import Shell
 from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, TurnSubmitResult, UserInput
 from kimi_cli.utils.slashcmd import parse_slash_command_call
-from kimi_cli.wire.types import ImageURLPart, TextPart
+from kimi_cli.wire.types import ContentPart, ImageURLPart, TextPart
 
 
 def _fake_soul(**overrides: Any) -> Soul:
@@ -155,6 +155,118 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
 
     assert keep_running is True
     assert recorded == [image_content]
+
+
+@pytest.mark.asyncio
+async def test_reminder_submitted_during_turn_rejects_when_llm_not_set(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime.llm = None
+    soul = KimiSoul(
+        Agent(
+            name="Shell Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+    shell = Shell(soul)
+    monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
+
+    results: list[TurnSubmitResult] = []
+    recorded: list[object] = []
+
+    async def fake_run_turn_ui(*, submit_handler, **kwargs) -> None:
+        results.append(
+            submit_handler(
+                UserInput(
+                    mode=PromptMode.AGENT,
+                    command="later",
+                    content=[TextPart(text="later")],
+                )
+            )
+        )
+
+    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+        class _FakeWire:
+            @staticmethod
+            def ui_side(merge: bool = False):
+                return None
+
+        await ui_loop_fn(_FakeWire())
+
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(soul, "steer", lambda content: recorded.append(content))
+
+    prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
+    keep_running = await shell._run_interactive_turn(prompt_session, "hello")
+
+    assert keep_running is True
+    assert results == [TurnSubmitResult.reject('LLM not set, send "/login" to login')]
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_image_reminder_submitted_during_turn_rejects_when_model_lacks_capability(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert runtime.llm is not None
+    runtime.llm.capabilities = set()
+    soul = KimiSoul(
+        Agent(
+            name="Shell Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+    shell = Shell(soul)
+    monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
+
+    image_content: list[ContentPart] = [
+        ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://example.com/image.png")),
+    ]
+    results: list[TurnSubmitResult] = []
+    recorded: list[object] = []
+
+    async def fake_run_turn_ui(*, submit_handler, **kwargs) -> None:
+        results.append(
+            submit_handler(
+                UserInput(
+                    mode=PromptMode.AGENT,
+                    command="[image]",
+                    content=image_content,
+                )
+            )
+        )
+
+    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+        class _FakeWire:
+            @staticmethod
+            def ui_side(merge: bool = False):
+                return None
+
+        await ui_loop_fn(_FakeWire())
+
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(soul, "steer", lambda content: recorded.append(content))
+
+    prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
+    keep_running = await shell._run_interactive_turn(prompt_session, "hello")
+
+    assert keep_running is True
+    assert len(results) == 1
+    assert results[0].accepted is False
+    assert "image_in" in results[0].feedback
+    assert recorded == []
 
 
 def test_echo_agent_input_shows_image_marker(monkeypatch: pytest.MonkeyPatch) -> None:

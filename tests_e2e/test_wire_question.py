@@ -278,3 +278,87 @@ def test_ask_user_tool_hidden_when_question_not_supported(tmp_path) -> None:
             raise AssertionError("ToolResult for tc-q-hidden not found")
     finally:
         wire.close()
+
+
+def test_replay_restores_question_request_history(tmp_path) -> None:
+    question = _make_question()
+    scripts = [
+        "\n".join(
+            [
+                "text: asking",
+                build_ask_user_tool_call("tc-q-replay", [question]),
+            ]
+        ),
+        "text: done",
+    ]
+    config_path = write_scripted_config(tmp_path, scripts)
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+
+    wire = start_wire(
+        config_path=config_path,
+        config_text=None,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        extra_args=["--session", "question-replay-session"],
+        yolo=True,
+    )
+    try:
+        send_initialize(wire, capabilities={"supports_question": True})
+        wire.send_json(
+            {
+                "jsonrpc": "2.0",
+                "id": "prompt-1",
+                "method": "prompt",
+                "params": {"user_input": "ask me"},
+            }
+        )
+        resp, _ = collect_until_response(
+            wire,
+            "prompt-1",
+            request_handler=_question_request_handler({"Which option?": "Alpha"}),
+        )
+        assert resp.get("result", {}).get("status") == "finished"
+
+        wire.send_json({"jsonrpc": "2.0", "id": "replay-1", "method": "replay"})
+        replay_resp, replay_messages = collect_until_response(wire, "replay-1")
+        assert replay_resp.get("result") == {
+            "status": "finished",
+            "events": 10,
+            "requests": 1,
+        }
+
+        summary = summarize_messages(replay_messages)
+        question_requests = [m for m in summary if m.get("type") == "QuestionRequest"]
+        assert len(question_requests) == 1
+        payload = question_requests[0]["payload"]
+        assert payload["id"] == "<uuid>"
+        assert payload["tool_call_id"] == "tc-q-replay"
+        assert payload["questions"] == [
+            {
+                "question": "Which option?",
+                "header": "Test",
+                "options": [
+                    {"label": "Alpha", "description": "First"},
+                    {"label": "Beta", "description": "Second"},
+                ],
+                "multi_select": False,
+                "body": "",
+                "other_label": "",
+                "other_description": "",
+            }
+        ]
+
+        tool_results = [m for m in summary if m.get("type") == "ToolResult"]
+        for tr in tool_results:
+            if tr["payload"]["tool_call_id"] != "tc-q-replay":
+                continue
+            rv = tr["payload"]["return_value"]
+            assert rv["is_error"] is False
+            assert json.loads(rv["output"]) == {"answers": {"Which option?": "Alpha"}}
+            assert rv["message"] == "User has answered."
+            break
+        else:
+            raise AssertionError("ToolResult for tc-q-replay not found")
+    finally:
+        wire.close()
