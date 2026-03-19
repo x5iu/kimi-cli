@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import difflib
+import re
 from difflib import SequenceMatcher
 
 from kimi_cli.tools.display import DiffDisplayBlock
 
 N_CONTEXT_LINES = 3
+_HUNK_HEADER_RE = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+    r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
+)
+
 
 
 def format_unified_diff(
@@ -14,6 +20,8 @@ def format_unified_diff(
     path: str = "",
     *,
     include_file_header: bool = True,
+    old_start_line: int = 1,
+    new_start_line: int = 1,
 ) -> str:
     """
     Format a unified diff between old_text and new_text.
@@ -23,6 +31,8 @@ def format_unified_diff(
         new_text: The new text.
         path: Optional file path for the diff header.
         include_file_header: Whether to include the ---/+++ file header lines.
+        old_start_line: The 1-based starting line number in the old file for this diff snippet.
+        new_start_line: The 1-based starting line number in the new file for this diff snippet.
 
     Returns:
         A unified diff string.
@@ -49,6 +59,18 @@ def format_unified_diff(
         )
     )
 
+    old_base_start = 1 if old_lines else 0
+    new_base_start = 1 if new_lines else 0
+    old_line_offset = old_start_line - old_base_start
+    new_line_offset = new_start_line - new_base_start
+    if old_line_offset or new_line_offset:
+        diff = [
+            _offset_hunk_header(line, old_line_offset, new_line_offset)
+            if line.startswith("@@ ")
+            else line
+            for line in diff
+        ]
+
     if (
         not include_file_header
         and len(diff) >= 2
@@ -58,6 +80,21 @@ def format_unified_diff(
         diff = diff[2:]
 
     return "".join(diff)
+
+
+def _offset_hunk_header(line: str, old_line_offset: int, new_line_offset: int) -> str:
+    match = _HUNK_HEADER_RE.match(line)
+    if match is None:
+        return line
+
+    old_start = int(match.group("old_start")) + old_line_offset
+    new_start = int(match.group("new_start")) + new_line_offset
+    old_count = match.group("old_count")
+    new_count = match.group("new_count")
+
+    old_range = f"{old_start},{old_count}" if old_count is not None else str(old_start)
+    new_range = f"{new_start},{new_count}" if new_count is not None else str(new_start)
+    return _HUNK_HEADER_RE.sub(f"@@ -{old_range} +{new_range} @@", line, count=1)
 
 
 def build_diff_blocks(
@@ -77,11 +114,15 @@ def build_diff_blocks(
         i2 = group[-1][2]
         j1 = group[0][3]
         j2 = group[-1][4]
+        old_chunk = old_lines[i1:i2]
+        new_chunk = new_lines[j1:j2]
         blocks.append(
             DiffDisplayBlock(
                 path=path,
-                old_text="\n".join(old_lines[i1:i2]),
-                new_text="\n".join(new_lines[j1:j2]),
+                old_text="\n".join(old_chunk),
+                new_text="\n".join(new_chunk),
+                old_start_line=i1 + 1 if old_chunk else 0,
+                new_start_line=j1 + 1 if new_chunk else 0,
             )
         )
     return blocks

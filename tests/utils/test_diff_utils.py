@@ -298,6 +298,8 @@ Line 14 updated
 Line 15
 Line 16\
 """,
+                old_start_line=11,
+                new_start_line=11,
             ),
         ]
     )
@@ -321,6 +323,7 @@ Line 2
 Line 1
 Line 2\
 """,
+                old_start_line=0,
             )
         ]
     )
@@ -344,6 +347,7 @@ Line 1
 Line 2\
 """,
                 new_text="",
+                new_start_line=0,
             )
         ]
     )
@@ -398,3 +402,19 @@ def test_format_unified_diff_without_header() -> None:
     )
 
     assert diff_text == snapshot("@@ -1,2 +1,2 @@\n alpha\n-beta\n+bravo\n")
+
+
+def test_format_unified_diff_with_custom_start_lines() -> None:
+    old_text = "alpha\nbeta\n"
+    new_text = "alpha\nbravo\n"
+
+    diff_text = format_unified_diff(
+        old_text,
+        new_text,
+        "demo.txt",
+        include_file_header=False,
+        old_start_line=42,
+        new_start_line=42,
+    )
+
+    assert diff_text == snapshot("@@ -42,2 +42,2 @@\n alpha\n-beta\n+bravo\n")

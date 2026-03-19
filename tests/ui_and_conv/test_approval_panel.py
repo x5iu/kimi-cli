@@ -28,6 +28,8 @@ def test_approval_panel_renders_line_numbers_for_edit_diff() -> None:
                     path="src/example.py",
                     old_text="before",
                     new_text="after",
+                    old_start_line=42,
+                    new_start_line=42,
                 )
             ],
         )
@@ -35,9 +37,9 @@ def test_approval_panel_renders_line_numbers_for_edit_diff() -> None:
 
     rendered = _render_to_str(panel)
 
-    assert "1 @@ -1 +1 @@" in rendered
-    assert "2 -before" in rendered
-    assert "3 +after" in rendered
+    assert "@@ -42 +42 @@" in rendered
+    assert "42    │ -before" in rendered
+    assert "42 │ +after" in rendered
 
 
 def test_approval_panel_keeps_writefile_diff_without_line_numbers() -> None:

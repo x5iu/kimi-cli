@@ -11,6 +11,7 @@ from rich.text import Text
 
 from kimi_cli.ui.shell.console import console
 from kimi_cli.utils.diff import format_unified_diff
+from kimi_cli.utils.rich.diff import EDIT_DIFF_LINE_NUMBER_TOOLS, render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.utils.rich.syntax import KimiSyntax
 from kimi_cli.wire.types import (
@@ -25,7 +26,6 @@ from kimi_cli.wire.types import (
 MAX_PREVIEW_LINES = 4
 QUESTION_BODY_PREVIEW_LINES = 3
 OTHER_OPTION_LABEL = "Other"
-EDIT_DIFF_LINE_NUMBER_TOOLS = {"Edit", "StrReplaceFile"}
 
 
 class _ApprovalContentBlock(NamedTuple):
@@ -80,17 +80,27 @@ class _ApprovalRequestPanel:
                     self._content_blocks.append(
                         _ApprovalContentBlock(text="⋮", lines=1, style="dim")
                     )
-                diff_text = format_unified_diff(
-                    block.old_text,
-                    block.new_text,
-                    block.path,
-                    include_file_header=False,
-                ).rstrip("\n")
+                diff_renderable = render_diff_block(
+                    block,
+                    source_line_numbers=self.request.sender in EDIT_DIFF_LINE_NUMBER_TOOLS,
+                )
+                diff_text = (
+                    diff_renderable.plain
+                    if isinstance(diff_renderable, Text)
+                    else format_unified_diff(
+                        block.old_text,
+                        block.new_text,
+                        block.path,
+                        include_file_header=False,
+                        old_start_line=block.old_start_line,
+                        new_start_line=block.new_start_line,
+                    ).rstrip("\n")
+                )
                 self._content_blocks.append(
                     _ApprovalContentBlock(
                         text=diff_text,
                         lines=diff_text.count("\n") + 1,
-                        lexer="diff",
+                        lexer="diff" if not isinstance(diff_renderable, Text) else "",
                     )
                 )
             elif isinstance(block, ShellDisplayBlock):
@@ -170,13 +180,7 @@ class _ApprovalRequestPanel:
             text = "\n".join(text.split("\n")[:max_lines])
 
         if block.lexer:
-            return KimiSyntax(
-                text,
-                block.lexer,
-                line_numbers=(
-                    block.lexer == "diff" and self.request.sender in EDIT_DIFF_LINE_NUMBER_TOOLS
-                ),
-            )
+            return KimiSyntax(text, block.lexer)
         return Text(text, style=block.style)
 
     def render_full(self) -> list[RenderableType]:

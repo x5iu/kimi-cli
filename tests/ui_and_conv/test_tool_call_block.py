@@ -227,6 +227,8 @@ def test_renders_diff_display_for_subagent_file_edit_result() -> None:
                         path="src/example.py",
                         old_text="before",
                         new_text="after",
+                        old_start_line=42,
+                        new_start_line=42,
                     )
                 ],
             ),
@@ -239,8 +241,9 @@ def test_renders_diff_display_for_subagent_file_edit_result() -> None:
     assert "Used Edit (src/example.py)" in rendered
     assert "File successfully edited." in rendered
     assert "src/example.py" in rendered
-    assert "2 -before" in rendered
-    assert "3 +after" in rendered
+    assert "@@ -42 +42 @@" in rendered
+    assert "42    │ -before" in rendered
+    assert "42 │ +after" in rendered
 
 
 def test_renders_line_numbers_for_top_level_edit_diff_display() -> None:
@@ -263,6 +266,8 @@ def test_renders_line_numbers_for_top_level_edit_diff_display() -> None:
                     path="src/example.py",
                     old_text="before",
                     new_text="after",
+                    old_start_line=42,
+                    new_start_line=42,
                 )
             ],
         )
@@ -270,6 +275,6 @@ def test_renders_line_numbers_for_top_level_edit_diff_display() -> None:
 
     rendered = _render_to_str(block)
 
-    assert "1 @@ -1 +1 @@" in rendered
-    assert "2 -before" in rendered
-    assert "3 +after" in rendered
+    assert "@@ -42 +42 @@" in rendered
+    assert "42    │ -before" in rendered
+    assert "42 │ +after" in rendered

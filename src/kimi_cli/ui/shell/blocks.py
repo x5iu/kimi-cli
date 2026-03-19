@@ -13,10 +13,9 @@ from rich.text import Text
 
 from kimi_cli.soul import format_context_status
 from kimi_cli.tools import extract_key_argument
-from kimi_cli.utils.diff import format_unified_diff
 from kimi_cli.utils.rich.columns import BulletColumns
+from kimi_cli.utils.rich.diff import EDIT_DIFF_LINE_NUMBER_TOOLS, render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
-from kimi_cli.utils.rich.syntax import KimiSyntax
 from kimi_cli.wire.types import (
     BackgroundTaskDisplayBlock,
     BriefDisplayBlock,
@@ -34,7 +33,6 @@ from kimi_cli.wire.types import (
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
-EDIT_DIFF_LINE_NUMBER_TOOLS = {"Edit", "StrReplaceFile"}
 
 
 class _ContentBlock:
@@ -345,20 +343,12 @@ class _ToolCallBlock:
                 else:
                     lines.append(Text("⋮", style="grey50"))
 
-                diff_text = format_unified_diff(
-                    block.old_text,
-                    block.new_text,
-                    block.path,
-                    include_file_header=False,
-                ).rstrip("\n")
-                if diff_text:
-                    lines.append(
-                        KimiSyntax(
-                            diff_text,
-                            "diff",
-                            line_numbers=tool_name in EDIT_DIFF_LINE_NUMBER_TOOLS,
-                        )
+                lines.append(
+                    render_diff_block(
+                        block,
+                        source_line_numbers=tool_name in EDIT_DIFF_LINE_NUMBER_TOOLS,
                     )
+                )
             else:
                 last_diff_path = None
 
