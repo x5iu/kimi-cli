@@ -75,6 +75,24 @@ def test_history_view_hint_and_notice_include_position_and_controls() -> None:
     assert "Ctrl-Y" in notice
 
 
+def test_live_turn_hint_can_include_recent_output_notice() -> None:
+    hint = CustomPromptSession._format_live_turn_hint(show_recent_output_notice=True)
+
+    assert "recent output only during live turn" in hint
+    assert "Ctrl-Y" in hint
+
+
+def test_live_turn_hint_can_combine_input_hint_with_recent_output_notice() -> None:
+    hint = CustomPromptSession._format_live_turn_hint(
+        input_hint="Use ↑/↓ to focus and Enter to choose.",
+        show_recent_output_notice=True,
+    )
+
+    assert "Use ↑/↓" in hint
+    assert "Ctrl-Y" in hint
+    assert "recent output only during live turn" in hint
+
+
 def test_turn_prompt_title_reflects_pending_input_mode() -> None:
     prompt_session = object.__new__(CustomPromptSession)
 

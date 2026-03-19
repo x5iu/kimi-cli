@@ -72,7 +72,7 @@ from kimi_cli.ui.shell.visualize import (
     MAX_ACTIVE_TURN_CONTENT_CHARS,
     MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
     MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS,
-    _render_recent_output_notice,
+    _recent_output_notice_text,
     is_significant_for_render,
     render_user_prompt_block,
 )
@@ -1349,6 +1349,20 @@ class CustomPromptSession:
             "new steps stay hidden until you press Ctrl-Y again"
         )
 
+    @classmethod
+    def _format_live_turn_hint(
+        cls,
+        *,
+        input_hint: str = "",
+        show_recent_output_notice: bool = False,
+    ) -> str:
+        parts = [input_hint.strip()] if input_hint.strip() else []
+        if show_recent_output_notice:
+            parts.append(_recent_output_notice_text())
+        if not parts:
+            return ""
+        return cls._truncate_text(" · ".join(parts), 160)
+
     @staticmethod
     def _shorten_footer_path(path: str, width: int) -> str:
         if width <= 0:
@@ -1604,10 +1618,16 @@ class CustomPromptSession:
                     return self._truncate_text(feedback_message, 160)
                 top_line, total_lines = _history_view_position()
                 return self._format_history_view_hint(top_line=top_line, total_lines=total_lines)
-            return self._turn_input_hint_text(
-                live_view=live_view,
-                buffer_text=text_area.buffer.text,
-                feedback_message=feedback_message,
+            return self._format_live_turn_hint(
+                input_hint=self._turn_input_hint_text(
+                    live_view=live_view,
+                    buffer_text=text_area.buffer.text,
+                    feedback_message=feedback_message,
+                ),
+                show_recent_output_notice=live_view.should_show_recent_output_notice(
+                    tail_block_limit=_turn_tail_block_limit(),
+                    content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
+                ),
             )
 
         def _render_hint() -> FormattedText | str:
@@ -1693,28 +1713,6 @@ class CustomPromptSession:
             ),
             get_cache_revision=lambda: (history_view_enabled, history_view_revision),
         )
-        recent_notice_control = _RichRenderableControl(
-            lambda: (
-                None
-                if history_view_enabled
-                else (
-                    _render_recent_output_notice()
-                    if not (live_view.has_pending_input_request and not reveal_latest_output)
-                    and live_view.should_show_recent_output_notice(
-                        tail_block_limit=_turn_tail_block_limit(),
-                        content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
-                    )
-                    else None
-                )
-            ),
-            get_cache_revision=lambda: (
-                history_view_enabled,
-                getattr(live_view, "history_revision", 0),
-                getattr(live_view, "active_revision", 0),
-                live_view.has_pending_input_request,
-                _turn_tail_block_limit(),
-            ),
-        )
         history_body_control = _RichRenderableControl(
             lambda: (
                 history_view_snapshot
@@ -1762,7 +1760,6 @@ class CustomPromptSession:
         body_control = _StackedRichRenderableControl(
             [
                 history_notice_control,
-                recent_notice_control,
                 history_body_control,
                 active_body_control,
             ],

@@ -123,11 +123,15 @@ def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
     )
 
 
-def _render_recent_output_notice() -> RenderableType:
-    return Text(
-        "… showing recent output only during live turn; full history appears after the turn ends",
-        style="grey50 italic",
+def _recent_output_notice_text() -> str:
+    return (
+        "… showing recent output only during live turn; "
+        "press Ctrl-Y to show full history"
     )
+
+
+def _render_recent_output_notice() -> RenderableType:
+    return Text(_recent_output_notice_text(), style="grey50 italic")
 
 
 class LiveView:

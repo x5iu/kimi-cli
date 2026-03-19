@@ -634,8 +634,8 @@ def test_live_view_tail_mode_notice_stays_visible_without_actual_truncation() ->
     )
 
     assert "only block" in rendered
-    assert "full history appears after the" in rendered
-    assert "turn ends" in rendered
+    assert "Ctrl-Y" in rendered
+    assert "press Ctrl-Y to" in rendered
 
 
 def test_live_view_compose_body_can_hide_previous_blocks_while_waiting_for_input() -> None:
