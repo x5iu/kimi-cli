@@ -239,5 +239,37 @@ def test_renders_diff_display_for_subagent_file_edit_result() -> None:
     assert "Used Edit (src/example.py)" in rendered
     assert "File successfully edited." in rendered
     assert "src/example.py" in rendered
-    assert "-before" in rendered
-    assert "+after" in rendered
+    assert "2 -before" in rendered
+    assert "3 +after" in rendered
+
+
+def test_renders_line_numbers_for_top_level_edit_diff_display() -> None:
+    block = _ToolCallBlock(
+        ToolCall(
+            id="call_edit",
+            function=ToolCall.FunctionBody(
+                name="Edit",
+                arguments='{"path": "src/example.py", "edit": {"kind": "replace", "old": "before", "new": "after"}}',
+            ),
+        )
+    )
+    block.finish(
+        ToolReturnValue(
+            is_error=False,
+            output="",
+            message="File successfully edited.",
+            display=[
+                DiffDisplayBlock(
+                    path="src/example.py",
+                    old_text="before",
+                    new_text="after",
+                )
+            ],
+        )
+    )
+
+    rendered = _render_to_str(block)
+
+    assert "1 @@ -1 +1 @@" in rendered
+    assert "2 -before" in rendered
+    assert "3 +after" in rendered

@@ -25,6 +25,7 @@ from kimi_cli.wire.types import (
 MAX_PREVIEW_LINES = 4
 QUESTION_BODY_PREVIEW_LINES = 3
 OTHER_OPTION_LABEL = "Other"
+EDIT_DIFF_LINE_NUMBER_TOOLS = {"Edit", "StrReplaceFile"}
 
 
 class _ApprovalContentBlock(NamedTuple):
@@ -169,7 +170,13 @@ class _ApprovalRequestPanel:
             text = "\n".join(text.split("\n")[:max_lines])
 
         if block.lexer:
-            return KimiSyntax(text, block.lexer)
+            return KimiSyntax(
+                text,
+                block.lexer,
+                line_numbers=(
+                    block.lexer == "diff" and self.request.sender in EDIT_DIFF_LINE_NUMBER_TOOLS
+                ),
+            )
         return Text(text, style=block.style)
 
     def render_full(self) -> list[RenderableType]:

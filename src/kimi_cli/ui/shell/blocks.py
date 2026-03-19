@@ -34,6 +34,7 @@ from kimi_cli.wire.types import (
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
+EDIT_DIFF_LINE_NUMBER_TOOLS = {"Edit", "StrReplaceFile"}
 
 
 class _ContentBlock:
@@ -223,7 +224,9 @@ class _ToolCallBlock:
                 sub_text.append(argument, style=arg_style)
                 sub_text.append(")", style="grey50")
             sub_lines = [cast(RenderableType, sub_text)]
-            sub_lines.extend(self._render_result_display(sub_result))
+            sub_lines.extend(
+                self._render_result_display(sub_result, tool_name=sub_call.function.name)
+            )
             lines.append(
                 BulletColumns(
                     Group(*sub_lines),
@@ -293,8 +296,14 @@ class _ToolCallBlock:
 
         return ""
 
-    def _render_result_display(self, result: ToolReturnValue) -> list[RenderableType]:
+    def _render_result_display(
+        self,
+        result: ToolReturnValue,
+        *,
+        tool_name: str | None = None,
+    ) -> list[RenderableType]:
         lines: list[RenderableType] = []
+        tool_name = tool_name or self._tool_name
         if result.is_error:
             error_message = self._extract_error_message(result)
             if error_message:
@@ -343,7 +352,13 @@ class _ToolCallBlock:
                     include_file_header=False,
                 ).rstrip("\n")
                 if diff_text:
-                    lines.append(KimiSyntax(diff_text, "diff"))
+                    lines.append(
+                        KimiSyntax(
+                            diff_text,
+                            "diff",
+                            line_numbers=tool_name in EDIT_DIFF_LINE_NUMBER_TOOLS,
+                        )
+                    )
             else:
                 last_diff_path = None
 
