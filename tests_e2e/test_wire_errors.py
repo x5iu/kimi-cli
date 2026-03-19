@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import signal
+import time
 
 from inline_snapshot import snapshot
 
@@ -14,6 +16,27 @@ from tests_e2e.wire_helpers import (
     write_scripted_config,
     write_scripts_file,
 )
+
+
+def test_wire_exits_on_sigint_while_waiting_for_input(tmp_path) -> None:
+    config_path = write_scripted_config(tmp_path, ["text: ok"])
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+
+    wire = start_wire(
+        config_path=config_path,
+        config_text=None,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+    )
+    try:
+        time.sleep(0.5)
+        wire.process.send_signal(signal.SIGINT)
+        exit_code = wire.process.wait(timeout=2)
+        assert isinstance(exit_code, int)
+    finally:
+        wire.close()
 
 
 def test_invalid_json_request(tmp_path) -> None:

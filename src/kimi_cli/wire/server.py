@@ -4,7 +4,8 @@ import asyncio
 import contextlib
 import json
 import sys
-from typing import Any, cast
+import threading
+from typing import Any, Protocol, cast
 
 import pydantic
 from kosong.chat_provider import ChatProviderError
@@ -66,10 +67,21 @@ STDIO_BUFFER_LIMIT = 100 * 1024 * 1024
 
 def _stdin_readline(limit: int) -> bytes:
     stream = getattr(sys.stdin, "buffer", None)
-    if stream is not None:
-        return stream.readline(limit)
-    line = sys.stdin.readline(limit)
-    return line.encode("utf-8", errors="replace")
+    if stream is None:
+        stream = sys.stdin
+
+    line = stream.readline(limit + 1)
+    if isinstance(line, str):
+        line = line.encode("utf-8", errors="replace")
+
+    if len(line) > limit and not line.endswith(b"\n"):
+        while line and not line.endswith(b"\n"):
+            line = stream.readline(limit + 1)
+            if isinstance(line, str):
+                line = line.encode("utf-8", errors="replace")
+        raise ValueError("Input line exceeds maximum size")
+
+    return line
 
 
 def _stdout_write(data: bytes) -> None:
@@ -82,12 +94,45 @@ def _stdout_write(data: bytes) -> None:
     sys.stdout.flush()
 
 
-class _AsyncStdioReader:
+class _AsyncStdioReader(Protocol):
+    async def readline(self) -> bytes: ...
+
+    def close(self) -> None: ...
+
+
+class _AsyncThreadedStdioReader:
     def __init__(self, *, limit: int) -> None:
         self._limit = limit
+        self._loop = asyncio.get_running_loop()
+        self._queue: asyncio.Queue[bytes | BaseException] = asyncio.Queue()
+        self._closed = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="kimi-wire-stdin", daemon=True)
+        self._thread.start()
+
+    def _put(self, item: bytes | BaseException) -> None:
+        with contextlib.suppress(RuntimeError):
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, item)
+
+    def _run(self) -> None:
+        while not self._closed.is_set():
+            try:
+                line = _stdin_readline(self._limit)
+            except BaseException as exc:
+                self._put(exc)
+                return
+
+            self._put(line)
+            if not line:
+                return
 
     async def readline(self) -> bytes:
-        return await asyncio.to_thread(_stdin_readline, self._limit)
+        item = await self._queue.get()
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    def close(self) -> None:
+        self._closed.set()
 
 
 class _AsyncStdioWriter:
@@ -141,7 +186,7 @@ class WireServer:
     async def serve(self) -> None:
         logger.info("Starting Wire server on stdio")
 
-        self._reader = _AsyncStdioReader(limit=STDIO_BUFFER_LIMIT)
+        self._reader = _AsyncThreadedStdioReader(limit=STDIO_BUFFER_LIMIT)
         self._writer = _AsyncStdioWriter()
         self._write_task = asyncio.create_task(self._write_loop())
         stop_event = asyncio.Event()
@@ -200,7 +245,23 @@ class WireServer:
         assert self._reader is not None
 
         while True:
-            raw_line = await self._reader.readline()
+            try:
+                raw_line = await self._reader.readline()
+            except ValueError:
+                logger.error(
+                    "Wire stdin line exceeded maximum size of {limit} bytes",
+                    limit=STDIO_BUFFER_LIMIT,
+                )
+                await self._send_msg(
+                    JSONRPCErrorResponseNullableID(
+                        id=None,
+                        error=JSONRPCErrorObject(
+                            code=ErrorCodes.PARSE_ERROR,
+                            message="Input line exceeds maximum size",
+                        ),
+                    )
+                )
+                continue
             if not raw_line:
                 logger.info("stdin closed, Wire server exiting")
                 break
@@ -335,6 +396,10 @@ class WireServer:
 
         await asyncio.gather(*self._dispatch_tasks, return_exceptions=True)
         self._dispatch_tasks.clear()
+
+        if self._reader is not None:
+            self._reader.close()
+            self._reader = None
 
         if self._writer is not None:
             self._writer.close()
