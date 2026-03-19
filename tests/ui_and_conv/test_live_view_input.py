@@ -527,6 +527,29 @@ def test_live_view_reports_activity_indicator_for_running_states() -> None:
     assert view.activity_indicator is None
 
 
+def test_live_view_activity_indicator_highlights_ready_todo_execute_target() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.append_tool_call(
+        ToolCall(
+            id="call-ready-todo",
+            function=ToolCall.FunctionBody(
+                name="SetTodoList",
+                arguments=(
+                    '{"todos":[{"title":"Inspect parser","status":"pending",'
+                    '"executor":"task","subagent_name":"coder"},'
+                    '{"title":"Share findings","status":"pending"}]}'
+                ),
+            ),
+        )
+    )
+
+    assert view.activity_indicator == (
+        "tool",
+        "Updating Todo List (ready: Inspect parser @coder)",
+    )
+
+
 def test_live_view_can_hide_running_indicators_in_body() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
 

@@ -142,6 +142,10 @@ def test_pyinstaller_datas():
             "kimi_cli/tools/todo",
         ),
         (
+            "src/kimi_cli/tools/todo/execute_todo.md",
+            "kimi_cli/tools/todo",
+        ),
+        (
             "src/kimi_cli/tools/web/fetch.md",
             "kimi_cli/tools/web",
         ),
@@ -186,6 +190,7 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.tools.test",
             "kimi_cli.tools.think",
             "kimi_cli.tools.todo",
+            "kimi_cli.tools.todo_text",
             "kimi_cli.tools.utils",
             "kimi_cli.tools.web",
             "kimi_cli.tools.web.fetch",

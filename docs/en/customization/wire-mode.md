@@ -826,7 +826,13 @@ interface TodoDisplayItem {
   /** Todo item title */
   title: string
   /** Status */
-  status: "pending" | "in_progress" | "done"
+  status: "pending" | "in_progress" | "done" | "blocked"
+  /** Optional execution mode */
+  executor?: "main" | "task" | "background_shell"
+  /** Preferred subagent when executor is "task" */
+  subagent_name?: string
+  /** Optional short completion criterion */
+  done_when?: string
 }
 
 interface ShellDisplayBlock {

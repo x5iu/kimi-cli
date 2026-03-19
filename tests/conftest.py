@@ -42,7 +42,7 @@ from kimi_cli.tools.multiagent.create import CreateSubagent
 from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.todo import ExecuteTodo, SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 from kimi_cli.utils.environment import Environment
@@ -252,9 +252,15 @@ def think_tool() -> Think:
 
 
 @pytest.fixture
-def set_todo_list_tool() -> SetTodoList:
+def set_todo_list_tool(runtime: Runtime) -> SetTodoList:
     """Create a SetTodoList tool instance."""
-    return SetTodoList()
+    return SetTodoList(runtime)
+
+
+@pytest.fixture
+def execute_todo_tool(toolset: KimiToolset, runtime: Runtime) -> ExecuteTodo:
+    """Create an ExecuteTodo tool instance."""
+    return ExecuteTodo(toolset, runtime)
 
 
 @pytest.fixture

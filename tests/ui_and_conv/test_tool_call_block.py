@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from io import StringIO
 
-from kosong.tooling import ToolError, ToolReturnValue
+from kosong.tooling import BriefDisplayBlock, ToolError, ToolReturnValue
 from rich.console import Console
 
-from kimi_cli.ui.shell.visualize import (
-    MAX_TOOL_ERROR_OUTPUT_LINES,
-    _ToolCallBlock,
+from kimi_cli.ui.shell.visualize import MAX_TOOL_ERROR_OUTPUT_LINES, _ToolCallBlock
+from kimi_cli.wire.types import (
+    DiffDisplayBlock,
+    TodoDisplayBlock,
+    TodoDisplayItem,
+    ToolCall,
+    ToolResult,
 )
-from kimi_cli.wire.types import DiffDisplayBlock, ToolCall, ToolResult
 
 
 def _render_to_str(block: _ToolCallBlock) -> str:
@@ -94,6 +97,57 @@ class TestHeadlineRendering:
         changed = block.append_args_part('{"command":"echo ok"}')
 
         assert changed is True
+
+    def test_renders_set_todo_list_headline_with_ready_summary(self):
+        block = _ToolCallBlock(
+            ToolCall(
+                id="call_4",
+                function=ToolCall.FunctionBody(
+                    name="SetTodoList",
+                    arguments=(
+                        '{"todos":[{"title":"Inspect parser","status":"pending",'
+                        '"executor":"task","subagent_name":"coder"},'
+                        '{"title":"Share findings","status":"pending"}]}'
+                    ),
+                ),
+            )
+        )
+
+        rendered = _render_to_str(block)
+
+        assert "Updating Todo List (2 todos; ready: Inspect parser @coder)" in rendered
+
+    def test_set_todo_list_status_text_prioritizes_ready_todo(self):
+        block = _ToolCallBlock(
+            ToolCall(
+                id="call_4_status",
+                function=ToolCall.FunctionBody(
+                    name="SetTodoList",
+                    arguments=(
+                        '{"todos":[{"title":"Inspect parser","status":"pending",'
+                        '"executor":"task","subagent_name":"coder"},'
+                        '{"title":"Share findings","status":"pending"}]}'
+                    ),
+                ),
+            )
+        )
+
+        assert block.status_text == "Updating Todo List (ready: Inspect parser @coder)"
+
+    def test_renders_execute_todo_headline_with_title(self):
+        block = _ToolCallBlock(
+            ToolCall(
+                id="call_5",
+                function=ToolCall.FunctionBody(
+                    name="ExecuteTodo",
+                    arguments='{"title":"Inspect parser","subagent_name":"coder"}',
+                ),
+            )
+        )
+
+        rendered = _render_to_str(block)
+
+        assert "Executing Todo (Inspect parser @coder)" in rendered
 
 
 class TestErrorRendering:
@@ -278,3 +332,157 @@ def test_renders_line_numbers_for_top_level_edit_diff_display() -> None:
     assert "@@ -42 +42 @@" in rendered
     assert "42    │ -before" in rendered
     assert "42 │ +after" in rendered
+
+
+def test_renders_ready_to_execute_todo_hint() -> None:
+    block = _ToolCallBlock(
+        ToolCall(
+            id="call_todo",
+            function=ToolCall.FunctionBody(name="SetTodoList", arguments='{"todos": []}'),
+        )
+    )
+    block.finish(
+        ToolReturnValue(
+            is_error=False,
+            output="",
+            message="Todo list updated",
+            display=[
+                TodoDisplayBlock(
+                    items=[
+                        TodoDisplayItem(
+                            title="Inspect parser",
+                            status="pending",
+                            executor="task",
+                            subagent_name="coder",
+                        ),
+                        TodoDisplayItem(title="Share findings", status="pending", executor="main"),
+                    ]
+                )
+            ],
+        )
+    )
+
+    rendered = _render_to_str(block)
+
+    assert "Ready to ExecuteTodo: Inspect parser @coder" in rendered
+
+
+def test_omits_ready_to_execute_todo_hint_when_multiple_candidates_exist() -> None:
+    block = _ToolCallBlock(
+        ToolCall(
+            id="call_todo_many",
+            function=ToolCall.FunctionBody(name="SetTodoList", arguments='{"todos": []}'),
+        )
+    )
+    block.finish(
+        ToolReturnValue(
+            is_error=False,
+            output="",
+            message="Todo list updated",
+            display=[
+                TodoDisplayBlock(
+                    items=[
+                        TodoDisplayItem(
+                            title="Inspect parser",
+                            status="pending",
+                            executor="task",
+                            subagent_name="coder",
+                        ),
+                        TodoDisplayItem(
+                            title="Inspect lexer",
+                            status="pending",
+                            executor="task",
+                            subagent_name="coder",
+                        ),
+                    ]
+                )
+            ],
+        )
+    )
+
+    rendered = _render_to_str(block)
+
+    assert "Ready to ExecuteTodo:" not in rendered
+
+
+def test_renders_completed_todo_brief_for_execute_todo_result() -> None:
+    block = _ToolCallBlock(
+        ToolCall(
+            id="call_exec_todo",
+            function=ToolCall.FunctionBody(
+                name="ExecuteTodo",
+                arguments='{"title":"Inspect parser","subagent_name":"coder"}',
+            ),
+        )
+    )
+    block.finish(
+        ToolReturnValue(
+            is_error=False,
+            output="",
+            message='Todo "Inspect parser" completed via Task.',
+            display=[
+                BriefDisplayBlock(text="Completed Todo: Inspect parser"),
+                TodoDisplayBlock(
+                    items=[
+                        TodoDisplayItem(
+                            title="Inspect parser",
+                            status="done",
+                            executor="task",
+                            subagent_name="coder",
+                        )
+                    ]
+                ),
+            ],
+        )
+    )
+
+    rendered = _render_to_str(block)
+
+    assert "Executed Todo (Inspect parser @coder)" in rendered
+    assert "Completed Todo: Inspect parser" in rendered
+
+
+def test_renders_blocked_todo_error_for_execute_todo_result() -> None:
+    block = _ToolCallBlock(
+        ToolCall(
+            id="call_exec_todo_fail",
+            function=ToolCall.FunctionBody(
+                name="ExecuteTodo",
+                arguments='{"title":"Fix build","subagent_name":"coder"}',
+            ),
+        )
+    )
+    block.finish(
+        ToolReturnValue(
+            is_error=True,
+            output=(
+                "1 todos, blocked=1\n"
+                "Next state: blocked\n"
+                "Suggested next step: inspect [Task output], revise the prompt, or update the todo state before retrying.\n\n"
+                "[Task output]\n"
+                "Task failed\n\n"
+                "Subagent failed"
+            ),
+            message="Blocked Todo: Fix build. Delegated Task failed.",
+            display=[
+                TodoDisplayBlock(
+                    items=[
+                        TodoDisplayItem(
+                            title="Fix build",
+                            status="blocked",
+                            executor="task",
+                            subagent_name="coder",
+                        )
+                    ]
+                )
+            ],
+        )
+    )
+
+    rendered = _render_to_str(block)
+
+    assert "Executed Todo (Fix build @coder)" in rendered
+    assert "Blocked Todo: Fix build. Delegated Task failed." in rendered
+    assert "Next state: blocked" in rendered
+    assert "Fix build" in rendered
+    assert "(blocked)" in rendered

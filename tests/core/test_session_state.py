@@ -11,6 +11,7 @@ from kimi_cli.session_state import (
     ApprovalStateData,
     DynamicSubagentSpec,
     SessionState,
+    TodoStateItem,
     load_session_state,
     save_session_state,
 )
@@ -28,6 +29,7 @@ class TestSessionState:
         assert state.approval.yolo is False
         assert state.approval.auto_approve_actions == set()
         assert state.dynamic_subagents == []
+        assert state.todos == []
 
     def test_save_and_load_roundtrip(self, state_dir: Path):
         state_dir.mkdir(parents=True)
@@ -49,6 +51,30 @@ class TestSessionState:
         assert len(loaded.dynamic_subagents) == 1
         assert loaded.dynamic_subagents[0].name == "researcher"
         assert loaded.dynamic_subagents[0].system_prompt == "You are a researcher."
+        assert loaded.todos == []
+
+    def test_save_and_load_roundtrip_with_todos(self, state_dir: Path):
+        state_dir.mkdir(parents=True)
+        state = SessionState(
+            todos=[
+                TodoStateItem(
+                    title="Inspect parser",
+                    status="pending",
+                    executor="task",
+                    subagent_name="coder",
+                    done_when="root cause is summarized",
+                )
+            ]
+        )
+        save_session_state(state, state_dir)
+
+        loaded = load_session_state(state_dir)
+        assert len(loaded.todos) == 1
+        assert loaded.todos[0].title == "Inspect parser"
+        assert loaded.todos[0].status == "pending"
+        assert loaded.todos[0].executor == "task"
+        assert loaded.todos[0].subagent_name == "coder"
+        assert loaded.todos[0].done_when == "root cause is summarized"
 
     def test_load_missing_file_returns_default(self, state_dir: Path):
         state_dir.mkdir(parents=True)

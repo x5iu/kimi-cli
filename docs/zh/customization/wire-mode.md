@@ -826,7 +826,13 @@ interface TodoDisplayItem {
   /** 待办事项标题 */
   title: string
   /** 状态 */
-  status: "pending" | "in_progress" | "done"
+  status: "pending" | "in_progress" | "done" | "blocked"
+  /** 可选执行方式 */
+  executor?: "main" | "task" | "background_shell"
+  /** 当 executor 为 "task" 时的目标子 Agent */
+  subagent_name?: string
+  /** 可选的简短完成条件 */
+  done_when?: string
 }
 
 interface ShellDisplayBlock {

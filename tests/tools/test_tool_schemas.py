@@ -17,7 +17,7 @@ from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.todo import ExecuteTodo, SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 
@@ -116,8 +116,29 @@ def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
                             },
                             "status": {
                                 "description": "The status of the todo",
-                                "enum": ["pending", "in_progress", "done"],
+                                "enum": ["pending", "in_progress", "done", "blocked"],
                                 "type": "string",
+                            },
+                            "executor": {
+                                "anyOf": [
+                                    {
+                                        "enum": ["main", "task", "background_shell"],
+                                        "type": "string",
+                                    },
+                                    {"type": "null"},
+                                ],
+                                "default": None,
+                                "description": "How this todo should be executed. Prefer `task` for narrow, independent work that can be delegated to a subagent; use `main` for work done by the root agent; use `background_shell` for long-running shell work.",
+                            },
+                            "subagent_name": {
+                                "anyOf": [{"type": "string"}, {"type": "null"}],
+                                "default": None,
+                                "description": "The preferred subagent name when `executor` is `task`.",
+                            },
+                            "done_when": {
+                                "anyOf": [{"type": "string"}, {"type": "null"}],
+                                "default": None,
+                                "description": "A short completion criterion for this todo.",
                             },
                         },
                         "required": ["title", "status"],
@@ -127,6 +148,40 @@ def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
                 }
             },
             "required": ["todos"],
+            "type": "object",
+        }
+    )
+
+
+def test_execute_todo_params_schema(execute_todo_tool: ExecuteTodo):
+    """Test the schema of ExecuteTodo tool parameters."""
+    assert execute_todo_tool.base.parameters == snapshot(
+        {
+            "properties": {
+                "title": {
+                    "description": "The exact title of the todo item to execute from the current session todo list.",
+                    "type": "string",
+                },
+                "description": {
+                    "description": "A short (3-5 word) description of the delegated task.",
+                    "type": "string",
+                },
+                "prompt": {
+                    "description": "The detailed prompt for the delegated Task call. You must still provide all necessary background because the subagent cannot see your context.",
+                    "type": "string",
+                },
+                "subagent_name": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Optional override for the subagent name. Defaults to `todos[].subagent_name`.",
+                },
+                "mark_blocked_on_error": {
+                    "default": True,
+                    "description": "Whether to mark the todo as `blocked` when Task returns an error.",
+                    "type": "boolean",
+                },
+            },
+            "required": ["title", "description", "prompt"],
             "type": "object",
         }
     )

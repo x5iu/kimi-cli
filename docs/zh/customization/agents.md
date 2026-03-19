@@ -14,7 +14,7 @@ kimi --agent okabe
 
 默认 Agent，适合通常情况使用。启用的工具：
 
-`Task`、`AskUserQuestion`、`SetTodoList`、`Shell`、`ReadFile`、`ReadMediaFile`、`Glob`、`Grep`、`WriteFile`、`Edit`、`SearchWeb`、`FetchURL`
+`Task`、`AskUserQuestion`、`SetTodoList`、`ExecuteTodo`、`Shell`、`TaskList`、`TaskOutput`、`TaskStop`、`ReadFile`、`ReadMediaFile`、`Glob`、`Grep`、`WriteFile`、`Edit`、`SearchWeb`、`FetchURL`
 
 ### `okabe`
 
@@ -188,13 +188,29 @@ agent:
 ### `SetTodoList`
 
 - **路径**：`kimi_cli.tools.todo:SetTodoList`
-- **描述**：管理待办事项列表，跟踪任务进度
+- **描述**：管理待办事项列表，跟踪任务进度，并协调委派出去的工作
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `todos` | array | 待办事项列表 |
 | `todos[].title` | string | 待办事项标题 |
-| `todos[].status` | string | 状态：`pending`、`in_progress`、`done` |
+| `todos[].status` | string | 状态：`pending`、`in_progress`、`done`、`blocked` |
+| `todos[].executor` | string | 可选执行方式：`main`、`task`、`background_shell` |
+| `todos[].subagent_name` | string | 当 `executor` 为 `task` 时，可选的目标子 Agent |
+| `todos[].done_when` | string | 可选的简短完成条件 |
+
+### `ExecuteTodo`
+
+- **路径**：`kimi_cli.tools.todo:ExecuteTodo`
+- **描述**：通过 `Task` 执行一个已存储的待办项，并保持待办状态同步更新
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `title` | string | 当前会话待办列表里要执行的精确标题 |
+| `description` | string | 委派给 `Task` 的 3–5 词短描述 |
+| `prompt` | string | 委派给 `Task` 的详细提示词 |
+| `subagent_name` | string | 可选的目标子 Agent 覆盖值 |
+| `mark_blocked_on_error` | bool | 当 `Task` 失败时，是否把该待办标记为 `blocked` |
 
 ### `Shell`
 

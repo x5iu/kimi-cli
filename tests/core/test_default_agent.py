@@ -18,6 +18,7 @@ async def test_default_agent(runtime: Runtime):
         "Task",
         "AskUserQuestion",
         "SetTodoList",
+        "ExecuteTodo",
         "Shell",
         "TaskList",
         "TaskOutput",
@@ -45,6 +46,8 @@ async def test_default_agent(runtime: Runtime):
     assert "TaskOutput" in prompt
     assert "TaskStop" in prompt
     assert "/task" in prompt
+    assert "ExecuteTodo" in prompt
+    assert "prefer `ExecuteTodo` over manually chaining" in prompt
 
     assert set(runtime.labor_market.fixed_subagents) == {"mocker", "coder"}
     coder = runtime.labor_market.fixed_subagents["coder"]

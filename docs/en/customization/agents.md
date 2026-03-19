@@ -14,7 +14,7 @@ kimi --agent okabe
 
 The default agent, suitable for general use. Enabled tools:
 
-`Task`, `AskUserQuestion`, `SetTodoList`, `Shell`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `Edit`, `SearchWeb`, `FetchURL`
+`Task`, `AskUserQuestion`, `SetTodoList`, `ExecuteTodo`, `Shell`, `TaskList`, `TaskOutput`, `TaskStop`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `Edit`, `SearchWeb`, `FetchURL`
 
 ### `okabe`
 
@@ -188,13 +188,29 @@ The following are all built-in tools in Kimi Code CLI.
 ### `SetTodoList`
 
 - **Path**: `kimi_cli.tools.todo:SetTodoList`
-- **Description**: Manage todo list, track task progress
+- **Description**: Manage todo list, track task progress, and coordinate delegated work
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `todos` | array | Todo list items |
 | `todos[].title` | string | Todo item title |
-| `todos[].status` | string | Status: `pending`, `in_progress`, `done` |
+| `todos[].status` | string | Status: `pending`, `in_progress`, `done`, `blocked` |
+| `todos[].executor` | string | Optional execution mode: `main`, `task`, `background_shell` |
+| `todos[].subagent_name` | string | Optional preferred subagent when `executor` is `task` |
+| `todos[].done_when` | string | Optional short completion criterion |
+
+### `ExecuteTodo`
+
+- **Path**: `kimi_cli.tools.todo:ExecuteTodo`
+- **Description**: Execute a stored todo item via `Task`, while keeping todo state in sync
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `title` | string | Exact todo title to execute from the current session todo list |
+| `description` | string | Short 3–5 word description for the delegated `Task` |
+| `prompt` | string | Detailed prompt for the delegated `Task` |
+| `subagent_name` | string | Optional override for the target subagent |
+| `mark_blocked_on_error` | bool | Whether to mark the todo as `blocked` when `Task` fails |
 
 ### `Shell`
 
