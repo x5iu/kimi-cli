@@ -124,10 +124,7 @@ def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
 
 
 def _recent_output_notice_text() -> str:
-    return (
-        "Showing recent output during live turn; "
-        "press Ctrl-Y for full history"
-    )
+    return "Recent output only · Ctrl-Y for history"
 
 
 def _render_recent_output_notice() -> RenderableType:

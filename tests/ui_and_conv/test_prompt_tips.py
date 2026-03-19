@@ -30,7 +30,7 @@ def test_build_toolbar_tips_without_clipboard():
         "ctrl-o: editor",
         "ctrl-j: newline",
         "ctrl-l: redraw",
-        "ctrl-y: history view",
+        "ctrl-y: history",
         "@: mention files",
     ]
 
@@ -42,7 +42,7 @@ def test_build_toolbar_tips_with_clipboard():
         "ctrl-o: editor",
         "ctrl-j: newline",
         "ctrl-l: redraw",
-        "ctrl-y: history view",
+        "ctrl-y: history",
         "ctrl-v: paste clipboard",
         "@: mention files",
     ]
@@ -68,22 +68,19 @@ def test_history_view_position_formatter_handles_empty_and_nonempty() -> None:
     assert CustomPromptSession._format_history_view_position(top_line=99, total_lines=10) == "10/10"
 
 
-def test_history_view_hint_and_notice_include_position_and_controls() -> None:
+def test_history_view_hint_includes_position_and_controls() -> None:
     hint = CustomPromptSession._format_history_view_hint(top_line=3, total_lines=10)
-    notice = CustomPromptSession._format_history_view_notice(top_line=3, total_lines=10)
 
     assert "3/10" in hint
     assert "PgUp/PgDn" in hint
     assert "Home/End" in hint
     assert "Ctrl-Y" in hint
-    assert "3/10" in notice
-    assert "Ctrl-Y" in notice
 
 
 def test_live_turn_hint_can_include_recent_output_notice() -> None:
     hint = CustomPromptSession._format_live_turn_hint(show_recent_output_notice=True)
 
-    assert "Showing recent output during live turn" in hint
+    assert "Recent output only" in hint
     assert "Ctrl-Y" in hint
 
 
@@ -95,7 +92,7 @@ def test_live_turn_hint_can_combine_input_hint_with_recent_output_notice() -> No
 
     assert "Use ↑/↓" in hint
     assert "Ctrl-Y" in hint
-    assert "Showing recent output during live turn" in hint
+    assert "Recent output only" in hint
 
 
 def test_turn_prompt_title_reflects_pending_input_mode() -> None:

@@ -477,7 +477,7 @@ def test_live_view_compose_body_keeps_recent_blocks_while_waiting_for_input() ->
     assert "older block" not in rendered
     assert "recent block" in rendered
     assert "Which format should I use?" in rendered
-    assert "Showing recent output during live turn" in rendered
+    assert "Recent output only" in rendered
 
 
 def test_live_view_bumps_render_revision_for_same_height_content_updates() -> None:
@@ -616,7 +616,7 @@ def test_live_view_compose_body_can_limit_to_recent_blocks() -> None:
 
     assert "older block" not in rendered
     assert "recent block" in rendered
-    assert "Showing recent output during live turn" in rendered
+    assert "Recent output only" in rendered
 
 
 def test_live_view_tail_mode_notice_stays_visible_without_actual_truncation() -> None:
@@ -635,7 +635,7 @@ def test_live_view_tail_mode_notice_stays_visible_without_actual_truncation() ->
 
     assert "only block" in rendered
     assert "Ctrl-Y" in rendered
-    assert "press Ctrl-Y for" in rendered
+    assert "Ctrl-Y for history" in rendered
 
 
 def test_live_view_compose_body_can_hide_previous_blocks_while_waiting_for_input() -> None:
@@ -669,7 +669,7 @@ def test_live_view_compose_body_can_hide_previous_blocks_while_waiting_for_input
 
     assert "older block" not in rendered
     assert "Which format should I use?" in rendered
-    assert "Showing recent output during live turn" in rendered
+    assert "Recent output only" in rendered
 
 
 def test_live_view_compose_body_hides_streaming_content_while_waiting_for_input() -> None:
@@ -702,7 +702,7 @@ def test_live_view_compose_body_hides_streaming_content_while_waiting_for_input(
 
     assert "streaming block" not in rendered
     assert "Which format should I use?" in rendered
-    assert "Showing recent output during live turn" in rendered
+    assert "Recent output only" in rendered
 
 
 def test_live_view_compose_active_body_can_reveal_streaming_content_behind_question() -> None:
@@ -775,7 +775,7 @@ def test_live_view_compose_body_hides_tool_calls_while_waiting_for_input() -> No
     assert "Using Shell" not in rendered
     assert "echo hidden" not in rendered
     assert "Which format should I use?" in rendered
-    assert "Showing recent output during live turn" in rendered
+    assert "Recent output only" in rendered
 
 
 def test_live_view_compose_body_can_limit_current_content_to_tail_chars() -> None:
@@ -793,7 +793,7 @@ def test_live_view_compose_body_can_limit_current_content_to_tail_chars() -> Non
 
     assert "tail-end" in rendered
     assert "prefix-prefix-prefix" not in rendered
-    assert "Showing recent output during live turn" in rendered
+    assert "Recent output only" in rendered
 
 
 def test_live_view_renders_skill_reminder_notice() -> None:

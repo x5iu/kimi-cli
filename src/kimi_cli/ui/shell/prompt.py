@@ -254,7 +254,7 @@ def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
         "ctrl-o: editor",
         "ctrl-j: newline",
         "ctrl-l: redraw",
-        "ctrl-y: history view",
+        "ctrl-y: history",
     ]
     if clipboard_available:
         tips.append("ctrl-v: paste clipboard")
@@ -1336,18 +1336,7 @@ class CustomPromptSession:
     @classmethod
     def _format_history_view_hint(cls, *, top_line: int, total_lines: int) -> str:
         position = cls._format_history_view_position(top_line=top_line, total_lines=total_lines)
-        return (
-            f"History view {position} — ↑/↓ scroll, PgUp/PgDn page, "
-            "Home/End jump, Ctrl-Y resumes live output."
-        )
-
-    @classmethod
-    def _format_history_view_notice(cls, *, top_line: int, total_lines: int) -> str:
-        position = cls._format_history_view_position(top_line=top_line, total_lines=total_lines)
-        return (
-            f"… history view frozen at {position}; "
-            "new steps stay hidden until you press Ctrl-Y again"
-        )
+        return f"History {position} — ↑/↓, PgUp/PgDn, Home/End, Ctrl-Y live"
 
     @classmethod
     def _format_live_turn_hint(
@@ -1709,20 +1698,6 @@ class CustomPromptSession:
             top_line = history_view_scroll_offset + 1 if total_lines > 0 else 0
             return top_line, total_lines
 
-        history_notice_control = _RichRenderableControl(
-            lambda: (
-                RichText(
-                    self._format_history_view_notice(
-                        top_line=_history_view_position()[0],
-                        total_lines=_history_view_position()[1],
-                    ),
-                    style="grey50 italic",
-                )
-                if history_view_enabled
-                else None
-            ),
-            get_cache_revision=lambda: (history_view_enabled, history_view_revision),
-        )
         history_body_control = _RichRenderableControl(
             lambda: (
                 history_view_snapshot
@@ -1769,7 +1744,6 @@ class CustomPromptSession:
 
         body_control = _StackedRichRenderableControl(
             [
-                history_notice_control,
                 history_body_control,
                 active_body_control,
             ],
