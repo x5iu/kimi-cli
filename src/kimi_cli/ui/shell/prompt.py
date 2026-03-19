@@ -1625,7 +1625,7 @@ class CustomPromptSession:
                     feedback_message=feedback_message,
                 ),
                 show_recent_output_notice=live_view.should_show_recent_output_notice(
-                    tail_block_limit=_turn_tail_block_limit(),
+                    tail_block_limit=_turn_tail_block_limit(include_hint=False),
                     content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
                 ),
             )
@@ -1651,13 +1651,13 @@ class CustomPromptSession:
                 return 0
             return min(10, len(complete_state.completions))
 
-        def _turn_fixed_height(width: int) -> int:
+        def _turn_fixed_height(width: int, *, include_hint: bool = True) -> int:
             input_height = (
                 text_area.window.render_info.window_height
                 if text_area.window.render_info is not None
                 else _input_box_height()
             )
-            hint_height = 1 if bool(_turn_hint_text()) else 0
+            hint_height = 1 if include_hint and bool(_turn_hint_text()) else 0
             activity_height = 1 if _has_turn_activity() else 0
             toast_height = 1 if self._has_toasts() else 0
             footer_height = 1
@@ -1671,20 +1671,30 @@ class CustomPromptSession:
                 + footer_height
             )
 
-        def _turn_body_line_budget(width: int | None = None) -> int:
+        def _turn_body_line_budget(
+            width: int | None = None,
+            *,
+            include_hint: bool = True,
+        ) -> int:
             body_width = width or (
                 body_window.render_info.window_width
                 if body_window is not None and body_window.render_info is not None
                 else _app_columns()
             )
-            return max(1, _app_rows() - _turn_fixed_height(body_width))
+            return max(
+                1,
+                _app_rows() - _turn_fixed_height(body_width, include_hint=include_hint),
+            )
 
-        def _turn_tail_block_limit() -> int:
+        def _turn_tail_block_limit(*, include_hint: bool = True) -> int:
             if live_view.has_pending_input_request and not reveal_latest_output:
                 return 0
             if live_view.has_pending_input_request:
                 return MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS
-            return max(MAX_ACTIVE_TURN_FLUSHED_BLOCKS, _turn_body_line_budget())
+            return max(
+                MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
+                _turn_body_line_budget(include_hint=include_hint),
+            )
 
         def _history_view_body_width() -> int:
             return (

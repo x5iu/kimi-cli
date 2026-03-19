@@ -1,5 +1,8 @@
+import asyncio
+import contextlib
 from types import SimpleNamespace
 
+import pytest
 from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout.containers import FloatContainer
@@ -12,10 +15,12 @@ from kimi_cli.ui.shell.prompt import (
     CustomPromptSession,
     InputBoxState,
     PromptMode,
+    TurnSubmitResult,
     _build_toolbar_tips,
     _toast_queues,
 )
-from kimi_cli.wire.types import TextPart, ThinkPart, ToolCallPart
+from kimi_cli.ui.shell.visualize import LiveView
+from kimi_cli.wire.types import StatusUpdate, TextPart, ThinkPart, ToolCallPart
 
 
 def test_build_toolbar_tips_without_clipboard():
@@ -194,6 +199,49 @@ def test_prompt_session_uses_slow_terminal_size_polling(
         prompt_session._session.app.terminal_size_polling_interval
         == shell_prompt._TERMINAL_SIZE_POLLING_INTERVAL
     )
+
+
+@pytest.mark.asyncio
+async def test_run_turn_ui_avoids_recent_output_hint_recursion(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[],
+        shell_mode_slash_commands=[],
+    )
+    live_view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False, allow_expand=True)
+    for i in range(shell_prompt.MAX_ACTIVE_TURN_FLUSHED_BLOCKS + 1):
+        live_view.echo_reminder(f"reminder {i}")
+
+    async def _fake_run_async(self) -> None:
+        return None
+
+    class _FakeWire:
+        async def receive(self):
+            await asyncio.Future()
+
+    printed: list[object] = []
+    monkeypatch.setattr(shell_prompt.Application, "run_async", _fake_run_async)
+    monkeypatch.setattr(shell_prompt, "patch_stdout", lambda raw=True: contextlib.nullcontext())
+    monkeypatch.setattr(shell_prompt.console, "print", lambda *args, **kwargs: printed.append(args))
+
+    await prompt_session.run_turn_ui(
+        wire=_FakeWire(),
+        live_view=live_view,
+        submit_handler=lambda _input: TurnSubmitResult.accept(),
+        cancel_handler=lambda: None,
+        turn_prompt="hello",
+    )
+
+    assert printed
 
 
 def test_prompt_force_turn_full_repaint_resets_last_screen() -> None:
