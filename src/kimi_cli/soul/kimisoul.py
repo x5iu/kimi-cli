@@ -147,8 +147,8 @@ TURN_END_QUESTION_DETECTOR_PROMPT = (
     "when the assistant is not asking the user to pick one\n"
     "- Numbered plans or recommendation lists without a closing choice/decision prompt\n"
     '- Conditional analysis statements like "如果继续这样做，风险会更高。" '
-    'when the assistant is describing consequences, not asking for permission '
-    'or a decision\n'
+    "when the assistant is describing consequences, not asking for permission "
+    "or a decision\n"
     "\n"
     "Return strict JSON with this exact shape:\n"
     '{"has_question": true/false, "questions": '
@@ -964,61 +964,63 @@ class KimiSoul:
     ) -> TurnEndQuestionDetection | None:
         excerpt = self._turn_end_question_excerpt(assistant_text)
         units = [
-            unit.strip().strip('"“”\'`')
+            unit.strip().strip("\"“”'`")
             for unit in re.split(r"(?:\r?\n)+|(?<=[。！？!?])\s*", excerpt)
             if unit.strip()
         ]
         if not units:
             return None
 
+        soft_prefixes = (
+            "如果你要",
+            "如果你想",
+            "如果你愿意",
+            "如果你希望",
+            "如果继续",
+            "如果要继续",
+        )
+        leading_wrappers = ">》」』】）)]-•·*\"“”'`("
+        conditional_offer_tokens = ("我可以", "我现在就", "我现在可以", "我现在就可以")
+        direct_offer_tokens = conditional_offer_tokens + ("我就",)
+        action_tokens = (
+            "继续",
+            "开始",
+            "按这个方案",
+            "修改",
+            "处理",
+            "推进",
+            "做下去",
+            "改下去",
+            "做下一轮",
+            "做下一步",
+        )
+
         for unit in reversed(units):
             normalized = re.sub(r"\s+", "", unit)
             if not normalized:
                 continue
-            if not any(
-                token in normalized
-                for token in (
-                    "如果你要",
-                    "如果你想",
-                    "如果你愿意",
-                    "如果你希望",
-                    "如果继续",
-                    "如果要继续",
-                )
-            ):
+
+            candidate = normalized.lstrip(leading_wrappers)
+            prefix = next((token for token in soft_prefixes if candidate.startswith(token)), None)
+            if prefix is None:
                 continue
-            if not any(
-                token in normalized
-                for token in (
-                    "我可以",
-                    "我就",
-                    "我会",
-                    "我现在就",
-                    "我现在可以",
-                    "我现在就可以",
-                )
-            ):
-                continue
-            if not any(
-                token in normalized
-                for token in (
-                    "继续",
-                    "开始",
-                    "按这个方案",
-                    "修改",
-                    "处理",
-                    "推进",
-                    "做下去",
-                    "改下去",
-                    "做下一轮",
-                    "做下一步",
-                )
+            if candidate.startswith(
+                ("如果继续这样做", "如果继续这么做", "如果要继续这样做", "如果要继续这么做")
             ):
                 continue
 
+            offer_tokens = (
+                direct_offer_tokens
+                if prefix in {"如果你要", "如果你想", "如果你愿意", "如果你希望"}
+                else conditional_offer_tokens
+            )
+            if not any(token in candidate for token in offer_tokens):
+                continue
+            if not any(token in candidate for token in action_tokens):
+                continue
+
             continue_like = any(
-                token in normalized
-                for token in ("继续", "做下去", "改下去", "做下一轮", "做下一步")
+                token in candidate for token in ("继续", "做下去", "改下去", "做下一轮", "做下一步")
             )
             if continue_like:
                 question = "要我继续吗？"
@@ -1092,8 +1094,6 @@ class KimiSoul:
             raw_text = result.message.extract_text(" ")
             detection = self._parse_turn_end_question_payload(raw_text)
             if detection is not None:
-                if heuristic_detection is not None and not detection.has_question:
-                    return heuristic_detection
                 return detection
 
             if attempt < self._TURN_END_DETECT_MAX_ATTEMPTS:

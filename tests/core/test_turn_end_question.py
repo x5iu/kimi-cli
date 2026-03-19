@@ -583,9 +583,7 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_you_want_continue(
     )
 
     async def fake_generate(*, chat_provider, system_prompt, tools, history):
-        return SimpleNamespace(
-            message=Message(role="assistant", content='{"has_question": false, "questions": []}')
-        )
+        raise RuntimeError("detector unavailable")
 
     monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
 
@@ -603,7 +601,7 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_you_want_continue(
 
 
 @pytest.mark.asyncio
-async def test_detect_turn_end_question_uses_heuristic_for_if_continue(
+async def test_detect_turn_end_question_does_not_override_detector_false_with_heuristic(
     runtime: Runtime,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -625,6 +623,34 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_continue(
 
     monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
 
+    assistant_msg = Message(role="assistant", content="如果你要，我可以继续直接做下去。")
+    result = await soul._detect_turn_end_question(assistant_msg)
+
+    assert result is not None
+    assert result.has_question is False
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_uses_heuristic_for_if_continue(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        raise RuntimeError("detector unavailable")
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
     assistant_msg = Message(role="assistant", content="如果继续，我可以先处理 A。")
     result = await soul._detect_turn_end_question(assistant_msg)
 
@@ -633,6 +659,27 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_continue(
     assert result.questions[0].question == "要我继续吗？"
     assert result.questions[0].options[0].label == "继续"
     assert result.questions[0].options[1].label == "先别"
+
+
+def test_heuristic_turn_end_question_ignores_quoted_example(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    result = soul._heuristic_turn_end_question(
+        "文案可以改成“如果你要，我可以继续直接做下去。”这种更自然的说法。"
+    )
+
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -778,6 +825,5 @@ def test_turn_end_question_prompt_mentions_multiple_suggestions() -> None:
     )
     assert (
         '"Next steps: 1. Fix interactions 2. Improve performance 3. Tidy styling. '
-        'Choose one for me to do first."'
-        in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+        'Choose one for me to do first."' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
