@@ -37,8 +37,9 @@ def test_live_view_renders_shell_output_tail_and_keeps_it_after_finish() -> None
         view.dispatch_wire_message(ToolCallOutput(tool_call_id="shell-1", text=f"L{i:02d}\n"))
 
     active = view.render_ansi(80)
-    assert "Recent output" in active
+    assert "Output tail" in active
     assert "L10" in active
+    assert "older output omitted" in active
     assert "L01" not in active
 
     view.append_tool_result(ToolResult(tool_call_id="shell-1", return_value=ToolOk(output="")))

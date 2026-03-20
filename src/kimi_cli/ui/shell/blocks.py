@@ -39,6 +39,8 @@ MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
 MAX_TOOL_OUTPUT_TAIL_LINES = 8
 MAX_TOOL_OUTPUT_TAIL_CHARS = 4000
 MAX_TOOL_OUTPUT_LINE_CHARS = 400
+_OUTPUT_GUTTER_SEPARATOR = " │ "
+_OUTPUT_GUTTER_STYLE = "bright_black"
 
 
 _TOOL_HEADLINE_VERBS: dict[str, tuple[str, str]] = {
@@ -152,9 +154,10 @@ class _ToolCallBlock:
         self._full_url = self._extract_full_url(tool_call.function.arguments, self._tool_name)
         self._result: ToolReturnValue | None = None
 
-        self._output_tail = deque[str](maxlen=MAX_TOOL_OUTPUT_TAIL_LINES)
+        self._output_tail = deque[tuple[int, str]](maxlen=MAX_TOOL_OUTPUT_TAIL_LINES)
         self._output_tail_chars = 0
         self._output_tail_truncated = False
+        self._output_line_count = 0
 
         self._ongoing_subagent_tool_calls: dict[str, ToolCall] = {}
         self._last_subagent_tool_call: ToolCall | None = None
@@ -197,19 +200,20 @@ class _ToolCallBlock:
         updated = False
         for line in text.splitlines(keepends=True) or [text]:
             line = truncate_line(line, MAX_TOOL_OUTPUT_LINE_CHARS)
+            self._output_line_count += 1
             if (
                 self._output_tail.maxlen is not None
                 and len(self._output_tail) == self._output_tail.maxlen
             ):
-                removed = self._output_tail.popleft()
+                _, removed = self._output_tail.popleft()
                 self._output_tail_chars -= len(removed)
                 self._output_tail_truncated = True
-            self._output_tail.append(line)
+            self._output_tail.append((self._output_line_count, line))
             self._output_tail_chars += len(line)
             updated = True
 
         while self._output_tail_chars > MAX_TOOL_OUTPUT_TAIL_CHARS and len(self._output_tail) > 1:
-            removed = self._output_tail.popleft()
+            _, removed = self._output_tail.popleft()
             self._output_tail_chars -= len(removed)
             self._output_tail_truncated = True
 
@@ -338,6 +342,10 @@ class _ToolCallBlock:
             text += f" ({self._argument})"
         return text
 
+    @staticmethod
+    def _format_output_gutter(line_no: str, width: int) -> str:
+        return f"{line_no:>{width}}{_OUTPUT_GUTTER_SEPARATOR}"
+
     def _build_headline_text(self) -> Text:
         present, past = _TOOL_HEADLINE_VERBS.get(self._tool_name, ("Using", "Used"))
         display_name = _TOOL_HEADLINE_NAMES.get(self._tool_name, self._tool_name)
@@ -365,13 +373,27 @@ class _ToolCallBlock:
     def _render_output_tail(self) -> RenderableType | None:
         if not self._output_tail:
             return None
-        text = "".join(self._output_tail)
+
+        gutter_width = len(str(self._output_tail[-1][0]))
+        rendered = Text(no_wrap=False)
         if self._output_tail_truncated:
-            text = f"...\n{text}"
-        return Group(
-            Text("Recent output", style="grey50 italic"),
-            Text(text.rstrip("\n"), style="grey50", overflow="fold"),
-        )
+            rendered.append(
+                self._format_output_gutter("", gutter_width),
+                style=_OUTPUT_GUTTER_STYLE,
+            )
+            rendered.append("… older output omitted", style="grey50 italic")
+            rendered.append("\n")
+
+        for index, (line_no, line) in enumerate(self._output_tail):
+            rendered.append(
+                self._format_output_gutter(str(line_no), gutter_width),
+                style=_OUTPUT_GUTTER_STYLE,
+            )
+            rendered.append(line.rstrip("\n"), style="default")
+            if index != len(self._output_tail) - 1:
+                rendered.append("\n")
+
+        return Group(Text("Output tail", style="cyan dim"), rendered)
 
     def _render_result_display(
         self,
