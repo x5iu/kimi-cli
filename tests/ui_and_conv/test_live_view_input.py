@@ -188,7 +188,7 @@ async def test_live_view_accepts_custom_single_select_answer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_live_view_ask_user_question_exit_option_dismisses_request() -> None:
+async def test_live_view_tool_call_ask_user_question_does_not_show_exit_option() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
     view.append_tool_call(
         ToolCall(
@@ -197,8 +197,32 @@ async def test_live_view_ask_user_question_exit_option_dismisses_request() -> No
         )
     )
     request = QuestionRequest(
-        id="question-exit",
+        id="question-tool-ask-user",
         tool_call_id="tool-ask-user",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    rendered = view.render_ansi(80, include_running_indicators=False)
+    assert "Exit" not in rendered
+    assert "Select Exit to dismiss" not in view.input_hint
+
+
+@pytest.mark.asyncio
+async def test_live_view_side_channel_question_exit_option_dismisses_request() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-exit",
+        tool_call_id="turn-end-1234",
         questions=[
             QuestionItem(
                 question="Which format should I use?",

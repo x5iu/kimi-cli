@@ -1180,8 +1180,7 @@ class LiveView:
             self.show_next_question_request()
 
     def _question_request_allows_exit(self, request: QuestionRequest) -> bool:
-        block = self._tool_call_blocks.get(request.tool_call_id)
-        return block is not None and block.tool_name == "AskUserQuestion"
+        return request.tool_call_id.startswith("turn-end-")
 
     def show_next_question_request(self) -> None:
         """Show the next question request from the queue."""

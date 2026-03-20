@@ -95,6 +95,8 @@ def test_single_select_exit_option_is_rendered_separately_from_other():
     assert "Other" in rendered
     assert "Exit" in rendered
     assert "dismiss this question" in rendered
+    assert "Actions" in rendered
+    assert rendered.index("Other") < rendered.index("Actions") < rendered.index("Exit")
 
     panel.move_down()  # index 1 (B)
     panel.move_down()  # index 2 (C)

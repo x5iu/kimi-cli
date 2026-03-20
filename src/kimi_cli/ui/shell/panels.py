@@ -374,14 +374,12 @@ class _QuestionRequestPanel:
             )
             lines.append(Text(""))
 
+        exit_index = self.exit_index
         for i, (label, description) in enumerate(self._options):
+            if exit_index is not None and i == exit_index:
+                continue
             num = i + 1
-            if self.exit_index is not None and i == self.exit_index:
-                if i == self._selected_index:
-                    option_line = Text.from_markup(f"[magenta]→ \\[{num}] {escape(label)}[/magenta]")
-                else:
-                    option_line = Text.from_markup(f"[grey50]  \\[{num}] {escape(label)}[/grey50]")
-            elif q.multi_select:
+            if q.multi_select:
                 checked = "✓" if i in self._multi_selected else " "
                 prefix = f"\\[{checked}]"
                 if i == self._selected_index:
@@ -395,6 +393,19 @@ class _QuestionRequestPanel:
                     option_line = Text.from_markup(f"[grey50]  \\[{num}] {escape(label)}[/grey50]")
             lines.append(option_line)
 
+            if description:
+                lines.append(Text(f"      {description}", style="dim"))
+
+        if exit_index is not None:
+            lines.append(Text(""))
+            lines.append(Text("  Actions", style="dim bold"))
+            label, description = self._options[exit_index]
+            num = exit_index + 1
+            if exit_index == self._selected_index:
+                option_line = Text.from_markup(f"[magenta]→ \\[{num}] {escape(label)}[/magenta]")
+            else:
+                option_line = Text.from_markup(f"[grey50]  \\[{num}] {escape(label)}[/grey50]")
+            lines.append(option_line)
             if description:
                 lines.append(Text(f"      {description}", style="dim"))
 
