@@ -9,7 +9,7 @@ from kimi_cli.tools.display import DiffDisplayBlock
 from kimi_cli.utils.diff import format_unified_diff
 from kimi_cli.utils.rich.syntax import KimiSyntax
 
-EDIT_DIFF_LINE_NUMBER_TOOLS = frozenset({"Edit", "StrReplaceFile"})
+SOURCE_LINE_NUMBER_DIFF_TOOLS = frozenset({"Edit", "StrReplaceFile", "WriteFile"})
 _HUNK_HEADER_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
     r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"

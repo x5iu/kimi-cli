@@ -16,7 +16,7 @@ from kimi_cli.tools import extract_key_argument
 from kimi_cli.tools.todo_text import ready_to_execute_todo_text, todo_label
 from kimi_cli.tools.utils import truncate_line
 from kimi_cli.utils.rich.columns import BulletColumns
-from kimi_cli.utils.rich.diff import EDIT_DIFF_LINE_NUMBER_TOOLS, render_diff_block
+from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.wire.types import (
     BackgroundTaskDisplayBlock,
@@ -464,7 +464,7 @@ class _ToolCallBlock:
                 lines.append(
                     render_diff_block(
                         block,
-                        source_line_numbers=tool_name in EDIT_DIFF_LINE_NUMBER_TOOLS,
+                        source_line_numbers=tool_name in SOURCE_LINE_NUMBER_DIFF_TOOLS,
                     )
                 )
             else:

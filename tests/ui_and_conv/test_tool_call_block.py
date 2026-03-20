@@ -242,7 +242,7 @@ class TestErrorRendering:
         assert "[...truncated]" in rendered
 
 
-def test_renders_diff_display_for_file_edit_result() -> None:
+def test_renders_line_numbers_for_writefile_diff_display() -> None:
     block = _ToolCallBlock(
         ToolCall(
             id="call_write",
@@ -262,6 +262,8 @@ def test_renders_diff_display_for_file_edit_result() -> None:
                     path="src/example.py",
                     old_text="before",
                     new_text="after",
+                    old_start_line=42,
+                    new_start_line=42,
                 )
             ],
         )
@@ -271,9 +273,9 @@ def test_renders_diff_display_for_file_edit_result() -> None:
 
     assert "File successfully overwritten." in rendered
     assert "src/example.py" in rendered
-    assert "@@ -1 +1 @@" in rendered
-    assert "-before" in rendered
-    assert "+after" in rendered
+    assert "@@ -42 +42 @@" in rendered
+    assert "42    │ -before" in rendered
+    assert "42 │ +after" in rendered
 
 
 def test_renders_diff_display_for_subagent_file_edit_result() -> None:

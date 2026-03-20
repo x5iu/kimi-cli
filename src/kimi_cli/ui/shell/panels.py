@@ -11,7 +11,7 @@ from rich.text import Text
 
 from kimi_cli.ui.shell.console import console
 from kimi_cli.utils.diff import format_unified_diff
-from kimi_cli.utils.rich.diff import EDIT_DIFF_LINE_NUMBER_TOOLS, render_diff_block
+from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.utils.rich.syntax import KimiSyntax
 from kimi_cli.wire.types import (
@@ -82,7 +82,7 @@ class _ApprovalRequestPanel:
                     )
                 diff_renderable = render_diff_block(
                     block,
-                    source_line_numbers=self.request.sender in EDIT_DIFF_LINE_NUMBER_TOOLS,
+                    source_line_numbers=self.request.sender in SOURCE_LINE_NUMBER_DIFF_TOOLS,
                 )
                 diff_text = (
                     diff_renderable.plain
