@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 
 import pytest
-from kosong.tooling import ToolOk
+from kosong.tooling import ToolError, ToolOk
 
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl
@@ -110,6 +110,36 @@ def test_live_view_hides_output_tail_for_whitespace_only_output() -> None:
     view.append_tool_result(ToolResult(tool_call_id="shell-blank", return_value=ToolOk(output="")))
     finished = view.render_ansi(80)
     assert "Output tail" not in finished
+
+
+
+def test_live_view_hides_shell_failure_summary_when_output_tail_exists() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    tool_call = ToolCall(
+        id="shell-fail",
+        function=ToolCall.FunctionBody(name="Shell", arguments='{"command": "bad cmd"}'),
+    )
+
+    view.append_tool_call(tool_call)
+    view.dispatch_wire_message(
+        ToolCallOutput(tool_call_id="shell-fail", text="fatal: bad command\n", stream="stderr")
+    )
+    view.append_tool_result(
+        ToolResult(
+            tool_call_id="shell-fail",
+            return_value=ToolError(
+                message="Command failed with exit code: 2.",
+                brief="Failed with exit code: 2",
+                output="fatal: bad command\n",
+            ),
+        )
+    )
+
+    rendered = view.render_ansi(80)
+    assert "Output tail" in rendered
+    assert "fatal: bad command" in rendered
+    assert rendered.count("fatal: bad command") == 1
+    assert "Command failed with exit code: 2." not in rendered
 
 
 @pytest.mark.asyncio

@@ -174,6 +174,31 @@ class TestErrorRendering:
         assert "Command failed with exit code: 1." in rendered
         assert "ls: /missing: No such file or directory" in rendered
 
+    def test_hides_shell_error_details_when_output_tail_exists(self):
+        block = _ToolCallBlock(
+            ToolCall(
+                id="call_shell_fail",
+                function=ToolCall.FunctionBody(
+                    name="Shell",
+                    arguments='{"command": "ls /missing"}',
+                ),
+            )
+        )
+        block.append_output("ls: /missing: No such file or directory\n", stream="stderr")
+        block.finish(
+            ToolError(
+                message="Command failed with exit code: 1.",
+                brief="Failed with exit code: 1",
+                output="ls: /missing: No such file or directory\n",
+            )
+        )
+
+        rendered = _render_to_str(block)
+
+        assert "Output tail" in rendered
+        assert rendered.count("ls: /missing: No such file or directory") == 1
+        assert "Command failed with exit code: 1." not in rendered
+
     def test_renders_detailed_error_message_instead_of_generic_brief(self):
         block = _ToolCallBlock(
             ToolCall(

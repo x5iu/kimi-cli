@@ -372,8 +372,11 @@ class _ToolCallBlock:
 
         return ""
 
+    def _has_visible_output_tail(self) -> bool:
+        return bool(self._output_tail and any(line.strip() for _, line, _ in self._output_tail))
+
     def _render_output_tail(self) -> RenderableType | None:
-        if not self._output_tail or not any(line.strip() for _, line, _ in self._output_tail):
+        if not self._has_visible_output_tail():
             return None
 
         gutter_width = len(str(self._output_tail[-1][0]))
@@ -401,6 +404,13 @@ class _ToolCallBlock:
 
         return Group(Text("Output tail", style="cyan dim"), rendered)
 
+    def _should_suppress_error_details(self, *, tool_name: str) -> bool:
+        return (
+            tool_name == "Shell"
+            and tool_name == self._tool_name
+            and self._has_visible_output_tail()
+        )
+
     def _render_result_display(
         self,
         result: ToolReturnValue,
@@ -410,13 +420,14 @@ class _ToolCallBlock:
         lines: list[RenderableType] = []
         tool_name = tool_name or self._tool_name
         if result.is_error:
-            error_message = self._extract_error_message(result)
-            if error_message:
-                lines.append(Text(error_message, style="red", overflow="fold"))
+            if not self._should_suppress_error_details(tool_name=tool_name):
+                error_message = self._extract_error_message(result)
+                if error_message:
+                    lines.append(Text(error_message, style="red", overflow="fold"))
 
-            error_output = self._extract_error_output(result)
-            if error_output:
-                lines.append(Text(error_output, style="red", overflow="fold"))
+                error_output = self._extract_error_output(result)
+                if error_output:
+                    lines.append(Text(error_output, style="red", overflow="fold"))
         else:
             has_diff_display = any(isinstance(block, DiffDisplayBlock) for block in result.display)
             if result.message and has_diff_display:
