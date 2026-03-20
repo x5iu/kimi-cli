@@ -9,8 +9,12 @@ import pytest
 from inline_snapshot import snapshot
 from kaos.path import KaosPath
 
+from kimi_cli.soul import _current_wire
 from kimi_cli.tools.shell import Params, Shell
 from kimi_cli.tools.utils import DEFAULT_MAX_CHARS
+from kimi_cli.utils.aioqueue import QueueShutDown
+from kimi_cli.wire import Wire
+from kimi_cli.wire.types import ToolCallOutput
 
 pytestmark = pytest.mark.skipif(
     platform.system() == "Windows", reason="Bash tests run only on non-Windows."
@@ -23,6 +27,32 @@ async def test_simple_command(shell_tool: Shell):
     assert not result.is_error
     assert result.output == snapshot("Hello World\n")
     assert result.message == snapshot("Command executed successfully.")
+
+
+async def test_shell_emits_live_output_over_wire(shell_tool: Shell):
+    wire = Wire()
+    wire_token = _current_wire.set(wire)
+    ui_side = wire.ui_side(merge=False)
+
+    try:
+        result = await shell_tool(Params(command="printf 'alpha\\nbeta\\ngamma\\n'"))
+        assert not result.is_error
+
+        chunks: list[str] = []
+        while True:
+            try:
+                msg = await asyncio.wait_for(ui_side.receive(), timeout=0.05)
+            except TimeoutError:
+                break
+            except QueueShutDown:
+                break
+            if isinstance(msg, ToolCallOutput):
+                chunks.append(msg.text)
+
+        assert chunks == ["alpha\n", "beta\n", "gamma\n"]
+    finally:
+        wire.shutdown()
+        _current_wire.reset(wire_token)
 
 
 async def test_command_with_error(shell_tool: Shell):

@@ -8,7 +8,7 @@ import pytest
 from kimi_cli.ui.shell.visualize import LiveView, is_significant_for_render
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.wire import WireUISide
-from kimi_cli.wire.types import StatusUpdate, TextPart
+from kimi_cli.wire.types import StatusUpdate, TextPart, ToolCallOutput
 
 
 class _DummyLive:
@@ -96,4 +96,5 @@ async def test_live_view_defers_non_significant_updates_until_periodic_refresh(m
 
 def test_is_significant_for_render_filters_streaming_messages() -> None:
     assert is_significant_for_render(TextPart(text="hello")) is False
+    assert is_significant_for_render(ToolCallOutput(tool_call_id="call-1", text="line\n")) is False
     assert is_significant_for_render(StatusUpdate(context_usage=0.1)) is False

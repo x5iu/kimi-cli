@@ -148,6 +148,16 @@ class StatusUpdate(BaseModel):
     """Whether plan mode (read-only) is active. None means no change."""
 
 
+class ToolCallOutput(BaseModel):
+    """Streaming textual output emitted by an in-progress tool call."""
+
+    tool_call_id: str
+    """The tool call producing the output."""
+
+    text: str
+    """A newly emitted chunk of textual output."""
+
+
 class SubagentEvent(BaseModel):
     """
     An event from a subagent.
@@ -410,6 +420,7 @@ type Event = (
     | ContentPart
     | ToolCall
     | ToolCallPart
+    | ToolCallOutput
     | ToolResult
     | ApprovalResponse
     | SubagentEvent
@@ -496,6 +507,7 @@ __all__ = [
     "ContentPart",
     "ToolCall",
     "ToolCallPart",
+    "ToolCallOutput",
     "ToolResult",
     "ApprovalResponse",
     "SubagentEvent",

@@ -14,6 +14,7 @@ from rich.text import Text
 from kimi_cli.soul import format_context_status
 from kimi_cli.tools import extract_key_argument
 from kimi_cli.tools.todo_text import ready_to_execute_todo_text, todo_label
+from kimi_cli.tools.utils import truncate_line
 from kimi_cli.utils.rich.columns import BulletColumns
 from kimi_cli.utils.rich.diff import EDIT_DIFF_LINE_NUMBER_TOOLS, render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
@@ -35,6 +36,9 @@ from kimi_cli.wire.types import (
 MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
+MAX_TOOL_OUTPUT_TAIL_LINES = 8
+MAX_TOOL_OUTPUT_TAIL_CHARS = 4000
+MAX_TOOL_OUTPUT_LINE_CHARS = 400
 
 
 _TOOL_HEADLINE_VERBS: dict[str, tuple[str, str]] = {
@@ -148,6 +152,10 @@ class _ToolCallBlock:
         self._full_url = self._extract_full_url(tool_call.function.arguments, self._tool_name)
         self._result: ToolReturnValue | None = None
 
+        self._output_tail = deque[str](maxlen=MAX_TOOL_OUTPUT_TAIL_LINES)
+        self._output_tail_chars = 0
+        self._output_tail_truncated = False
+
         self._ongoing_subagent_tool_calls: dict[str, ToolCall] = {}
         self._last_subagent_tool_call: ToolCall | None = None
         self._n_finished_subagent_tool_calls = 0
@@ -181,6 +189,33 @@ class _ToolCallBlock:
             bullet=self._spinning_dots,
         )
         return True
+
+    def append_output(self, text: str) -> bool:
+        if not text:
+            return False
+
+        updated = False
+        for line in text.splitlines(keepends=True) or [text]:
+            line = truncate_line(line, MAX_TOOL_OUTPUT_LINE_CHARS)
+            if (
+                self._output_tail.maxlen is not None
+                and len(self._output_tail) == self._output_tail.maxlen
+            ):
+                removed = self._output_tail.popleft()
+                self._output_tail_chars -= len(removed)
+                self._output_tail_truncated = True
+            self._output_tail.append(line)
+            self._output_tail_chars += len(line)
+            updated = True
+
+        while self._output_tail_chars > MAX_TOOL_OUTPUT_TAIL_CHARS and len(self._output_tail) > 1:
+            removed = self._output_tail.popleft()
+            self._output_tail_chars -= len(removed)
+            self._output_tail_truncated = True
+
+        if updated and not self.finished:
+            self._renderable = self._compose()
+        return updated
 
     def finish(self, result: ToolReturnValue):
         self._result = result
@@ -217,6 +252,9 @@ class _ToolCallBlock:
 
     def _compose(self, *, show_indicator: bool = True) -> RenderableType:
         lines: list[RenderableType] = [self._build_headline_text()]
+
+        if output_tail := self._render_output_tail():
+            lines.append(output_tail)
 
         if self._n_finished_subagent_tool_calls > MAX_SUBAGENT_TOOL_CALLS_TO_SHOW:
             n_hidden = self._n_finished_subagent_tool_calls - MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
@@ -323,6 +361,17 @@ class _ToolCallBlock:
                 return block.text.strip()
 
         return ""
+
+    def _render_output_tail(self) -> RenderableType | None:
+        if not self._output_tail:
+            return None
+        text = "".join(self._output_tail)
+        if self._output_tail_truncated:
+            text = f"...\n{text}"
+        return Group(
+            Text("Recent output", style="grey50 italic"),
+            Text(text.rstrip("\n"), style="grey50", overflow="fold"),
+        )
 
     def _render_result_display(
         self,

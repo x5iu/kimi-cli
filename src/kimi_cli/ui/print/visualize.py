@@ -13,6 +13,7 @@ from kimi_cli.wire.types import (
     StepBegin,
     StepInterrupted,
     ToolCall,
+    ToolCallOutput,
     ToolCallPart,
     ToolResult,
     WireMessage,
@@ -31,6 +32,8 @@ def _merge_content(buffer: list[ContentPart], part: ContentPart) -> None:
 
 class TextPrinter(Printer):
     def feed(self, msg: WireMessage) -> None:
+        if isinstance(msg, ToolCallOutput):
+            return
         rich.print(msg)
 
     def flush(self) -> None:

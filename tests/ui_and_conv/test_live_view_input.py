@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 
 import pytest
+from kosong.tooling import ToolOk
 
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.visualize import LiveView
@@ -17,9 +18,35 @@ from kimi_cli.wire.types import (
     TextPart,
     ThinkPart,
     ToolCall,
+    ToolCallOutput,
+    ToolResult,
     TurnBegin,
     TurnEnd,
 )
+
+
+def test_live_view_renders_shell_output_tail_and_keeps_it_after_finish() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    tool_call = ToolCall(
+        id="shell-1",
+        function=ToolCall.FunctionBody(name="Shell", arguments='{"command": "tail -f app.log"}'),
+    )
+
+    view.append_tool_call(tool_call)
+    for i in range(1, 11):
+        view.dispatch_wire_message(ToolCallOutput(tool_call_id="shell-1", text=f"L{i:02d}\n"))
+
+    active = view.render_ansi(80)
+    assert "Recent output" in active
+    assert "L10" in active
+    assert "L01" not in active
+
+    view.append_tool_result(ToolResult(tool_call_id="shell-1", return_value=ToolOk(output="")))
+
+    finished = view.render_ansi(80)
+    assert "tail -f app.log" in finished
+    assert "L10" in finished
+    assert "L01" not in finished
 
 
 @pytest.mark.asyncio

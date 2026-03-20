@@ -27,6 +27,7 @@ from kimi_cli.wire.types import (
     SubagentEvent,
     TextPart,
     ToolCall,
+    ToolCallOutput,
     ToolCallPart,
     ToolCallRequest,
     ToolResult,
@@ -158,6 +159,15 @@ async def test_wire_message_serde():
     msg = ToolCallPart(arguments_part="}")
     assert serialize_wire_message(msg) == snapshot(
         {"type": "ToolCallPart", "payload": {"arguments_part": "}"}}
+    )
+    _test_serde(msg)
+
+    msg = ToolCallOutput(tool_call_id="call_123", text="line one\n")
+    assert serialize_wire_message(msg) == snapshot(
+        {
+            "type": "ToolCallOutput",
+            "payload": {"tool_call_id": "call_123", "text": "line one\n"},
+        }
     )
     _test_serde(msg)
 
@@ -382,6 +392,11 @@ async def test_type_inspection():
         request_id="request_123",
         response="approve",
     )
+    assert is_wire_message(msg)
+    assert is_event(msg)
+    assert not is_request(msg)
+
+    msg = ToolCallOutput(tool_call_id="call_123", text="line one\n")
     assert is_wire_message(msg)
     assert is_event(msg)
     assert not is_request(msg)

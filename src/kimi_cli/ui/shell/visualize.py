@@ -45,6 +45,7 @@ from kimi_cli.wire.types import (
     TextPart,
     ThinkPart,
     ToolCall,
+    ToolCallOutput,
     ToolCallPart,
     ToolCallRequest,
     ToolResult,
@@ -64,7 +65,7 @@ LIVE_VIEW_REFRESH_INTERVAL = 0.2
 
 def is_significant_for_render(msg: object) -> bool:
     """Whether a wire message should trigger an immediate repaint."""
-    if isinstance(msg, (ContentPart, ToolCallPart, StatusUpdate, ApprovalResponse)):
+    if isinstance(msg, (ContentPart, ToolCallPart, ToolCallOutput, StatusUpdate, ApprovalResponse)):
         return False
     if isinstance(msg, SubagentEvent):
         return is_significant_for_render(msg.event)
@@ -818,6 +819,8 @@ class LiveView:
                 self.append_tool_call(msg)
             case ToolCallPart():
                 self.append_tool_call_part(msg)
+            case ToolCallOutput():
+                self.append_tool_call_output(msg)
             case ToolResult():
                 self.append_tool_result(msg)
             case ApprovalResponse():
@@ -1058,6 +1061,12 @@ class LiveView:
         if self._last_tool_call_block.append_args_part(part.arguments_part):
             self.refresh_active()
 
+    def append_tool_call_output(self, output: ToolCallOutput) -> None:
+        if (block := self._tool_call_blocks.get(output.tool_call_id)) and block.append_output(
+            output.text
+        ):
+            self.refresh_active()
+
     def append_tool_result(self, result: ToolResult) -> None:
         if block := self._tool_call_blocks.get(result.tool_call_id):
             block.finish(result.return_value)
@@ -1142,6 +1151,9 @@ class LiveView:
                 block.append_sub_tool_call(tool_call)
             case ToolCallPart() as tool_call_part:
                 block.append_sub_tool_call_part(tool_call_part)
+            case ToolCallOutput():
+                # Ignore live subagent shell output for now; completed sub-tool calls still render.
+                pass
             case ToolResult() as tool_result:
                 block.finish_sub_tool_call(tool_result)
                 self.refresh_active()
