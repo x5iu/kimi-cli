@@ -144,9 +144,67 @@ async def test_detect_turn_end_question_calls_generate(
     assert len(history) == 1
     assert history[0].role == "user"
     history_text = history[0].extract_text()
-    assert "Ending excerpt:" in history_text
-    assert "Full message:" in history_text
+    assert "Latest message ending excerpt:" in history_text
+    assert "Latest full assistant message:" in history_text
     assert "Should I do A or B?" in history_text
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_includes_recent_three_turns_of_context(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    await soul._context.append_message(
+        [
+            Message(role="user", content="u1"),
+            Message(role="assistant", content="a1"),
+            Message(role="user", content="u2"),
+            Message(role="assistant", content="a2"),
+            Message(role="user", content="u3"),
+            Message(role="assistant", content="a3"),
+            Message(role="user", content="u4"),
+        ]
+    )
+
+    captured: dict[str, object] = {}
+
+    async def fake_generate(*, chat_provider, system_prompt, tools, history):
+        captured["history"] = history
+        return SimpleNamespace(
+            message=Message(
+                role="assistant",
+                content='{"has_question": false, "questions": []}',
+            )
+        )
+
+    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+
+    assistant_msg = Message(role="assistant", content="Should I continue?")
+    await soul._detect_turn_end_question(assistant_msg)
+
+    history = captured["history"]
+    assert len(history) == 1
+    history_text = history[0].extract_text()
+    assert "Recent turns (last 3, oldest to newest):" in history_text
+    assert "User:\nu2" in history_text
+    assert "Assistant:\na2" in history_text
+    assert "User:\nu3" in history_text
+    assert "Assistant:\na3" in history_text
+    assert "User:\nu4" in history_text
+    assert "Assistant:\nShould I continue?" in history_text
+    assert "User:\nu1" not in history_text
+    assert "Assistant:\na1" not in history_text
 
 
 # -- Integration: _maybe_ask_turn_end_question --

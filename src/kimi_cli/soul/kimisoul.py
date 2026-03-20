@@ -69,6 +69,7 @@ from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import content_parts_stringify
 from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
+from kimi_cli.utils.turns import is_real_user_turn_start_message
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
     ApprovalRequest,
@@ -926,6 +927,7 @@ class KimiSoul:
 
     _TURN_END_DETECT_MAX_ATTEMPTS = 2
     _TURN_END_DETECT_TIMEOUT = 15.0  # seconds
+    _TURN_END_DETECT_CONTEXT_TURNS = 3
 
     async def _detect_turn_end_question(
         self,
@@ -957,6 +959,81 @@ class KimiSoul:
         if not units:
             return text.strip()
         return "\n".join(units[-3:])
+
+    def _recent_turn_end_detection_context(
+        self,
+        assistant_message: Message,
+        *,
+        max_turns: int,
+    ) -> list[tuple[str, str]]:
+        history = list(self._context.history)
+        if not history or history[-1] != assistant_message:
+            history.append(assistant_message)
+
+        turns: list[tuple[str, str]] = []
+        current_user: str | None = None
+        current_assistant = ""
+
+        for msg in history:
+            if is_real_user_turn_start_message(msg):
+                if current_user is not None:
+                    turns.append((current_user, current_assistant))
+                current_user = msg.extract_text(sep="\n").strip()
+                current_assistant = ""
+                continue
+            if current_user is None:
+                continue
+            if msg.role == "assistant":
+                assistant_text = msg.extract_text(sep="\n").strip()
+                if assistant_text:
+                    current_assistant = assistant_text
+
+        if current_user is not None:
+            turns.append((current_user, current_assistant))
+        return turns[-max_turns:]
+
+    def _build_turn_end_detector_prompt_input(self, assistant_message: Message) -> str:
+        text_only = assistant_message.extract_text(" ")
+        excerpt = self._turn_end_question_excerpt(text_only)
+        recent_turns = self._recent_turn_end_detection_context(
+            assistant_message,
+            max_turns=self._TURN_END_DETECT_CONTEXT_TURNS,
+        )
+
+        lines = [
+            "Analyze whether the latest assistant message asks the user to choose between options or make a decision.",
+            "Use recent turns only as supporting context. Base has_question on the latest assistant message, not on older turns.",
+        ]
+        if recent_turns:
+            lines.extend(
+                [
+                    "",
+                    f"Recent turns (last {len(recent_turns)}, oldest to newest):",
+                ]
+            )
+            for idx, (user_text, assistant_text) in enumerate(recent_turns, start=1):
+                lines.extend(
+                    [
+                        "",
+                        f"[Turn {idx}]",
+                        f"User:\n{user_text or '(empty)'}",
+                        f"Assistant:\n{assistant_text or '(no textual reply)'}",
+                    ]
+                )
+
+        lines.extend(
+            [
+                "",
+                "Focus on the ending of the latest assistant message, but use the full latest message if earlier lines contain the options.",
+                "",
+                "Latest message ending excerpt:",
+                excerpt,
+                "",
+                "Latest full assistant message:",
+                text_only,
+            ]
+        )
+        return "\n".join(lines)
 
     def _heuristic_turn_end_question(
         self,
@@ -1056,16 +1133,10 @@ class KimiSoul:
         # to analyze, not as its own prior output.
         text_only = assistant_message.extract_text(" ")
         heuristic_detection = self._heuristic_turn_end_question(text_only)
-        excerpt = self._turn_end_question_excerpt(text_only)
         history: list[Message] = [
             Message(
                 role="user",
-                content=(
-                    "Analyze the following assistant message. Focus on the ending, "
-                    "but use the full message if earlier lines contain the options.\n\n"
-                    f"Ending excerpt:\n{excerpt}\n\n"
-                    f"Full message:\n{text_only}"
-                ),
+                content=self._build_turn_end_detector_prompt_input(assistant_message),
             )
         ]
 
