@@ -41,6 +41,8 @@ MAX_TOOL_OUTPUT_TAIL_CHARS = 4000
 MAX_TOOL_OUTPUT_LINE_CHARS = 400
 _OUTPUT_GUTTER_SEPARATOR = " │ "
 _OUTPUT_GUTTER_STYLE = "bright_black"
+_OUTPUT_STDOUT_STYLE = "#b8b8b8"
+_OUTPUT_STDERR_STYLE = "#ff8a8a"
 
 
 _TOOL_HEADLINE_VERBS: dict[str, tuple[str, str]] = {
@@ -154,7 +156,7 @@ class _ToolCallBlock:
         self._full_url = self._extract_full_url(tool_call.function.arguments, self._tool_name)
         self._result: ToolReturnValue | None = None
 
-        self._output_tail = deque[tuple[int, str]](maxlen=MAX_TOOL_OUTPUT_TAIL_LINES)
+        self._output_tail = deque[tuple[int, str, str]](maxlen=MAX_TOOL_OUTPUT_TAIL_LINES)
         self._output_tail_chars = 0
         self._output_tail_truncated = False
         self._output_line_count = 0
@@ -193,7 +195,7 @@ class _ToolCallBlock:
         )
         return True
 
-    def append_output(self, text: str) -> bool:
+    def append_output(self, text: str, *, stream: str = "stdout") -> bool:
         if not text:
             return False
 
@@ -205,15 +207,15 @@ class _ToolCallBlock:
                 self._output_tail.maxlen is not None
                 and len(self._output_tail) == self._output_tail.maxlen
             ):
-                _, removed = self._output_tail.popleft()
+                _, removed, _ = self._output_tail.popleft()
                 self._output_tail_chars -= len(removed)
                 self._output_tail_truncated = True
-            self._output_tail.append((self._output_line_count, line))
+            self._output_tail.append((self._output_line_count, line, stream))
             self._output_tail_chars += len(line)
             updated = True
 
         while self._output_tail_chars > MAX_TOOL_OUTPUT_TAIL_CHARS and len(self._output_tail) > 1:
-            _, removed = self._output_tail.popleft()
+            _, removed, _ = self._output_tail.popleft()
             self._output_tail_chars -= len(removed)
             self._output_tail_truncated = True
 
@@ -371,7 +373,7 @@ class _ToolCallBlock:
         return ""
 
     def _render_output_tail(self) -> RenderableType | None:
-        if not self._output_tail or not any(line.strip() for _, line in self._output_tail):
+        if not self._output_tail or not any(line.strip() for _, line, _ in self._output_tail):
             return None
 
         gutter_width = len(str(self._output_tail[-1][0]))
@@ -384,12 +386,16 @@ class _ToolCallBlock:
             rendered.append("… older output omitted", style="grey50 italic")
             rendered.append("\n")
 
-        for index, (line_no, line) in enumerate(self._output_tail):
+        for index, (line_no, line, stream) in enumerate(self._output_tail):
             rendered.append(
                 self._format_output_gutter(str(line_no), gutter_width),
                 style=_OUTPUT_GUTTER_STYLE,
             )
-            rendered.append(line.rstrip("\n"), style="default")
+            line_text = line.rstrip("\n")
+            rendered.append(
+                line_text,
+                style=_OUTPUT_STDERR_STYLE if stream == "stderr" else _OUTPUT_STDOUT_STYLE,
+            )
             if index != len(self._output_tail) - 1:
                 rendered.append("\n")
 

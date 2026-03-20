@@ -1063,7 +1063,8 @@ class LiveView:
 
     def append_tool_call_output(self, output: ToolCallOutput) -> None:
         if (block := self._tool_call_blocks.get(output.tool_call_id)) and block.append_output(
-            output.text
+            output.text,
+            stream=output.stream,
         ):
             self.refresh_active()
 

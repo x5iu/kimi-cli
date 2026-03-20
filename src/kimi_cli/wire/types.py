@@ -157,6 +157,9 @@ class ToolCallOutput(BaseModel):
     text: str
     """A newly emitted chunk of textual output."""
 
+    stream: Literal["stdout", "stderr"] = "stdout"
+    """Which stream produced this chunk."""
+
 
 class SubagentEvent(BaseModel):
     """

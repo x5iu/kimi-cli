@@ -162,11 +162,11 @@ async def test_wire_message_serde():
     )
     _test_serde(msg)
 
-    msg = ToolCallOutput(tool_call_id="call_123", text="line one\n")
+    msg = ToolCallOutput(tool_call_id="call_123", text="line one\n", stream="stderr")
     assert serialize_wire_message(msg) == snapshot(
         {
             "type": "ToolCallOutput",
-            "payload": {"tool_call_id": "call_123", "text": "line one\n"},
+            "payload": {"tool_call_id": "call_123", "text": "line one\n", "stream": "stderr"},
         }
     )
     _test_serde(msg)
@@ -396,7 +396,7 @@ async def test_type_inspection():
     assert is_event(msg)
     assert not is_request(msg)
 
-    msg = ToolCallOutput(tool_call_id="call_123", text="line one\n")
+    msg = ToolCallOutput(tool_call_id="call_123", text="line one\n", stream="stderr")
     assert is_wire_message(msg)
     assert is_event(msg)
     assert not is_request(msg)

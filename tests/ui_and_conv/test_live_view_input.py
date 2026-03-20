@@ -6,6 +6,7 @@ import pytest
 from kosong.tooling import ToolOk
 
 from kimi_cli.ui.shell.keyboard import KeyEvent
+from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl
 from kimi_cli.ui.shell.visualize import LiveView
 from kimi_cli.wire.types import (
     ApprovalRequest,
@@ -48,6 +49,48 @@ def test_live_view_renders_shell_output_tail_and_keeps_it_after_finish() -> None
     assert "tail -f app.log" in finished
     assert "L10" in finished
     assert "L01" not in finished
+
+
+def test_live_view_renders_stderr_output_in_red() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    tool_call = ToolCall(
+        id="shell-stderr",
+        function=ToolCall.FunctionBody(name="Shell", arguments='{"command": "printf err >&2"}'),
+    )
+
+    view.append_tool_call(tool_call)
+    view.dispatch_wire_message(
+        ToolCallOutput(tool_call_id="shell-stderr", text="ERR\n", stream="stderr")
+    )
+
+    active = view.render_ansi(80)
+    assert "Output tail" in active
+    assert "ERR" in active
+
+    control = _RichRenderableControl(lambda: view.compose_active_body())
+    content = control.create_content(width=80, height=None)
+    lines = [content.get_line(i) for i in range(content.line_count)]
+
+    stderr_line = next(line for line in lines if any("ERR" in text for _, text in line))
+    assert any("ERR" in text and style == "fg:#ff8a8a" for style, text in stderr_line)
+
+
+def test_live_view_rich_ptk_keeps_stdout_output_visible() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    tool_call = ToolCall(
+        id="shell-stdout",
+        function=ToolCall.FunctionBody(name="Shell", arguments='{"command": "printf out"}'),
+    )
+
+    view.append_tool_call(tool_call)
+    view.dispatch_wire_message(ToolCallOutput(tool_call_id="shell-stdout", text="OUT\n"))
+
+    control = _RichRenderableControl(lambda: view.compose_active_body())
+    content = control.create_content(width=80, height=None)
+    lines = [content.get_line(i) for i in range(content.line_count)]
+
+    stdout_line = next(line for line in lines if any("OUT" in text for _, text in line))
+    assert any("OUT" in text and style == "fg:#b8b8b8" for style, text in stdout_line)
 
 
 def test_live_view_hides_output_tail_for_whitespace_only_output() -> None:

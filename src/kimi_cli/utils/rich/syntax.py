@@ -25,6 +25,9 @@ from rich.style import Style
 from rich.syntax import ANSISyntaxTheme, Syntax, SyntaxTheme
 
 KIMI_ANSI_THEME_NAME = "kimi-ansi"
+_DIFF_HUNK_STYLE = "#7fbccc"
+_DIFF_DELETE_STYLE = "#ff8a8a"
+_DIFF_INSERT_STYLE = "#8fcd8f"
 KIMI_ANSI_THEME = ANSISyntaxTheme(
     {
         PygmentsToken: Style(color="default"),
@@ -63,15 +66,15 @@ KIMI_ANSI_THEME = ANSISyntaxTheme(
         Number: Style(color="bright_green"),
         Operator: Style(color="default"),
         Punctuation: Style(color="default"),
-        Generic.Deleted: Style(color="red"),
+        Generic.Deleted: Style(color=_DIFF_DELETE_STYLE),
         Generic.Emph: Style(italic=True),
         Generic.Error: Style(color="bright_red", bold=True),
-        Generic.Heading: Style(color="bright_cyan", bold=True),
-        Generic.Inserted: Style(color="green"),
+        Generic.Heading: Style(color=_DIFF_HUNK_STYLE, bold=True),
+        Generic.Inserted: Style(color=_DIFF_INSERT_STYLE),
         Generic.Output: Style(color="bright_black"),
         Generic.Prompt: Style(color="bright_magenta"),
         Generic.Strong: Style(bold=True),
-        Generic.Subheading: Style(color="bright_cyan"),
+        Generic.Subheading: Style(color=_DIFF_HUNK_STYLE),
         Generic.Traceback: Style(color="bright_red", bold=True),
     }
 )

@@ -38,7 +38,7 @@ async def test_shell_emits_live_output_over_wire(shell_tool: Shell):
         result = await shell_tool(Params(command="printf 'alpha\\nbeta\\ngamma\\n'"))
         assert not result.is_error
 
-        chunks: list[str] = []
+        chunks: list[tuple[str, str]] = []
         while True:
             try:
                 msg = await asyncio.wait_for(ui_side.receive(), timeout=0.05)
@@ -47,9 +47,39 @@ async def test_shell_emits_live_output_over_wire(shell_tool: Shell):
             except QueueShutDown:
                 break
             if isinstance(msg, ToolCallOutput):
-                chunks.append(msg.text)
+                chunks.append((msg.stream, msg.text))
 
-        assert chunks == ["alpha\n", "beta\n", "gamma\n"]
+        assert chunks == [
+            ("stdout", "alpha\n"),
+            ("stdout", "beta\n"),
+            ("stdout", "gamma\n"),
+        ]
+    finally:
+        wire.shutdown()
+        _current_wire.reset(wire_token)
+
+
+async def test_shell_emits_live_stderr_over_wire(shell_tool: Shell):
+    wire = Wire()
+    wire_token = _current_wire.set(wire)
+    ui_side = wire.ui_side(merge=False)
+
+    try:
+        result = await shell_tool(Params(command="printf 'oops\\n' >&2"))
+        assert not result.is_error
+
+        chunks: list[tuple[str, str]] = []
+        while True:
+            try:
+                msg = await asyncio.wait_for(ui_side.receive(), timeout=0.05)
+            except TimeoutError:
+                break
+            except QueueShutDown:
+                break
+            if isinstance(msg, ToolCallOutput):
+                chunks.append((msg.stream, msg.text))
+
+        assert chunks == [("stderr", "oops\n")]
     finally:
         wire.shutdown()
         _current_wire.reset(wire_token)

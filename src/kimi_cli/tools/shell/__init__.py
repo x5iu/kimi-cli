@@ -101,19 +101,19 @@ class Shell(CallableTool2[Params]):
         tool_call = get_current_tool_call_or_none()
         has_live_output = tool_call is not None and get_wire_or_none() is not None
 
-        def output_cb(text: str) -> None:
+        def output_cb(text: str, stream: str) -> None:
             if has_live_output and tool_call is not None and text:
-                wire_send(ToolCallOutput(tool_call_id=tool_call.id, text=text))
+                wire_send(ToolCallOutput(tool_call_id=tool_call.id, text=text, stream=stream))
 
         def stdout_cb(line: bytes):
             line_str = line.decode(encoding="utf-8", errors="replace")
             builder.write(line_str)
-            output_cb(line_str)
+            output_cb(line_str, "stdout")
 
         def stderr_cb(line: bytes):
             line_str = line.decode(encoding="utf-8", errors="replace")
             builder.write(line_str)
-            output_cb(line_str)
+            output_cb(line_str, "stderr")
 
         try:
             exitcode = await self._run_shell_command(

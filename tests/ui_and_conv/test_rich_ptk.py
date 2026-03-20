@@ -4,6 +4,8 @@ from prompt_toolkit.data_structures import Point
 from rich.text import Text
 
 from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl, _StackedRichRenderableControl
+from kimi_cli.utils.rich.diff import render_diff_block
+from kimi_cli.wire.types import DiffDisplayBlock
 
 
 def _section(text: str) -> _RichRenderableControl:
@@ -92,3 +94,45 @@ def test_stacked_rich_renderable_control_reports_total_line_count() -> None:
 
     assert control.total_line_count(80) == 5
     assert control.line_count(80) == 2
+
+
+def test_source_numbered_diff_uses_soft_colors() -> None:
+    renderable = render_diff_block(
+        DiffDisplayBlock(
+            path="src/example.py",
+            old_text="before\n",
+            new_text="after\n",
+            old_start_line=42,
+            new_start_line=42,
+        ),
+        source_line_numbers=True,
+    )
+    control = _RichRenderableControl(lambda: renderable)
+    content = control.create_content(width=80, height=None)
+    lines = [content.get_line(i) for i in range(content.line_count)]
+
+    deleted_line = next(line for line in lines if any("-before" in text for _, text in line))
+    inserted_line = next(line for line in lines if any("+after" in text for _, text in line))
+
+    assert any("-before" in text and style == "fg:#ff8a8a" for style, text in deleted_line)
+    assert any("+after" in text and style == "fg:#8fcd8f" for style, text in inserted_line)
+
+
+def test_unified_diff_syntax_uses_soft_colors() -> None:
+    renderable = render_diff_block(
+        DiffDisplayBlock(
+            path="src/example.py",
+            old_text="before\n",
+            new_text="after\n",
+        ),
+        source_line_numbers=False,
+    )
+    control = _RichRenderableControl(lambda: renderable)
+    content = control.create_content(width=80, height=None)
+    lines = [content.get_line(i) for i in range(content.line_count)]
+
+    deleted_line = next(line for line in lines if any("-before" in text for _, text in line))
+    inserted_line = next(line for line in lines if any("+after" in text for _, text in line))
+
+    assert any("-before" in text and style == "fg:#ff8a8a" for style, text in deleted_line)
+    assert any("+after" in text and style == "fg:#8fcd8f" for style, text in inserted_line)

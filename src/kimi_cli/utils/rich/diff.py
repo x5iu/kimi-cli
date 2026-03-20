@@ -16,6 +16,10 @@ _HUNK_HEADER_RE = re.compile(
 )
 _GUTTER_SEPARATOR = " │ "
 _GUTTER_STYLE = "bright_black"
+_DIFF_HUNK_STYLE = "#7fbccc"
+_DIFF_DELETE_STYLE = "#ff8a8a"
+_DIFF_INSERT_STYLE = "#8fcd8f"
+_DIFF_META_STYLE = "#d8c27a"
 
 
 def render_diff_block(
@@ -48,7 +52,7 @@ def _render_source_numbered_diff(diff_text: str, block: DiffDisplayBlock) -> Tex
             current_old = int(match.group("old_start"))
             current_new = int(match.group("new_start"))
             text.append(_format_gutter("", "", gutter_width), style=_GUTTER_STYLE)
-            text.append(line, style="cyan")
+            text.append(line, style=_DIFF_HUNK_STYLE)
         elif line.startswith(" "):
             text.append(
                 _format_gutter(str(current_old), str(current_new), gutter_width),
@@ -59,15 +63,15 @@ def _render_source_numbered_diff(diff_text: str, block: DiffDisplayBlock) -> Tex
             current_new += 1
         elif line.startswith("-"):
             text.append(_format_gutter(str(current_old), "", gutter_width), style=_GUTTER_STYLE)
-            text.append(line, style="red")
+            text.append(line, style=_DIFF_DELETE_STYLE)
             current_old += 1
         elif line.startswith("+"):
             text.append(_format_gutter("", str(current_new), gutter_width), style=_GUTTER_STYLE)
-            text.append(line, style="green")
+            text.append(line, style=_DIFF_INSERT_STYLE)
             current_new += 1
         else:
             text.append(_format_gutter("", "", gutter_width), style=_GUTTER_STYLE)
-            text.append(line, style="yellow")
+            text.append(line, style=_DIFF_META_STYLE)
 
         if index != len(lines) - 1:
             text.append("\n")
