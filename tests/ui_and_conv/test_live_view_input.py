@@ -50,6 +50,25 @@ def test_live_view_renders_shell_output_tail_and_keeps_it_after_finish() -> None
     assert "L01" not in finished
 
 
+def test_live_view_hides_output_tail_for_whitespace_only_output() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    tool_call = ToolCall(
+        id="shell-blank",
+        function=ToolCall.FunctionBody(name="Shell", arguments='{"command": "printf whitespace"}'),
+    )
+
+    view.append_tool_call(tool_call)
+    view.dispatch_wire_message(ToolCallOutput(tool_call_id="shell-blank", text="   \n\t\n"))
+
+    active = view.render_ansi(80)
+    assert "Output tail" not in active
+    assert "printf whitespace" in active
+
+    view.append_tool_result(ToolResult(tool_call_id="shell-blank", return_value=ToolOk(output="")))
+    finished = view.render_ansi(80)
+    assert "Output tail" not in finished
+
+
 @pytest.mark.asyncio
 async def test_live_view_accepts_line_based_approval_input() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)

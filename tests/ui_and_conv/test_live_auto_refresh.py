@@ -5,7 +5,11 @@ from typing import cast
 
 import pytest
 
-from kimi_cli.ui.shell.visualize import LiveView, is_significant_for_render
+from kimi_cli.ui.shell.visualize import (
+    LIVE_VIEW_REFRESH_INTERVAL,
+    LiveView,
+    is_significant_for_render,
+)
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.wire import WireUISide
 from kimi_cli.wire.types import StatusUpdate, TextPart, ToolCallOutput
@@ -54,6 +58,10 @@ def test_live_view_retains_flushed_content_without_console_output() -> None:
 
     rendered = view.render_ansi(80)
     assert "hello" in rendered
+
+
+def test_live_view_refresh_interval_is_one_second() -> None:
+    assert LIVE_VIEW_REFRESH_INTERVAL == 1.0
 
 
 @pytest.mark.asyncio

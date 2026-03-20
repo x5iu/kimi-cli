@@ -371,7 +371,7 @@ class _ToolCallBlock:
         return ""
 
     def _render_output_tail(self) -> RenderableType | None:
-        if not self._output_tail:
+        if not self._output_tail or not any(line.strip() for _, line in self._output_tail):
             return None
 
         gutter_width = len(str(self._output_tail[-1][0]))
