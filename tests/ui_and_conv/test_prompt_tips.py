@@ -665,13 +665,28 @@ def test_turn_input_hint_text_shows_pending_question_hint() -> None:
     assert "Use ↑/↓" in hint
 
 
-def test_turn_input_hint_text_hides_when_buffer_has_text() -> None:
+def test_turn_input_hint_text_keeps_pending_question_hint_while_typing() -> None:
     prompt_session = object.__new__(CustomPromptSession)
 
     hint = prompt_session._turn_input_hint_text(
         live_view=SimpleNamespace(
             input_mode="question",
             input_hint="Use ↑/↓ to focus and Enter to choose.",
+        ),
+        buffer_text="typing",
+        feedback_message="",
+    )
+
+    assert "Use ↑/↓" in hint
+
+
+def test_turn_input_hint_text_still_hides_reminder_hint_while_typing() -> None:
+    prompt_session = object.__new__(CustomPromptSession)
+
+    hint = prompt_session._turn_input_hint_text(
+        live_view=SimpleNamespace(
+            input_mode="reminder",
+            input_hint="Turn is running. Type a message and press Enter to send a reminder.",
         ),
         buffer_text="typing",
         feedback_message="",

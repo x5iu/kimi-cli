@@ -1302,9 +1302,10 @@ class CustomPromptSession:
         buffer_text: str,
         feedback_message: str,
     ) -> str:
-        if buffer_text:
+        input_mode = getattr(live_view, "input_mode", "reminder")
+        if buffer_text and input_mode == "reminder":
             return ""
-        if getattr(live_view, "input_mode", "reminder") == "reminder":
+        if input_mode == "reminder":
             return ""
         hint = feedback_message or getattr(live_view, "input_hint", "")
         if not hint:
