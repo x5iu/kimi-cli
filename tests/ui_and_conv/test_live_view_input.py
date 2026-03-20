@@ -157,6 +157,80 @@ async def test_live_view_accepts_custom_single_select_answer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_live_view_echoes_answered_question_and_choice_in_output() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-echo",
+        tool_call_id="tool-echo",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert view.try_submit_line("1") is True
+    assert await request.wait() == {"Which format should I use?": "JSON"}
+
+    rendered = view.render_ansi(80, include_running_indicators=False)
+    assert "Answer" in rendered
+    assert "? Which format should I use?" in rendered
+    assert "→ JSON" in rendered
+    assert "QUESTION" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_live_view_echoes_multi_question_answers_after_keyboard_submission() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-echo-keyboard",
+        tool_call_id="tool-echo-keyboard",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+            ),
+            QuestionItem(
+                question="Which checks should I run?",
+                options=[
+                    QuestionOption(label="format"),
+                    QuestionOption(label="tests"),
+                ],
+            ),
+        ],
+    )
+
+    view.request_question(request)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+    view.dispatch_keyboard_event(KeyEvent.ENTER)
+
+    assert await request.wait() == {
+        "Which format should I use?": "YAML",
+        "Which checks should I run?": "format",
+    }
+
+    rendered = view.render_ansi(100, include_running_indicators=False)
+    assert "Answer" in rendered
+    assert "? Which format should I use?" in rendered
+    assert "→ YAML" in rendered
+    assert "? Which checks should I run?" in rendered
+    assert "→ format" in rendered
+    assert rendered.index("? Which format should I use?") < rendered.index(
+        "? Which checks should I run?"
+    )
+
+
+@pytest.mark.asyncio
 async def test_live_view_switches_to_custom_answer_mode_for_other_option() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0))
     request = QuestionRequest(

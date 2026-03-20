@@ -112,6 +112,30 @@ def render_user_prompt_block(text: str) -> RenderableType:
     return _render_prompt_block(text, title="User", border_style="blue")
 
 
+def _render_question_answers_block(
+    request: QuestionRequest,
+    answers: dict[str, str],
+) -> RenderableType:
+    lines: list[RenderableType] = []
+    for item in request.questions:
+        answer = answers.get(item.question)
+        if answer is None:
+            continue
+        if lines:
+            lines.append(Text(""))
+        lines.append(Text(f"? {item.question}", style="yellow"))
+        lines.append(Text(f"→ {answer}", style="bold cyan"))
+    return Panel(
+        Group(*lines),
+        box=box.ROUNDED,
+        border_style="blue",
+        title=Text("Answer", style="bold blue"),
+        title_align="left",
+        padding=(0, 1),
+        expand=False,
+    )
+
+
 def _render_reminder_block(text: str) -> RenderableType:
     return _render_prompt_block(text, title="Reminder", border_style="cyan")
 
@@ -256,6 +280,13 @@ class LiveView:
         self._active_revision += 1
         self._render_revision += 1
 
+    def _append_history_block(self, block: RenderableType) -> None:
+        if self._flush_to_console:
+            console.print(block)
+        else:
+            self._flushed_blocks.append(block)
+        self.refresh_history()
+
     def echo_reminder(self, text: str) -> None:
         stripped = text.strip()
         if not stripped:
@@ -263,23 +294,20 @@ class LiveView:
         self.flush_content()
         reminder = _render_reminder_block(stripped)
         self._reminder_blocks.append(reminder)
-        if self._flush_to_console:
-            console.print(reminder)
-        else:
-            self._flushed_blocks.append(reminder)
-        self.refresh_history()
+        self._append_history_block(reminder)
 
     def echo_user_choice(self, text: str) -> None:
         stripped = text.strip()
         if not stripped:
             return
         self.flush_content()
-        block = render_user_prompt_block(stripped)
-        if self._flush_to_console:
-            console.print(block)
-        else:
-            self._flushed_blocks.append(block)
-        self.refresh_history()
+        self._append_history_block(render_user_prompt_block(stripped))
+
+    def echo_question_answers(self, request: QuestionRequest, answers: dict[str, str]) -> None:
+        if not answers:
+            return
+        self.flush_content()
+        self._append_history_block(_render_question_answers_block(request, answers))
 
     def finish_turn(self) -> None:
         if self._turn_spinner is None:
@@ -520,7 +548,9 @@ class LiveView:
     ) -> None:
         self._question_waiting_for_other_text = False
         if all_done:
-            panel.request.resolve(panel.get_answers())
+            answers = dict(panel.get_answers())
+            self.echo_question_answers(panel.request, answers)
+            panel.request.resolve(answers)
             self.show_next_question_request()
         self.refresh_active()
 
@@ -847,10 +877,7 @@ class LiveView:
             self.refresh_active()
             return
         all_done = panel.submit()
-        if all_done:
-            panel.request.resolve(panel.get_answers())
-            self.show_next_question_request()
-        self.refresh_active()
+        self._resolve_question_submission(panel, all_done=all_done)
 
     def dispatch_keyboard_event(self, event: KeyEvent) -> None:
         if event == KeyEvent.CTRL_E and self.can_expand_current_panel:
