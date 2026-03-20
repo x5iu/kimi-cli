@@ -180,6 +180,10 @@ class _ToolCallBlock:
     def finished(self) -> bool:
         return self._result is not None
 
+    @property
+    def tool_name(self) -> str:
+        return self._tool_name
+
     def append_args_part(self, args_part: str) -> bool:
         if self.finished:
             return False

@@ -213,8 +213,9 @@ def _show_approval_in_pager(panel: _ApprovalRequestPanel) -> None:
 class _QuestionRequestPanel:
     """Renders structured questions for the user to answer interactively."""
 
-    def __init__(self, request: QuestionRequest):
+    def __init__(self, request: QuestionRequest, *, allow_exit: bool = False):
         self.request = request
+        self._allow_exit = allow_exit
         self._current_question_index = 0
         self._answers: dict[str, str] = {}
         self._saved_selections: dict[int, tuple[int, set[int]]] = {}
@@ -230,22 +231,24 @@ class _QuestionRequestPanel:
         other_label = q.other_label or OTHER_OPTION_LABEL
         other_desc = q.other_description or ""
         self._options.append((other_label, other_desc))
+        if self._allow_exit:
+            self._options.append(("Exit", "Dismiss this question without answering"))
         idx = self._current_question_index
         if idx in self._saved_selections:
             saved_idx, saved_multi = self._saved_selections[idx]
             self._selected_index = min(saved_idx, len(self._options) - 1)
-            self._multi_selected = saved_multi
+            self._multi_selected = {i for i in saved_multi if 0 <= i < len(self._options)}
         elif q.question in self._answers:
             answer = self._answers[q.question]
             if q.multi_select:
                 answer_labels = [a.strip() for a in answer.split(", ")]
-                known_labels = {label for label, _ in self._options[:-1]}
+                known_labels = {o.label for o in q.options}
                 self._multi_selected = set()
-                for i, (label, _) in enumerate(self._options[:-1]):
+                for i, (label, _) in enumerate(self._options[: len(q.options)]):
                     if label in answer_labels:
                         self._multi_selected.add(i)
                 if any(answer_label not in known_labels for answer_label in answer_labels):
-                    self._multi_selected.add(len(self._options) - 1)
+                    self._multi_selected.add(self.other_index)
                 self._selected_index = min(self._multi_selected) if self._multi_selected else 0
             else:
                 for i, (label, _) in enumerate(self._options):
@@ -253,7 +256,7 @@ class _QuestionRequestPanel:
                         self._selected_index = i
                         break
                 else:
-                    self._selected_index = len(self._options) - 1
+                    self._selected_index = self.other_index
                 self._multi_selected = set()
         else:
             self._selected_index = 0
@@ -270,8 +273,26 @@ class _QuestionRequestPanel:
         return self.request.questions[self._current_question_index]
 
     @property
+    def other_index(self) -> int:
+        return len(self._current_question.options)
+
+    @property
+    def has_exit_option(self) -> bool:
+        return self._allow_exit
+
+    @property
+    def exit_index(self) -> int | None:
+        if not self._allow_exit:
+            return None
+        return self.other_index + 1
+
+    @property
     def is_other_selected(self) -> bool:
-        return self._selected_index == len(self._options) - 1
+        return self._selected_index == self.other_index
+
+    @property
+    def is_exit_selected(self) -> bool:
+        return self.exit_index is not None and self._selected_index == self.exit_index
 
     @property
     def is_multi_select(self) -> bool:
@@ -307,8 +328,7 @@ class _QuestionRequestPanel:
     def should_prompt_other_input(self) -> bool:
         if not self.is_multi_select:
             return self.is_other_selected
-        other_idx = len(self._options) - 1
-        return other_idx in self._multi_selected
+        return self.other_index in self._multi_selected
 
     def select_index(self, index: int) -> bool:
         if not (0 <= index < len(self._options)):
@@ -356,7 +376,12 @@ class _QuestionRequestPanel:
 
         for i, (label, description) in enumerate(self._options):
             num = i + 1
-            if q.multi_select:
+            if self.exit_index is not None and i == self.exit_index:
+                if i == self._selected_index:
+                    option_line = Text.from_markup(f"[magenta]→ \\[{num}] {escape(label)}[/magenta]")
+                else:
+                    option_line = Text.from_markup(f"[grey50]  \\[{num}] {escape(label)}[/grey50]")
+            elif q.multi_select:
                 checked = "✓" if i in self._multi_selected else " "
                 prefix = f"\\[{checked}]"
                 if i == self._selected_index:
@@ -389,6 +414,8 @@ class _QuestionRequestPanel:
             lines.append(Text("  Select Other to enter custom text.", style="dim"))
         else:
             lines.append(Text("  Select Other to enter custom text.", style="dim"))
+        if self.has_exit_option:
+            lines.append(Text("  Select Exit to dismiss this question.", style="dim"))
 
         return Panel(
             Group(*lines),
@@ -425,7 +452,7 @@ class _QuestionRequestPanel:
         self._selected_index = (self._selected_index + 1) % len(self._options)
 
     def toggle_select(self) -> None:
-        if not self.is_multi_select:
+        if not self.is_multi_select or self.is_exit_selected:
             return
         if self._selected_index in self._multi_selected:
             self._multi_selected.discard(self._selected_index)
@@ -435,8 +462,7 @@ class _QuestionRequestPanel:
     def submit(self) -> bool:
         q = self._current_question
         if q.multi_select:
-            other_idx = len(self._options) - 1
-            if other_idx in self._multi_selected:
+            if self.other_index in self._multi_selected:
                 return False
             selected_labels = [
                 self._options[i][0] for i in sorted(self._multi_selected) if i < len(q.options)
@@ -445,7 +471,7 @@ class _QuestionRequestPanel:
                 return False
             self._answers[q.question] = ", ".join(selected_labels)
         else:
-            if self.is_other_selected:
+            if self.is_other_selected or self.is_exit_selected:
                 return False
             self._answers[q.question] = self._options[self._selected_index][0]
         self._saved_selections.pop(self._current_question_index, None)
@@ -454,11 +480,8 @@ class _QuestionRequestPanel:
     def submit_other(self, text: str) -> bool:
         q = self._current_question
         if q.multi_select:
-            other_idx = len(self._options) - 1
             selected_labels = [
-                self._options[i][0]
-                for i in sorted(self._multi_selected)
-                if i < len(q.options) and i != other_idx
+                self._options[i][0] for i in sorted(self._multi_selected) if i < len(q.options)
             ]
             if text:
                 selected_labels.append(text)

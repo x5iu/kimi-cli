@@ -2025,6 +2025,7 @@ class CustomPromptSession:
         _bind_live_digit("3", KeyEvent.NUM_3)
         _bind_live_digit("4", KeyEvent.NUM_4)
         _bind_live_digit("5", KeyEvent.NUM_5)
+        _bind_live_digit("6", KeyEvent.NUM_6)
 
         @key_bindings.add("up", filter=route_history_view_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:

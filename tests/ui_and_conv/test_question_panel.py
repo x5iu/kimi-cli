@@ -87,6 +87,26 @@ def test_single_select_other():
     assert panel.get_answers() == {"Pick one?": "custom text"}
 
 
+def test_single_select_exit_option_is_rendered_separately_from_other():
+    request = _make_request()
+    panel = _QuestionRequestPanel(request, allow_exit=True)
+
+    rendered = _render_to_str(panel)
+    assert "Other" in rendered
+    assert "Exit" in rendered
+    assert "dismiss this question" in rendered
+
+    panel.move_down()  # index 1 (B)
+    panel.move_down()  # index 2 (C)
+    panel.move_down()  # index 3 (Other)
+    assert panel.is_other_selected is True
+    assert panel.is_exit_selected is False
+
+    panel.move_down()  # index 4 (Exit)
+    assert panel.is_exit_selected is True
+    assert panel.submit() is False
+
+
 def test_multi_select_toggle_and_submit():
     """Toggle options 0 and 2, submit should produce comma-joined labels."""
     request = _make_request(

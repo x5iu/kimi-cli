@@ -414,14 +414,15 @@ class LiveView:
                 return "Enter the custom answer, then press Enter."
             case "question":
                 panel = self._current_question_panel
+                dismiss_hint = " Select Exit to dismiss." if panel is not None and panel.has_exit_option else ""
                 if panel is not None and panel.is_multi_select:
                     return (
                         "Use ↑/↓ to focus, Space or Enter to select, and Enter to submit. "
-                        f"Select Other to type custom text.{expand_hint}"
+                        f"Select Other to type custom text.{dismiss_hint}{expand_hint}"
                     )
                 return (
                     "Use ↑/↓ to focus and Enter to choose. "
-                    f"Select Other to type custom text.{expand_hint}"
+                    f"Select Other to type custom text.{dismiss_hint}{expand_hint}"
                 )
             case _:
                 return "Turn is running. Type a message and press Enter to send a reminder."
@@ -540,6 +541,14 @@ class LiveView:
         self.refresh_active()
         return True
 
+    def _dismiss_question_request(self) -> None:
+        panel = self._current_question_panel
+        if panel is None:
+            return
+        panel.request.resolve({})
+        self.show_next_question_request()
+        self.refresh_active()
+
     def _resolve_question_submission(
         self,
         panel: _QuestionRequestPanel,
@@ -579,6 +588,9 @@ class LiveView:
             return True
         if not panel.select_index(idx):
             return False
+        if panel.is_exit_selected:
+            self._dismiss_question_request()
+            return True
         if panel.is_other_selected:
             self._question_waiting_for_other_text = True
             self.refresh_active()
@@ -593,10 +605,12 @@ class LiveView:
         if not tokens:
             return False
 
-        other_idx = panel.option_count - 1
+        other_idx = panel.other_index
+        exit_idx = panel.exit_index
         selected_indices: set[int] = set()
         custom_tokens: list[str] = []
         wants_other = False
+        wants_exit = False
 
         for token in tokens:
             idx = self._parse_index_token(token)
@@ -608,8 +622,14 @@ class LiveView:
                 return False
             elif idx == other_idx:
                 wants_other = True
+            elif exit_idx is not None and idx == exit_idx:
+                wants_exit = True
             else:
                 selected_indices.add(idx)
+
+        if wants_exit:
+            self._dismiss_question_request()
+            return True
 
         if custom_tokens:
             panel.set_multi_selected(set(selected_indices))
@@ -872,8 +892,11 @@ class LiveView:
         panel = self._current_question_panel
         if panel is None:
             return
+        if panel.is_exit_selected:
+            self._dismiss_question_request()
+            return
         if panel.is_multi_select and panel.is_other_selected:
-            panel.multi_selected.add(panel.option_count - 1)
+            panel.multi_selected.add(panel.other_index)
         if panel.should_prompt_other_input():
             self._question_waiting_for_other_text = True
             self.refresh_active()
@@ -899,14 +922,20 @@ class LiveView:
                 case KeyEvent.RIGHT | KeyEvent.TAB:
                     self._current_question_panel.next_tab()
                 case KeyEvent.SPACE:
-                    if self._current_question_panel.is_multi_select:
-                        self._current_question_panel.toggle_select()
+                    panel = self._current_question_panel
+                    if panel.is_multi_select:
+                        if panel.is_exit_selected:
+                            self._dismiss_question_request()
+                        else:
+                            panel.toggle_select()
                     else:
                         self._try_submit_question()
                 case KeyEvent.ENTER:
                     panel = self._current_question_panel
-                    if panel.is_multi_select:
-                        other_idx = panel.option_count - 1
+                    if panel.is_exit_selected:
+                        self._dismiss_question_request()
+                    elif panel.is_multi_select:
+                        other_idx = panel.other_index
                         if panel.selected_index == other_idx:
                             panel.multi_selected.add(other_idx)
                             self._try_submit_question()
@@ -918,14 +947,14 @@ class LiveView:
                         # "Other" is handled in keyboard_handler (async context)
                         self._try_submit_question()
                 case KeyEvent.ESCAPE:
-                    self._current_question_panel.request.resolve({})
-                    self.show_next_question_request()
+                    self._dismiss_question_request()
                 case (
                     KeyEvent.NUM_1
                     | KeyEvent.NUM_2
                     | KeyEvent.NUM_3
                     | KeyEvent.NUM_4
                     | KeyEvent.NUM_5
+                    | KeyEvent.NUM_6
                 ):
                     # Number keys select option in question panel
                     num_map = {
@@ -934,11 +963,14 @@ class LiveView:
                         KeyEvent.NUM_3: 2,
                         KeyEvent.NUM_4: 3,
                         KeyEvent.NUM_5: 4,
+                        KeyEvent.NUM_6: 5,
                     }
                     idx = num_map[event]
                     panel = self._current_question_panel
                     if panel.select_index(idx):
-                        if panel.is_multi_select:
+                        if panel.is_exit_selected:
+                            self._dismiss_question_request()
+                        elif panel.is_multi_select:
                             panel.toggle_select()
                         elif not panel.is_other_selected:
                             # Auto-submit for single-select (unless "Other")
@@ -1147,6 +1179,10 @@ class LiveView:
             console.bell()
             self.show_next_question_request()
 
+    def _question_request_allows_exit(self, request: QuestionRequest) -> bool:
+        block = self._tool_call_blocks.get(request.tool_call_id)
+        return block is not None and block.tool_name == "AskUserQuestion"
+
     def show_next_question_request(self) -> None:
         """Show the next question request from the queue."""
         if not self._question_request_queue:
@@ -1160,7 +1196,10 @@ class LiveView:
             request = self._question_request_queue.popleft()
             if request.resolved:
                 continue
-            self._current_question_panel = _QuestionRequestPanel(request)
+            self._current_question_panel = _QuestionRequestPanel(
+                request,
+                allow_exit=self._question_request_allows_exit(request),
+            )
             self._question_waiting_for_other_text = False
             self.refresh_active()
             break
