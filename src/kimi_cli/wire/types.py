@@ -54,8 +54,9 @@ class TurnEnd(BaseModel):
 
 
 class FollowUpInput(BaseModel):
-    """Echo a follow-up user input (e.g. from turn-end question selection)
-    into the TUI so the user can see what was sent on their behalf."""
+    """Announce a synthesized follow-up user input (e.g. from turn-end question
+    selection) so clients can decide whether and how to surface what was sent
+    on the user's behalf."""
 
     text: str
 

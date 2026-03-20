@@ -10,6 +10,7 @@ from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl
 from kimi_cli.ui.shell.visualize import LiveView
 from kimi_cli.wire.types import (
     ApprovalRequest,
+    FollowUpInput,
     QuestionItem,
     QuestionOption,
     QuestionRequest,
@@ -213,6 +214,37 @@ async def test_live_view_echoes_answered_question_and_choice_in_output() -> None
     assert "? Which format should I use?" in rendered
     assert "→ JSON" in rendered
     assert "QUESTION" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_live_view_does_not_echo_follow_up_input_after_answered_question() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-follow-up",
+        tool_call_id="tool-follow-up",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert view.try_submit_line("1") is True
+    assert await request.wait() == {"Which format should I use?": "JSON"}
+
+    view.dispatch_wire_message(FollowUpInput(text="JSON"))
+
+    rendered = view.render_ansi(80, include_running_indicators=False)
+    assert "Answer" in rendered
+    assert "→ JSON" in rendered
+    assert rendered.count("→ JSON") == 1
+    assert "User" not in rendered
 
 
 @pytest.mark.asyncio

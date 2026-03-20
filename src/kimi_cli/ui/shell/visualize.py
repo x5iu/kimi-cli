@@ -824,8 +824,10 @@ class LiveView:
                 self.refresh_active()
             case TurnEnd():
                 self.finish_turn()
-            case FollowUpInput(text=text):
-                self.echo_user_choice(text)
+            case FollowUpInput():
+                # Turn-end question answers are already echoed via the Answer panel.
+                # Avoid rendering a second synthesized User block right after it.
+                pass
             case CompactionBegin():
                 self._compacting_spinner = Spinner("balloon", "Compacting...")
                 self.refresh_active()
