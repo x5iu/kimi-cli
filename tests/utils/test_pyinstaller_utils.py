@@ -185,7 +185,7 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.tools.multiagent.task",
             "kimi_cli.tools.plan",
             "kimi_cli.tools.plan.enter",
-            "kimi_cli.tools.plan.heroes",
+            "kimi_cli.tools.plan.naming",
             "kimi_cli.tools.shell",
             "kimi_cli.tools.test",
             "kimi_cli.tools.think",

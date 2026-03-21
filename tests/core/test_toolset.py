@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import json
 
-from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kosong.tooling.error import ToolNotFoundError as KosongToolNotFoundError
 from pydantic import BaseModel
 
@@ -167,6 +167,27 @@ async def test_nonexistent_tool_returns_not_found():
     assert isinstance(result, ToolResult)
     assert isinstance(result.return_value, KosongToolNotFoundError)
 
+
+
+async def test_execution_guard_can_block_tool_call():
+    ts = _make_toolset()
+    ts.bind_execution_guard(
+        lambda name, arguments: ToolError(message=f"blocked: {name}", brief="Blocked")
+        if name == "ToolA"
+        else None
+    )
+
+    tool_call = ToolCall(
+        id="tc-guard",
+        function=ToolCall.FunctionBody(
+            name="ToolA",
+            arguments=json.dumps({"value": "test"}),
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, ToolResult)
+    assert isinstance(result.return_value, ToolError)
+    assert result.return_value.brief == "Blocked"
 
 # --- hide/unhide cycle ---
 

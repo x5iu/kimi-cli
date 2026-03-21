@@ -5,6 +5,7 @@ import contextlib
 import importlib
 import inspect
 import json
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
@@ -60,6 +61,7 @@ def get_current_tool_call_or_none() -> ToolCall | None:
 
 
 type ToolType = CallableTool | CallableTool2[Any]
+type ToolExecutionGuard = Callable[[str, JsonType], ToolReturnValue | None]
 
 
 if TYPE_CHECKING:
@@ -74,6 +76,7 @@ class KimiToolset:
         self._hidden_tools: set[str] = set()
         self._mcp_servers: dict[str, MCPServerInfo] = {}
         self._mcp_loading_task: asyncio.Task[None] | None = None
+        self._execution_guard: ToolExecutionGuard | None = None
 
     def add(self, tool: ToolType) -> None:
         self._tool_dict[tool.name] = tool
@@ -88,6 +91,10 @@ class KimiToolset:
     def unhide(self, tool_name: str) -> None:
         """Restore a hidden tool to the LLM tool list."""
         self._hidden_tools.discard(tool_name)
+
+    def bind_execution_guard(self, guard: ToolExecutionGuard | None) -> None:
+        """Bind a pre-dispatch execution guard for all tool calls."""
+        self._execution_guard = guard
 
     @overload
     def find(self, tool_name_or_type: str) -> ToolType | None: ...
@@ -123,6 +130,11 @@ class KimiToolset:
                 arguments: JsonType = json.loads(tool_call.function.arguments or "{}")
             except json.JSONDecodeError as e:
                 return ToolResult(tool_call_id=tool_call.id, return_value=ToolParseError(str(e)))
+
+            if self._execution_guard is not None:
+                guard_result = self._execution_guard(tool.name, arguments)
+                if guard_result is not None:
+                    return ToolResult(tool_call_id=tool_call.id, return_value=guard_result)
 
             async def _call():
                 try:

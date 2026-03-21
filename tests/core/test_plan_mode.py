@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,16 +14,21 @@ from kosong.tooling.empty import EmptyToolset
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.tools.file.replace import EditTool, StrReplaceFile
+from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.plan import ExitPlanMode
 from kimi_cli.tools.plan.enter import _DEFAULT_DESCRIPTION, _YOLO_DESCRIPTION, EnterPlanMode
-from kimi_cli.tools.plan.heroes import (
+from kimi_cli.tools.plan.naming import (
     _slug_cache,
     get_or_create_slug,
     get_plan_file_path,
     read_plan_file,
 )
+from kimi_cli.tools.shell import Shell
+from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.utils import ToolRejectedError
-from kimi_cli.wire.types import QuestionNotSupported, QuestionRequest, ToolCall
+from kimi_cli.wire.types import QuestionNotSupported, QuestionRequest, ToolCall, ToolResult
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -36,11 +43,11 @@ def _clear_slug_cache():
     _slug_cache.clear()
 
 
-def _make_soul(runtime: Runtime, tmp_path: Path) -> KimiSoul:
+def _make_soul(runtime: Runtime, tmp_path: Path, toolset: EmptyToolset | KimiToolset | None = None) -> KimiSoul:
     agent = Agent(
         name="Test Agent",
         system_prompt="Test system prompt.",
-        toolset=EmptyToolset(),
+        toolset=EmptyToolset() if toolset is None else toolset,
         runtime=runtime,
     )
     return KimiSoul(agent, context=Context(file_backend=tmp_path / "history.jsonl"))
@@ -52,76 +59,111 @@ def _tool_output_text(result: ToolReturnValue) -> str:
 
 
 # ---------------------------------------------------------------------------
-# heroes.py — slug generation
+# naming.py — slug generation
 # ---------------------------------------------------------------------------
 
 
 class TestGetOrCreateSlug:
-    def test_returns_hero_name(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
-        slug = get_or_create_slug("session-1")
-        # Slug is composed of 3 hero names joined by "-"; each hero name may itself contain "-"
-        # Just verify it's a non-empty string and contains at least some hero name substrings
-        assert isinstance(slug, str) and len(slug) > 0
+    def test_uses_workdir_basename_timestamp_and_random_suffix(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._current_timestamp", lambda: "20260321-130102"
+        )
+        monkeypatch.setattr("kimi_cli.tools.plan.naming._random_suffix", lambda nbytes=3: "a1b2c3")
+
+        slug = get_or_create_slug("session-1", "My Cool App")
+
+        assert slug == "my-cool-app-20260321-130102-a1b2c3"
 
     def test_cache_hit(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
-        first = get_or_create_slug("session-1")
-        second = get_or_create_slug("session-1")
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._current_timestamp", lambda: "20260321-130102"
+        )
+        suffixes = iter(["first", "second"])
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._random_suffix",
+            lambda nbytes=3: next(suffixes),
+        )
+
+        first = get_or_create_slug("session-1", "kimi-cli")
+        second = get_or_create_slug("session-1", "kimi-cli")
         assert first == second
 
     def test_different_sessions_get_different_slugs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
-        a = get_or_create_slug("session-a")
-        b = get_or_create_slug("session-b")
-        # Extremely unlikely to be equal with 230+ names, but not impossible.
-        # This test is probabilistic; if it flakes, the pool is too small.
-        assert isinstance(a, str)
-        assert isinstance(b, str)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._current_timestamp", lambda: "20260321-130102"
+        )
+        suffixes = iter(["aaaaaa", "bbbbbb"])
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._random_suffix",
+            lambda nbytes=3: next(suffixes),
+        )
 
-    def test_collision_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When all random choices collide, append session prefix for uniqueness."""
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
-        # Use a tiny hero list so we can predict and pre-create all combos
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.HERO_NAMES", ["a", "b"])
-        # Pre-create all possible 3-word combos from ["a", "b"]
-        import itertools
+        a = get_or_create_slug("session-a", "kimi-cli")
+        b = get_or_create_slug("session-b", "kimi-cli")
+        assert a == "kimi-cli-20260321-130102-aaaaaa"
+        assert b == "kimi-cli-20260321-130102-bbbbbb"
 
-        for combo in itertools.product(["a", "b"], repeat=3):
-            (tmp_path / f"{'-'.join(combo)}.md").touch()
+    def test_collision_fallback_uses_longer_random_suffix(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._current_timestamp", lambda: "20260321-130102"
+        )
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._random_suffix",
+            lambda nbytes=3: "repeat" if nbytes == 3 else "finalfallback",
+        )
+        (tmp_path / "kimi-cli-20260321-130102-repeat.md").touch()
 
-        session_id = "abcdef1234567890"
-        slug = get_or_create_slug(session_id)
-        # Should have the session prefix appended
-        assert slug.endswith(f"-{session_id[:8]}")
+        slug = get_or_create_slug("session-1", "kimi-cli")
+
+        assert slug == "kimi-cli-20260321-130102-finalfallback"
 
 
 class TestGetPlanFilePath:
     def test_returns_md_file_in_plans_dir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
-        path = get_plan_file_path("session-1")
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._current_timestamp", lambda: "20260321-130102"
+        )
+        monkeypatch.setattr("kimi_cli.tools.plan.naming._random_suffix", lambda nbytes=3: "abc123")
+        path = get_plan_file_path("session-1", "kimi-cli")
         assert path.parent == tmp_path
+        assert path.name == "kimi-cli-20260321-130102-abc123.md"
         assert path.suffix == ".md"
 
 
 class TestReadPlanFile:
     def test_reads_existing_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
-        # First, get the path so the slug is generated
-        path = get_plan_file_path("session-1")
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._current_timestamp", lambda: "20260321-130102"
+        )
+        monkeypatch.setattr("kimi_cli.tools.plan.naming._random_suffix", lambda nbytes=3: "abc123")
+        path = get_plan_file_path("session-1", "kimi-cli")
         path.write_text("# My Plan", encoding="utf-8")
-        content = read_plan_file("session-1")
+        content = read_plan_file("session-1", "kimi-cli")
         assert content == "# My Plan"
 
     def test_returns_none_for_missing_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
-        content = read_plan_file("session-nonexistent")
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        monkeypatch.setattr(
+            "kimi_cli.tools.plan.naming._current_timestamp", lambda: "20260321-130102"
+        )
+        monkeypatch.setattr("kimi_cli.tools.plan.naming._random_suffix", lambda nbytes=3: "abc123")
+        content = read_plan_file("session-nonexistent", "kimi-cli")
         assert content is None
 
 
@@ -238,7 +280,7 @@ class TestManualPlanModeAttachments:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         assert await soul.toggle_plan_mode_from_manual() is True
@@ -260,7 +302,7 @@ class TestManualPlanModeAttachments:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         assert await soul.toggle_plan_mode_from_manual() is True
@@ -279,7 +321,7 @@ class TestManualPlanModeAttachments:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         assert await soul.toggle_plan_mode() is True
@@ -510,7 +552,7 @@ class TestKimiSoulPlanState:
     async def test_session_id_allocated_on_activation(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._set_plan_mode(True, source="tool")
@@ -519,7 +561,7 @@ class TestKimiSoulPlanState:
     async def test_session_id_idempotent(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._ensure_plan_session_id()
@@ -530,7 +572,7 @@ class TestKimiSoulPlanState:
     async def test_session_id_persists_after_deactivation(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._set_plan_mode(True, source="tool")
@@ -545,7 +587,7 @@ class TestKimiSoulPlanState:
     async def test_plan_file_path_valid_after_activation(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._set_plan_mode(True, source="tool")
@@ -556,7 +598,7 @@ class TestKimiSoulPlanState:
     async def test_read_current_plan_none_no_file(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._set_plan_mode(True, source="tool")
@@ -565,7 +607,7 @@ class TestKimiSoulPlanState:
     async def test_read_current_plan_returns_content(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._set_plan_mode(True, source="tool")
@@ -578,7 +620,7 @@ class TestKimiSoulPlanState:
     async def test_clear_current_plan_deletes_file(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._set_plan_mode(True, source="tool")
@@ -592,7 +634,7 @@ class TestKimiSoulPlanState:
     async def test_clear_current_plan_noop_no_file(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         soul._set_plan_mode(True, source="tool")
@@ -601,7 +643,7 @@ class TestKimiSoulPlanState:
     async def test_status_includes_plan_mode(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.heroes.PLANS_DIR", tmp_path)
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
         soul = _make_soul(runtime, tmp_path)
 
         assert soul.status.plan_mode is False
@@ -610,6 +652,197 @@ class TestKimiSoulPlanState:
         soul._set_plan_mode(False, source="tool")
         assert soul.status.plan_mode is False
 
+
+
+class TestPlanModePersistence:
+    async def test_plan_identity_persisted_on_activation(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        soul = _make_soul(runtime, tmp_path)
+
+        soul._set_plan_mode(True, source="tool")
+
+        assert soul._plan_session_id is not None
+        assert soul._plan_file_slug is not None
+        assert runtime.session.state.plan_session_id == soul._plan_session_id
+        assert runtime.session.state.plan_file_slug == soul._plan_file_slug
+
+    async def test_plan_file_path_restored_from_persisted_slug(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        soul = _make_soul(runtime, tmp_path)
+
+        soul._set_plan_mode(True, source="tool")
+        plan_path = soul.get_plan_file_path()
+        assert plan_path is not None
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text("# Persisted Plan", encoding="utf-8")
+
+        runtime.session.state.plan_mode = False
+        reloaded = _make_soul(runtime, tmp_path)
+
+        assert reloaded._plan_session_id == soul._plan_session_id
+        assert reloaded._plan_file_slug == soul._plan_file_slug
+        assert reloaded.get_plan_file_path() == plan_path
+        assert reloaded.read_current_plan() == "# Persisted Plan"
+
+
+class TestPlanModeToolGuard:
+    async def test_blocks_non_readonly_tools(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        toolset = KimiToolset()
+        toolset.add(Shell(runtime.approval, runtime.environment, runtime))
+        toolset.add(SetTodoList(runtime))
+        toolset.add(WriteFile(runtime, runtime.approval))
+        toolset.add(EditTool(runtime, runtime.approval))
+        soul = _make_soul(runtime, tmp_path, toolset)
+        soul._set_plan_mode(True, source="tool")
+
+        shell_result = toolset.handle(
+            ToolCall(
+                id="shell",
+                function=ToolCall.FunctionBody(
+                    name="Shell",
+                    arguments=json.dumps({"command": "pwd", "timeout": 1}),
+                ),
+            )
+        )
+        assert isinstance(shell_result, ToolResult)
+        assert isinstance(shell_result.return_value, ToolError)
+        assert shell_result.return_value.brief == "Blocked in plan mode"
+
+        todo_result = toolset.handle(
+            ToolCall(
+                id="todo",
+                function=ToolCall.FunctionBody(
+                    name="SetTodoList",
+                    arguments=json.dumps({"todos": []}),
+                ),
+            )
+        )
+        assert isinstance(todo_result, ToolResult)
+        assert isinstance(todo_result.return_value, ToolError)
+        assert todo_result.return_value.brief == "Blocked in plan mode"
+
+    async def test_hides_and_blocks_str_replace_file_while_plan_mode_active(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        toolset = KimiToolset()
+        toolset.add(StrReplaceFile(runtime, runtime.approval))
+        soul = _make_soul(runtime, tmp_path, toolset)
+
+        assert "StrReplaceFile" in {tool.name for tool in toolset.tools}
+        soul._set_plan_mode(True, source="tool")
+        assert "StrReplaceFile" not in {tool.name for tool in toolset.tools}
+
+        blocked = toolset.handle(
+            ToolCall(
+                id="blocked-replace",
+                function=ToolCall.FunctionBody(
+                    name="StrReplaceFile",
+                    arguments=json.dumps(
+                        {
+                            "path": str(tmp_path / "other.md"),
+                            "edit": {"old": "a", "new": "b"},
+                        }
+                    ),
+                ),
+            )
+        )
+        assert isinstance(blocked, ToolResult)
+        assert isinstance(blocked.return_value, ToolError)
+        assert blocked.return_value.brief == "Blocked in plan mode"
+
+        soul._set_plan_mode(False, source="tool")
+        assert "StrReplaceFile" in {tool.name for tool in toolset.tools}
+
+    async def test_allows_writing_only_plan_file(
+        self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
+        toolset = KimiToolset()
+        toolset.add(WriteFile(runtime, runtime.approval))
+        toolset.add(EditTool(runtime, runtime.approval))
+        soul = _make_soul(runtime, tmp_path, toolset)
+        soul._set_plan_mode(True, source="tool")
+
+        plan_path = soul.get_plan_file_path()
+        assert plan_path is not None
+
+        blocked = toolset.handle(
+            ToolCall(
+                id="blocked-write",
+                function=ToolCall.FunctionBody(
+                    name="WriteFile",
+                    arguments=json.dumps(
+                        {"path": str(tmp_path / "other.md"), "content": "nope", "mode": "overwrite"}
+                    ),
+                ),
+            )
+        )
+        assert isinstance(blocked, ToolResult)
+        assert isinstance(blocked.return_value, ToolError)
+        assert blocked.return_value.brief == "Blocked in plan mode"
+
+        allowed = toolset.handle(
+            ToolCall(
+                id="plan-write",
+                function=ToolCall.FunctionBody(
+                    name="WriteFile",
+                    arguments=json.dumps(
+                        {"path": str(plan_path), "content": "# Plan", "mode": "overwrite"}
+                    ),
+                ),
+            )
+        )
+        assert isinstance(allowed, asyncio.Task)
+        allowed_result = await allowed
+        assert plan_path.read_text(encoding="utf-8") == "# Plan"
+        assert not allowed_result.return_value.is_error
+
+        runtime.approval.request = AsyncMock(return_value=False)
+        edited = toolset.handle(
+            ToolCall(
+                id="plan-edit",
+                function=ToolCall.FunctionBody(
+                    name="Edit",
+                    arguments=json.dumps(
+                        {
+                            "path": str(plan_path),
+                            "edit": {"kind": "append", "content": "\nNext step"},
+                        }
+                    ),
+                ),
+            )
+        )
+        assert isinstance(edited, asyncio.Task)
+        edited_result = await edited
+        runtime.approval.request.assert_not_awaited()
+        assert not edited_result.return_value.is_error
+        assert plan_path.read_text(encoding="utf-8") == "# Plan\nNext step"
+
+        blocked_edit = toolset.handle(
+            ToolCall(
+                id="blocked-edit",
+                function=ToolCall.FunctionBody(
+                    name="Edit",
+                    arguments=json.dumps(
+                        {
+                            "path": str(tmp_path / "other.md"),
+                            "edit": {"kind": "append", "content": "x"},
+                        }
+                    ),
+                ),
+            )
+        )
+        assert isinstance(blocked_edit, ToolResult)
+        assert isinstance(blocked_edit.return_value, ToolError)
+        assert blocked_edit.return_value.brief == "Blocked in plan mode"
 
 # ---------------------------------------------------------------------------
 # ToolRejectedError — enhanced constructor

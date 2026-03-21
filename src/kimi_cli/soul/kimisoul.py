@@ -23,6 +23,7 @@ from kosong.chat_provider import (
     RetryableChatProvider,
 )
 from kosong.message import Message
+from kosong.tooling import ToolError, ToolReturnValue
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from kimi_cli.background import build_active_task_snapshot
@@ -290,10 +291,15 @@ class KimiSoul:
         self._active_turn_id: int | None = None
         self._next_turn_id = 0
         self._plan_mode: bool = self._runtime.session.state.plan_mode
-        self._plan_session_id: str | None = None
+        self._plan_session_id: str | None = self._runtime.session.state.plan_session_id
+        self._plan_file_slug: str | None = self._runtime.session.state.plan_file_slug
         self._pending_plan_activation_attachment: bool = False
-        if self._plan_mode:
-            self._ensure_plan_session_id()
+        if (
+            self._plan_mode
+            or self._plan_session_id is not None
+            or self._plan_file_slug is not None
+        ) and self._ensure_plan_identity():
+            self._runtime.session.save_state()
         self._attachment_providers: list[AttachmentProvider] = [
             PlanModeAttachmentProvider(),
         ]
@@ -339,6 +345,25 @@ class KimiSoul:
             attachments.extend(result)
         return attachments
 
+    def _plan_mode_bound_toolsets(self) -> list[KimiToolset]:
+        """Collect root/fixed-subagent toolsets that track plan mode state."""
+        if not isinstance(self._agent.toolset, KimiToolset):
+            return []
+
+        toolsets = [self._agent.toolset]
+        for subagent in self._runtime.labor_market.fixed_subagents.values():
+            if isinstance(subagent.toolset, KimiToolset):
+                toolsets.append(subagent.toolset)
+        return toolsets
+
+    def _sync_plan_mode_visibility(self, toolsets: list[KimiToolset] | None = None) -> None:
+        """Hide plan-incompatible tools from the LLM while plan mode is active."""
+        for toolset in toolsets or self._plan_mode_bound_toolsets():
+            if self._plan_mode:
+                toolset.hide("StrReplaceFile")
+            else:
+                toolset.unhide("StrReplaceFile")
+
     def _bind_plan_mode_tools(self) -> None:
         """Bind plan mode state to tools that support it."""
         if not isinstance(self._agent.toolset, KimiToolset):
@@ -350,12 +375,22 @@ class KimiSoul:
         def path_getter() -> Path | None:
             return self.get_plan_file_path()
 
-        # WriteFile gets both checker and path_getter (for plan file auto-approve)
+        toolsets = self._plan_mode_bound_toolsets()
+        for toolset in toolsets:
+            toolset.bind_execution_guard(self._guard_plan_mode_tool_call)
+        self._sync_plan_mode_visibility(toolsets)
+
+        # Write tools get plan mode bindings for plan-file-only edits.
+        from kimi_cli.tools.file.replace import EditTool
         from kimi_cli.tools.file.write import WriteFile
 
         write_tool = self._agent.toolset.find("WriteFile")
         if isinstance(write_tool, WriteFile):
             write_tool.bind_plan_mode(checker, path_getter)
+
+        edit_tool = self._agent.toolset.find("Edit")
+        if isinstance(edit_tool, EditTool):
+            edit_tool.bind_plan_mode(checker, path_getter)
 
         # ExitPlanMode has a special bind() method
         from kimi_cli.tools.plan import ExitPlanMode
@@ -408,12 +443,100 @@ class KimiSoul:
         else:
             self._agent.toolset.hide("RecallCompactedContext")
 
-    def _ensure_plan_session_id(self) -> None:
-        """Allocate a stable plan session ID on first activation."""
+    def _ensure_plan_session_id(self) -> bool:
+        """Allocate and persist a stable plan session ID when needed."""
+        changed = False
         if self._plan_session_id is None:
             import uuid
 
             self._plan_session_id = uuid.uuid4().hex
+            changed = True
+        if self._runtime.session.state.plan_session_id != self._plan_session_id:
+            self._runtime.session.state.plan_session_id = self._plan_session_id
+            changed = True
+        return changed
+
+    def _plan_work_dir_basename(self) -> str:
+        """Return the current session work directory basename for plan filenames."""
+        return Path(str(self._runtime.session.work_dir)).name or "workspace"
+
+    def _ensure_plan_file_slug(self) -> bool:
+        """Allocate and persist the stable plan file slug when needed."""
+        changed = False
+        if self._plan_file_slug is None:
+            if self._plan_session_id is None:
+                changed = self._ensure_plan_session_id() or changed
+            from kimi_cli.tools.plan.naming import get_or_create_slug
+
+            assert self._plan_session_id is not None
+            self._plan_file_slug = get_or_create_slug(
+                self._plan_session_id,
+                self._plan_work_dir_basename(),
+            )
+            changed = True
+        if self._runtime.session.state.plan_file_slug != self._plan_file_slug:
+            self._runtime.session.state.plan_file_slug = self._plan_file_slug
+            changed = True
+        return changed
+
+    def _ensure_plan_identity(self) -> bool:
+        """Ensure the persisted plan identity exists and is in sync with session state."""
+        changed = self._ensure_plan_session_id()
+        return self._ensure_plan_file_slug() or changed
+
+    def _guard_plan_mode_tool_call(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any] | list[Any] | str | int | float | bool | None,
+    ) -> ToolReturnValue | None:
+        """Block non-readonly tools while plan mode is active."""
+        if not self._plan_mode:
+            return None
+
+        allowed_tools = {
+            "AskUserQuestion",
+            "EnterPlanMode",
+            "ExitPlanMode",
+            "FetchURL",
+            "Glob",
+            "Grep",
+            "ReadFile",
+            "ReadMediaFile",
+            "RecallCompactedContext",
+            "SearchWeb",
+            "TaskList",
+            "TaskOutput",
+            "Think",
+        }
+        if tool_name in allowed_tools:
+            return None
+
+        if tool_name in {"WriteFile", "Edit"} and isinstance(arguments, dict):
+            plan_path = self.get_plan_file_path()
+            path_arg = arguments.get("path")
+            if plan_path is not None and isinstance(path_arg, str):
+                try:
+                    if Path(path_arg).expanduser().resolve() == plan_path.resolve():
+                        return None
+                except OSError:
+                    pass
+
+        if tool_name == "StrReplaceFile":
+            return ToolError(
+                message=(
+                    "StrReplaceFile is not available in plan mode. "
+                    "Use Edit or WriteFile on the plan file instead."
+                ),
+                brief="Blocked in plan mode",
+            )
+
+        return ToolError(
+            message=(
+                "This tool is not available in plan mode. Use read-only tools to research, "
+                "edit only the plan file with WriteFile/Edit, then call ExitPlanMode when ready."
+            ),
+            brief="Blocked in plan mode",
+        )
 
     def _set_plan_mode(self, enabled: bool, *, source: Literal["manual", "tool"]) -> bool:
         """Update plan mode state for either manual or tool-driven toggles."""
@@ -421,10 +544,11 @@ class KimiSoul:
             return self._plan_mode
         self._plan_mode = enabled
         if enabled:
-            self._ensure_plan_session_id()
+            self._ensure_plan_identity()
             self._pending_plan_activation_attachment = source == "manual"
         else:
             self._pending_plan_activation_attachment = False
+        self._sync_plan_mode_visibility()
         # Persist plan mode to session state so it survives process restarts
         self._runtime.session.state.plan_mode = self._plan_mode
         self._runtime.session.save_state()
@@ -432,19 +556,18 @@ class KimiSoul:
 
     def get_plan_file_path(self) -> Path | None:
         """Get the plan file path for the current session."""
-        if self._plan_session_id is None:
+        if self._plan_file_slug is None:
             return None
-        from kimi_cli.tools.plan.heroes import get_plan_file_path
+        from kimi_cli.tools.plan.naming import get_plan_file_path_by_slug
 
-        return get_plan_file_path(self._plan_session_id)
+        return get_plan_file_path_by_slug(self._plan_file_slug)
 
     def read_current_plan(self) -> str | None:
         """Read the current plan file content."""
-        if self._plan_session_id is None:
+        path = self.get_plan_file_path()
+        if path is None or not path.exists():
             return None
-        from kimi_cli.tools.plan.heroes import read_plan_file
-
-        return read_plan_file(self._plan_session_id)
+        return path.read_text(encoding="utf-8")
 
     def clear_current_plan(self) -> None:
         """Delete the current plan file."""

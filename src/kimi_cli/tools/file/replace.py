@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal, override
@@ -259,6 +260,15 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
         self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
         self._additional_dirs = runtime.additional_dirs
         self._approval = approval
+        self._plan_mode_checker: Callable[[], bool] | None = None
+        self._plan_file_path_getter: Callable[[], Path | None] | None = None
+
+    def bind_plan_mode(
+        self, checker: Callable[[], bool], path_getter: Callable[[], Path | None]
+    ) -> None:
+        """Bind plan mode state checker and plan file path getter."""
+        self._plan_mode_checker = checker
+        self._plan_file_path_getter = path_getter
 
     async def _validate_path(self, path: KaosPath) -> ToolError | None:
         """Validate that the path is safe to edit."""
@@ -516,13 +526,19 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
                 build_diff_blocks(str(p), original_content, content)
             )
 
+            is_plan_file_edit = False
+            if self._plan_mode_checker and self._plan_mode_checker():
+                plan_path = self._plan_file_path_getter() if self._plan_file_path_getter else None
+                if plan_path is not None and str(p) == str(plan_path.resolve()):
+                    is_plan_file_edit = True
+
             action = (
                 FileActions.EDIT
                 if is_within_workspace(p, self._work_dir, self._additional_dirs)
                 else FileActions.EDIT_OUTSIDE
             )
 
-            if not await self._approval.request(
+            if not is_plan_file_edit and not await self._approval.request(
                 self.name,
                 action,
                 f"Edit file `{p}`",
