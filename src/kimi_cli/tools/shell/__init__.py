@@ -1,4 +1,5 @@
 import asyncio
+import platform
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, Self, override
@@ -14,6 +15,7 @@ from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock, ShellDisplayBlock
+from kimi_cli.tools.file.rg_path import find_existing_rg, format_rg_command
 from kimi_cli.tools.utils import ToolRejectedError, ToolResultBuilder, load_desc
 from kimi_cli.utils.environment import Environment
 from kimi_cli.utils.subprocess_env import get_clean_env
@@ -22,6 +24,30 @@ from kimi_cli.wire.types import ToolCallOutput
 MAX_FOREGROUND_TIMEOUT = 5 * 60
 MAX_BACKGROUND_TIMEOUT = 24 * 60 * 60
 MAX_TIMEOUT = MAX_BACKGROUND_TIMEOUT
+
+
+def _build_rg_preference_guidance(*, is_powershell: bool) -> str:
+    rg_path = find_existing_rg()
+    if rg_path is None:
+        return ""
+
+    rg_path_str = str(rg_path)
+    command = format_rg_command(rg_path, is_powershell=is_powershell)
+    path_lookup = "where" if platform.system() == "Windows" else "which"
+    return "\n".join(
+        [
+            "**Preferred Content Search:**",
+            f"- `rg` is available at `{rg_path_str}`.",
+            (
+                "- When you need to search file contents, prefer Shell with "
+                f"`{command}` instead of the Grep tool."
+            ),
+            (
+                "- If you need to verify or rediscover the binary, run "
+                f"`{path_lookup} rg`."
+            ),
+        ]
+    )
 
 
 class Params(BaseModel):
@@ -67,7 +93,12 @@ class Shell(CallableTool2[Params]):
         super().__init__(
             description=load_desc(
                 Path(__file__).parent / ("powershell.md" if is_powershell else "bash.md"),
-                {"SHELL": f"{environment.shell_name} (`{environment.shell_path}`)"},
+                {
+                    "SHELL": f"{environment.shell_name} (`{environment.shell_path}`)",
+                    "RG_PREFERENCE_GUIDANCE": _build_rg_preference_guidance(
+                        is_powershell=is_powershell
+                    ),
+                },
             )
         )
         self._approval = approval

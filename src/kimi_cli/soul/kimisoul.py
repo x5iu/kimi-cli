@@ -47,6 +47,7 @@ from kimi_cli.soul import (
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.attachment import Attachment, AttachmentProvider, normalize_history
 from kimi_cli.soul.attachments.plan_mode import PlanModeAttachmentProvider
+from kimi_cli.soul.attachments.prefer_shell_rg import PreferShellRgAttachmentProvider
 from kimi_cli.soul.compaction import (
     Compaction,
     CompactionResult,
@@ -302,6 +303,7 @@ class KimiSoul:
             self._runtime.session.save_state()
         self._attachment_providers: list[AttachmentProvider] = [
             PlanModeAttachmentProvider(),
+            PreferShellRgAttachmentProvider(),
         ]
 
         if self._runtime.role == "root":

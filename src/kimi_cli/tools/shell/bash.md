@@ -5,6 +5,8 @@ The stdout and stderr will be combined and returned as a string. The output may 
 
 If `run_in_background=true`, the command will be started as a background task and this tool will return a task ID instead of waiting for command completion. When doing that, you must provide a short `description`. If a live session notification channel is active, the system can notify you when the task completes; otherwise, rely on `TaskOutput` or a later session to inspect it. Use `TaskStop` only if the task must be cancelled. For human users in the interactive shell, background tasks are managed through `/task` only.
 
+${RG_PREFERENCE_GUIDANCE}
+
 **Guidelines for safety and security:**
 - Each shell tool call will be executed in a fresh shell environment. The shell variables, current working directory changes, and the shell history is not preserved between calls.
 - The tool call will return after the command is finished. You shall not use this tool to execute an interactive command or a command that may run forever. For possibly long-running commands, you shall set `timeout` argument to a reasonable value.

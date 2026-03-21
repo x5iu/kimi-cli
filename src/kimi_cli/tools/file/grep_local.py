@@ -18,8 +18,8 @@ import ripgrepy  # pyright: ignore[reportMissingTypeStubs]
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
-import kimi_cli
 from kimi_cli.share import get_share_dir
+from kimi_cli.tools.file.rg_path import find_existing_rg, rg_binary_name
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.aiohttp import new_client_session
 from kimi_cli.utils.logging import logger
@@ -118,27 +118,6 @@ RG_BASE_URL = "http://cdn.kimi.com/binaries/kimi-cli/rg"
 _RG_DOWNLOAD_LOCK = asyncio.Lock()
 
 
-def _rg_binary_name() -> str:
-    return "rg.exe" if platform.system() == "Windows" else "rg"
-
-
-def _find_existing_rg(bin_name: str) -> Path | None:
-    share_bin = get_share_dir() / "bin" / bin_name
-    if share_bin.is_file():
-        return share_bin
-
-    assert kimi_cli.__file__ is not None
-    local_dep = Path(kimi_cli.__file__).parent / "deps" / "bin" / bin_name
-    if local_dep.is_file():
-        return local_dep
-
-    system_rg = shutil.which("rg")
-    if system_rg:
-        return Path(system_rg)
-
-    return None
-
-
 def _detect_target() -> str | None:
     sys_name = platform.system()
     mach = platform.machine().lower()
@@ -226,13 +205,13 @@ async def _download_and_install_rg(bin_name: str) -> Path:
 
 
 async def _ensure_rg_path() -> str:
-    bin_name = _rg_binary_name()
-    existing = _find_existing_rg(bin_name)
+    bin_name = rg_binary_name()
+    existing = find_existing_rg(bin_name)
     if existing:
         return str(existing)
 
     async with _RG_DOWNLOAD_LOCK:
-        existing = _find_existing_rg(bin_name)
+        existing = find_existing_rg(bin_name)
         if existing:
             return str(existing)
 
