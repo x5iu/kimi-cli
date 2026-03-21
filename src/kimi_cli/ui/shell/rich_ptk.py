@@ -6,6 +6,8 @@ from typing import Any, cast
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.layout.controls import UIContent, UIControl
+from rich.color import Color as RichColor
+from rich.color import ColorType
 from rich.console import Console as RichConsole
 from rich.console import RenderableType
 from rich.segment import Segment
@@ -31,16 +33,24 @@ def _rich_from_ansi(text: str) -> RichText:
     return RichText.from_ansi(text)
 
 
+def _rich_color_to_prompt_toolkit(
+    color: RichColor | None, *, background: bool = False
+) -> str | None:
+    if color is None or color.type == ColorType.DEFAULT:
+        return None
+    truecolor = color.get_truecolor()
+    prefix = "bg" if background else "fg"
+    return f"{prefix}:#{truecolor.red:02x}{truecolor.green:02x}{truecolor.blue:02x}"
+
+
 def _rich_style_to_prompt_toolkit(style: RichStyle | None) -> str:
     if style is None:
         return ""
     parts: list[str] = []
-    if style.color is not None:
-        fg = style.color.get_truecolor()
-        parts.append(f"fg:#{fg.red:02x}{fg.green:02x}{fg.blue:02x}")
-    if style.bgcolor is not None:
-        bg = style.bgcolor.get_truecolor()
-        parts.append(f"bg:#{bg.red:02x}{bg.green:02x}{bg.blue:02x}")
+    if fg := _rich_color_to_prompt_toolkit(style.color):
+        parts.append(fg)
+    if bg := _rich_color_to_prompt_toolkit(style.bgcolor, background=True):
+        parts.append(bg)
     if style.bold:
         parts.append("bold")
     if style.italic:

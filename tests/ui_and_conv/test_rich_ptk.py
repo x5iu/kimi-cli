@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from prompt_toolkit.data_structures import Point
+from rich.style import Style
 from rich.text import Text
 
+from kimi_cli.ui.shell.panels import QuestionRequestPanel
 from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl, _StackedRichRenderableControl
 from kimi_cli.utils.rich.diff import render_diff_block
-from kimi_cli.wire.types import DiffDisplayBlock
+from kimi_cli.utils.rich.markdown import Markdown
+from kimi_cli.wire.types import DiffDisplayBlock, QuestionItem, QuestionOption, QuestionRequest
 
 
 def _section(text: str) -> _RichRenderableControl:
@@ -152,3 +155,58 @@ def test_unified_diff_syntax_uses_soft_colors() -> None:
     assert any(
         "+after" in fragment[1] and fragment[0] == "fg:#8fcd8f" for fragment in inserted_line
     )
+
+
+def test_rich_style_omits_default_terminal_colors() -> None:
+    control = _RichRenderableControl(lambda: Text("default", style=Style(color="default")))
+    content = control.create_content(width=80, height=None)
+    line = content.get_line(0)
+
+    assert any(fragment[1] == "default" and fragment[0] == "" for fragment in line)
+
+
+def test_rich_style_keeps_explicit_colors_but_drops_default_background() -> None:
+    control = _RichRenderableControl(
+        lambda: Text("color", style=Style.parse("#ff0000 on default bold"))
+    )
+    content = control.create_content(width=80, height=None)
+    line = content.get_line(0)
+
+    assert any(fragment[1] == "color" and fragment[0] == "fg:#ff0000 bold" for fragment in line)
+
+
+def test_markdown_code_block_keeps_default_terminal_foreground() -> None:
+    renderable = Markdown("```sh\nmake format\nmake check\nmake test\n```")
+    control = _RichRenderableControl(lambda: renderable)
+    content = control.create_content(width=80, height=None)
+    lines = [content.get_line(i) for i in range(content.line_count)]
+
+    assert any("make format" in fragment[1] and fragment[0] == "" for fragment in lines[0])
+    assert any("make check" in fragment[1] and fragment[0] == "" for fragment in lines[1])
+    assert any("make " in fragment[1] and fragment[0] == "" for fragment in lines[2])
+    assert not any(fragment[0] == "fg:#000000" for line in lines for fragment in line)
+    assert not any("bg:" in fragment[0] for line in lines for fragment in line)
+
+
+def test_question_body_markdown_code_block_uses_shared_fix() -> None:
+    panel = QuestionRequestPanel(
+        QuestionRequest(
+            id="question-markdown-code",
+            tool_call_id="tool-question-markdown-code",
+            questions=[
+                QuestionItem(
+                    question="Which command should I run?",
+                    options=[QuestionOption(label="Continue")],
+                    body="```sh\nmake format\nmake check\nmake test\n```",
+                )
+            ],
+        )
+    )
+    renderable = panel.render_full_body()[0]
+    control = _RichRenderableControl(lambda: renderable)
+    content = control.create_content(width=80, height=None)
+    lines = [content.get_line(i) for i in range(content.line_count)]
+
+    assert any("make format" in fragment[1] and fragment[0] == "" for fragment in lines[0])
+    assert any("make check" in fragment[1] and fragment[0] == "" for fragment in lines[1])
+    assert not any(fragment[0] == "fg:#000000" for line in lines for fragment in line)
