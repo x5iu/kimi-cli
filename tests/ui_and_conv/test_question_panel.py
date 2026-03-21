@@ -6,6 +6,7 @@ from io import StringIO
 
 from rich.console import Console
 
+from kimi_cli.ui.shell import panels
 from kimi_cli.ui.shell.panels import QuestionRequestPanel
 from kimi_cli.wire.types import QuestionItem, QuestionOption, QuestionRequest
 
@@ -723,3 +724,46 @@ def test_question_body_preview_renders_inline() -> None:
     assert "Line 3" in rendered
     assert "Ctrl-E" in rendered
     assert "/more" in rendered
+
+
+class _FakePagerConsole:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def pager(self, *, styles: bool = False):
+        self.calls.append(("pager", styles))
+        return self
+
+    def screen(self):
+        raise AssertionError("question preview should not switch to the alternate screen")
+
+    def print(self, renderable=None) -> None:
+        self.calls.append(("print", renderable))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+def test_show_question_body_in_pager_avoids_alternate_screen(monkeypatch) -> None:
+    request = QuestionRequest(
+        id="qr-pager",
+        tool_call_id="tc-pager",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[QuestionOption(label="JSON")],
+                body="Line 1\nLine 2",
+            )
+        ],
+    )
+    panel = QuestionRequestPanel(request)
+    fake_console = _FakePagerConsole()
+    monkeypatch.setattr(panels, "console", fake_console)
+
+    panels.show_question_body_in_pager(panel)
+
+    assert ("pager", True) in fake_console.calls
+    assert sum(1 for kind, _ in fake_console.calls if kind == "print") == 3

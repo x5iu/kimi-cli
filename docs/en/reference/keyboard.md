@@ -108,7 +108,7 @@ Image pasting requires the model to support `image_in` capability. Video pasting
 
 ### `Ctrl-E`: Expand full content
 
-When approval request preview content is truncated, press `Ctrl-E` to view the full content in a fullscreen pager. When preview is truncated, a "... (truncated, ctrl-e to expand)" hint is displayed.
+When approval requests or structured question previews are truncated, press `Ctrl-E` to expand the full content inside the current TUI. Once expanded, use `↑/↓`, `PgUp/PgDn`, and `Home/End` to scroll, then press `q` or `Esc` to return. When content is truncated, a `Ctrl-E` hint is displayed.
 
 Useful for viewing longer shell commands or file diff content.
 

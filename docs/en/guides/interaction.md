@@ -49,7 +49,7 @@ When the AI finishes its plan, it submits it for approval via `ExitPlanMode`. Th
 - **Reject**: Decline the plan, stay in plan mode, and provide feedback via conversation
 - **Revise**: Enter revision notes — the AI will update the plan and resubmit
 
-Press `Ctrl-E` to view the full plan content in a fullscreen pager.
+Press `Ctrl-E` to expand the full plan content inside the current TUI. Once expanded, use `↑/↓`, `PgUp/PgDn`, and `Home/End` to scroll, then press `q` or `Esc` to return.
 
 ### Managing plan mode
 
@@ -127,7 +127,7 @@ The AI only uses this tool when your choice genuinely affects subsequent actions
 
 When the AI needs to perform operations that may have an impact (such as modifying files or running commands), Kimi Code CLI will request your confirmation.
 
-The confirmation prompt will show operation details, including shell command and file diff previews. If the content is long and truncated, you can press `Ctrl-E` to expand and view the full content. You can choose:
+The confirmation prompt will show operation details, including shell command and file diff previews. If the content is long and truncated, press `Ctrl-E` to expand the full content inside the current TUI. Once expanded, use `↑/↓`, `PgUp/PgDn`, and `Home/End` to scroll, then press `q` or `Esc` to return. You can choose:
 
 - **Allow**: Execute this operation
 - **Allow for this session**: Automatically approve similar operations in the current session (this decision is persisted with the session and automatically restored when resuming)

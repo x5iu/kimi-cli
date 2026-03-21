@@ -186,6 +186,8 @@ class LiveView:
         self._question_request_queue = deque[QuestionRequest]()
         self._current_question_panel: QuestionRequestPanel | None = None
         self._question_waiting_for_other_text = False
+        self._inline_expanded_panel: str | None = None
+        self._inline_expanded_scroll_offset = 0
         self._status_block = StatusBlock(initial_status)
         self._live: Live | None = None
         self._flush_to_console = flush_to_console
@@ -395,7 +397,7 @@ class LiveView:
 
     @property
     def can_expand_current_panel(self) -> bool:
-        if not self._allow_expand:
+        if not self._allow_expand or self.is_inline_panel_expanded:
             return False
         if self._current_approval_request_panel is not None:
             return self._current_approval_request_panel.has_expandable_content
@@ -404,7 +406,34 @@ class LiveView:
         return False
 
     @property
+    def is_inline_panel_expanded(self) -> bool:
+        return self._inline_expanded_panel is not None
+
+    @property
+    def inline_expanded_scroll_offset(self) -> int:
+        return self._inline_expanded_scroll_offset
+
+    def set_inline_expanded_scroll_offset(self, value: int) -> None:
+        next_value = max(0, value)
+        if next_value == self._inline_expanded_scroll_offset:
+            return
+        self._inline_expanded_scroll_offset = next_value
+        self.refresh_active()
+
+    def close_inline_panel_expansion(self) -> None:
+        if self._inline_expanded_panel is None and self._inline_expanded_scroll_offset == 0:
+            return
+        self._reset_inline_panel_expansion()
+        self.refresh_active()
+
+    def _reset_inline_panel_expansion(self) -> None:
+        self._inline_expanded_panel = None
+        self._inline_expanded_scroll_offset = 0
+
+    @property
     def input_hint(self) -> str:
+        if self.is_inline_panel_expanded:
+            return "Use ↑/↓, PgUp/PgDn, Home/End to scroll. Press q or Esc to return."
         expand_hint = (
             " Press Ctrl-E or type /more to expand." if self.can_expand_current_panel else ""
         )
@@ -463,6 +492,25 @@ class LiveView:
     def show_more(self) -> bool:
         if not self.can_expand_current_panel:
             return False
+        if not self._flush_to_console:
+            if (
+                self._current_approval_request_panel is not None
+                and self._current_approval_request_panel.has_expandable_content
+            ):
+                self._inline_expanded_panel = "approval"
+                self._inline_expanded_scroll_offset = 0
+                self.refresh_active()
+                return True
+            if (
+                self._current_question_panel is not None
+                and self._current_question_panel.has_expandable_content
+            ):
+                self._inline_expanded_panel = "question"
+                self._inline_expanded_scroll_offset = 0
+                self.refresh_active()
+                return True
+            return False
+
         live = self._live
         if (
             self._current_approval_request_panel is not None
@@ -495,6 +543,8 @@ class LiveView:
         return False
 
     def try_submit_line(self, text: str) -> bool:
+        if self.is_inline_panel_expanded:
+            return False
         stripped = text.strip()
         if not stripped:
             return False
@@ -550,6 +600,7 @@ class LiveView:
         panel = self._current_question_panel
         if panel is None:
             return
+        self._reset_inline_panel_expansion()
         panel.request.resolve({})
         self.show_next_question_request()
         self.refresh_active()
@@ -560,6 +611,7 @@ class LiveView:
         *,
         all_done: bool,
     ) -> None:
+        self._reset_inline_panel_expansion()
         self._question_waiting_for_other_text = False
         if all_done:
             answers = dict(panel.get_answers())
@@ -734,6 +786,12 @@ class LiveView:
             and not has_specific_running_indicator
         ):
             blocks.append(self._turn_spinner)
+        if focus_pending_input_panel and self.is_inline_panel_expanded:
+            if self._inline_expanded_panel == "approval" and self._current_approval_request_panel:
+                blocks.append(self._current_approval_request_panel.render_expanded())
+            elif self._inline_expanded_panel == "question" and self._current_question_panel:
+                blocks.append(self._current_question_panel.render_expanded())
+            return blocks, truncated
         if focus_pending_input_panel and self._current_approval_request_panel:
             blocks.append(
                 self._current_approval_request_panel.render(allow_expand=self._allow_expand)
@@ -912,6 +970,18 @@ class LiveView:
         self._resolve_question_submission(panel, all_done=all_done)
 
     def dispatch_keyboard_event(self, event: KeyEvent) -> None:
+        if self.is_inline_panel_expanded:
+            match event:
+                case KeyEvent.ESCAPE:
+                    self.close_inline_panel_expansion()
+                case KeyEvent.UP:
+                    self.set_inline_expanded_scroll_offset(self._inline_expanded_scroll_offset - 1)
+                case KeyEvent.DOWN:
+                    self.set_inline_expanded_scroll_offset(self._inline_expanded_scroll_offset + 1)
+                case _:
+                    pass
+            return
+
         if event == KeyEvent.CTRL_E and self.can_expand_current_panel:
             if self.show_more():
                 self.refresh_active()
@@ -1020,6 +1090,7 @@ class LiveView:
 
     def _submit_approval(self) -> None:
         """Submit the currently selected approval response."""
+        self._reset_inline_panel_expansion()
         assert self._current_approval_request_panel is not None
         resp = self._current_approval_request_panel.get_selected_response()
         self._current_approval_request_panel.request.resolve(resp)
@@ -1041,6 +1112,7 @@ class LiveView:
 
     def cleanup(self, is_interrupt: bool) -> None:
         """Cleanup the live view on step end or interruption."""
+        self._reset_inline_panel_expansion()
         self.flush_content()
 
         for block in self._tool_call_blocks.values():
@@ -1160,6 +1232,7 @@ class LiveView:
         Show the next approval request from the queue.
         If there are no pending requests, clear the current approval panel.
         """
+        self._reset_inline_panel_expansion()
         if not self._approval_request_queue:
             if self._current_approval_request_panel is not None:
                 self._current_approval_request_panel = None
@@ -1191,6 +1264,7 @@ class LiveView:
 
     def show_next_question_request(self) -> None:
         """Show the next question request from the queue."""
+        self._reset_inline_panel_expansion()
         if not self._question_request_queue:
             if self._current_question_panel is not None:
                 self._current_question_panel = None

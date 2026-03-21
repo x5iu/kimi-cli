@@ -1128,14 +1128,10 @@ class CustomPromptSession:
         event.app.create_background_task(_run_editor())
 
     def _open_live_view_expansion(self, event: KeyPressEvent, live_view: Any) -> None:
-        """Open the current approval/question body pager without fighting the PTK app."""
-        from prompt_toolkit.application.run_in_terminal import run_in_terminal
-
-        async def _run_pager() -> None:
-            await run_in_terminal(live_view.show_more)
+        """Open the current approval/question expansion inside the active PTK app."""
+        if live_view.show_more():
+            event.current_buffer.document = Document(text="", cursor_position=0)
             event.app.invalidate()
-
-        event.app.create_background_task(_run_pager())
 
     def _apply_mode_to_buffer(self, buff: Buffer | None) -> None:
         if buff is None:
@@ -1774,7 +1770,8 @@ class CustomPromptSession:
                 else live_view.compose_active_body(
                     include_running_indicators=False,
                     content_char_limit=MAX_ACTIVE_TURN_CONTENT_CHARS,
-                    focus_pending_input_panel=not reveal_latest_output,
+                    focus_pending_input_panel=getattr(live_view, "is_inline_panel_expanded", False)
+                    or not reveal_latest_output,
                 )
             ),
             get_cache_revision=lambda: (
@@ -1789,6 +1786,8 @@ class CustomPromptSession:
         def _turn_body_cursor_line(line_count: int) -> int | None:
             if history_view_enabled:
                 return history_view_scroll_offset
+            if getattr(live_view, "is_inline_panel_expanded", False):
+                return None
             return self._turn_body_cursor_line(
                 line_count,
                 has_pending_input_request=live_view.has_pending_input_request,
@@ -1803,7 +1802,11 @@ class CustomPromptSession:
             get_cursor_line=_turn_body_cursor_line,
             get_max_line_count=_turn_body_line_budget,
             get_window_start=lambda _line_count, _visible_count: (
-                history_view_scroll_offset if history_view_enabled else None
+                history_view_scroll_offset
+                if history_view_enabled
+                else getattr(live_view, "inline_expanded_scroll_offset", None)
+                if getattr(live_view, "is_inline_panel_expanded", False)
+                else None
             ),
         )
 
@@ -2000,8 +2003,14 @@ class CustomPromptSession:
             return self._render_turn_activity(live_view)
 
         key_bindings = KeyBindings()
+        route_expanded_panel_navigation = Condition(
+            lambda: not history_view_enabled
+            and getattr(live_view, "is_inline_panel_expanded", False)
+            and text_area.buffer.complete_state is None
+        )
         route_live_navigation = Condition(
             lambda: not history_view_enabled
+            and not getattr(live_view, "is_inline_panel_expanded", False)
             and self._should_route_live_navigation(live_view, text_area.buffer.text)
         )
         route_history_view_navigation = Condition(
@@ -2013,6 +2022,11 @@ class CustomPromptSession:
         def _dispatch_live_key(event: KeyPressEvent, event_type: KeyEvent) -> None:
             _clear_turn_output_reveal()
             live_view.dispatch_keyboard_event(event_type)
+            _refresh_turn_view(event.app)
+
+        def _set_expanded_panel_scroll(event: KeyPressEvent, value: int) -> None:
+            _clear_turn_output_reveal()
+            live_view.set_inline_expanded_scroll_offset(value)
             _refresh_turn_view(event.app)
 
         route_idle_escape_cancel = Condition(
@@ -2078,6 +2092,46 @@ class CustomPromptSession:
         _bind_live_digit("4", KeyEvent.NUM_4)
         _bind_live_digit("5", KeyEvent.NUM_5)
         _bind_live_digit("6", KeyEvent.NUM_6)
+
+        @key_bindings.add("up", filter=route_expanded_panel_navigation, eager=True)
+        @key_bindings.add("k", filter=route_expanded_panel_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _dispatch_live_key(event, KeyEvent.UP)
+
+        @key_bindings.add("down", filter=route_expanded_panel_navigation, eager=True)
+        @key_bindings.add("j", filter=route_expanded_panel_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _dispatch_live_key(event, KeyEvent.DOWN)
+
+        @key_bindings.add("pageup", filter=route_expanded_panel_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            page_size = max(1, _history_view_visible_lines() - 1)
+            _set_expanded_panel_scroll(
+                event,
+                getattr(live_view, "inline_expanded_scroll_offset", 0) - page_size,
+            )
+
+        @key_bindings.add("pagedown", filter=route_expanded_panel_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            page_size = max(1, _history_view_visible_lines() - 1)
+            _set_expanded_panel_scroll(
+                event,
+                getattr(live_view, "inline_expanded_scroll_offset", 0) + page_size,
+            )
+
+        @key_bindings.add("home", filter=route_expanded_panel_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _set_expanded_panel_scroll(event, 0)
+
+        @key_bindings.add("end", filter=route_expanded_panel_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            _set_expanded_panel_scroll(event, _history_view_total_lines())
+
+        @key_bindings.add("q", filter=route_expanded_panel_navigation, eager=True)
+        @key_bindings.add("escape", filter=route_expanded_panel_navigation, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            event.current_buffer.document = Document(text="", cursor_position=0)
+            _dispatch_live_key(event, KeyEvent.ESCAPE)
 
         @key_bindings.add("up", filter=route_history_view_navigation, eager=True)
         def _(event: KeyPressEvent) -> None:

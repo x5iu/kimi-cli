@@ -186,6 +186,29 @@ class _ApprovalRequestPanel:
     def render_full(self) -> list[RenderableType]:
         return [self._render_block(block) for block in self._content_blocks]
 
+    def render_expanded(self) -> RenderableType:
+        lines: list[RenderableType] = [
+            Text.from_markup(
+                "[yellow]⚠ "
+                f"{escape(self.request.sender)} is requesting approval to "
+                f"{escape(self.request.action)}:[/yellow]"
+            )
+        ]
+        if self._content_blocks:
+            lines.append(Text(""))
+            lines.extend(self.render_full())
+        lines.append(Text(""))
+        lines.append(
+            Text("  Scroll with ↑/↓, PgUp/PgDn, Home/End · Press q or Esc to return", style="dim")
+        )
+        return Panel(
+            Group(*lines),
+            border_style="bold yellow",
+            title="[bold yellow]⚠ ACTION PREVIEW[/bold yellow]",
+            title_align="left",
+            padding=(0, 1),
+        )
+
     def move_up(self):
         self.selected_index = (self.selected_index - 1) % len(self.options)
 
@@ -197,7 +220,7 @@ class _ApprovalRequestPanel:
 
 
 def _show_approval_in_pager(panel: _ApprovalRequestPanel) -> None:
-    with console.screen(), console.pager(styles=True):
+    with console.pager(styles=True):
         console.print(
             Text.from_markup(
                 "[yellow]⚠ "
@@ -522,9 +545,31 @@ class _QuestionRequestPanel:
             return []
         return [Markdown(self._body_text)]
 
+    def render_expanded(self) -> RenderableType:
+        lines: list[RenderableType] = [
+            Text.from_markup(f"[yellow]? {escape(self.current_question_text)}[/yellow]")
+        ]
+        if self._body_text:
+            lines.append(Text(""))
+            lines.extend(self.render_full_body())
+        else:
+            lines.append(Text(""))
+            lines.append(Text("(No additional content)", style="dim"))
+        lines.append(Text(""))
+        lines.append(
+            Text("  Scroll with ↑/↓, PgUp/PgDn, Home/End · Press q or Esc to return", style="dim")
+        )
+        return Panel(
+            Group(*lines),
+            border_style="bold cyan",
+            title="[bold cyan]? QUESTION PREVIEW[/bold cyan]",
+            title_align="left",
+            padding=(0, 1),
+        )
+
 
 def _show_question_body_in_pager(panel: _QuestionRequestPanel) -> None:
-    with console.screen(), console.pager(styles=True):
+    with console.pager(styles=True):
         console.print(Text.from_markup(f"[yellow]? {escape(panel.current_question_text)}[/yellow]"))
         console.print()
         for renderable in panel.render_full_body():

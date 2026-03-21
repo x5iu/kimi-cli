@@ -880,6 +880,65 @@ def test_live_view_accepts_expand_command_for_question(monkeypatch: pytest.Monke
     assert request.resolved is False
 
 
+def test_live_view_uses_inline_expansion_in_turn_ui() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-inline-expand",
+        tool_call_id="tool-inline-expand",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+                body="Line 1\nLine 2\nLine 3\nLine 4",
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert view.show_more() is True
+    assert view.is_inline_panel_expanded is True
+    rendered = view.render_ansi(80)
+    assert "QUESTION PREVIEW" in rendered
+    assert "Line 4" in rendered
+    assert "Press q or Esc to return" in view.input_hint
+
+
+def test_live_view_inline_expansion_handles_close_and_scroll() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-inline-scroll",
+        tool_call_id="tool-inline-scroll",
+        questions=[
+            QuestionItem(
+                question="Which format should I use?",
+                options=[
+                    QuestionOption(label="JSON"),
+                    QuestionOption(label="YAML"),
+                ],
+                body="Line 1\nLine 2\nLine 3\nLine 4",
+            )
+        ],
+    )
+
+    view.request_question(request)
+    assert view.show_more() is True
+
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    view.dispatch_keyboard_event(KeyEvent.DOWN)
+    assert view.inline_expanded_scroll_offset == 2
+
+    view.dispatch_keyboard_event(KeyEvent.UP)
+    assert view.inline_expanded_scroll_offset == 1
+
+    view.dispatch_keyboard_event(KeyEvent.ESCAPE)
+    assert view.is_inline_panel_expanded is False
+    assert view.inline_expanded_scroll_offset == 0
+
+
 def test_live_view_hides_expand_prompts_when_expansion_disabled() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), allow_expand=False)
     request = QuestionRequest(

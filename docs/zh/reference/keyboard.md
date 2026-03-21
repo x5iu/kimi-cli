@@ -108,7 +108,7 @@ Kimi Code CLI Shell 模式支持以下键盘快捷键。
 
 ### `Ctrl-E`：展开完整内容
 
-当审批请求的预览内容被截断时，按 `Ctrl-E` 可以在全屏分页器中查看完整内容。预览被截断时会显示 "... (truncated, ctrl-e to expand)" 提示。
+当审批请求或结构化问题的预览内容被截断时，按 `Ctrl-E` 可以在当前 TUI 中展开完整内容。展开后可用 `↑/↓`、`PgUp/PgDn`、`Home/End` 滚动，按 `q` 或 `Esc` 返回。预览被截断时会显示 `Ctrl-E` 提示。
 
 适用于查看较长的 Shell 命令或文件 Diff 内容。
 

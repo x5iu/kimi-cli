@@ -1062,6 +1062,10 @@ def test_shell_turn_end_detected_question_keeps_original_reply_visible(
         shell.send_key("ctrl_e")
         shell.read_until_contains(hidden_marker, after=expand_mark, timeout=15.0)
 
+        collapse_mark = shell.mark()
+        shell.send_key("q")
+        shell.wait_for_quiet(after=collapse_mark, quiet_period=0.3, timeout=5.0)
+
         dismiss_mark = shell.mark()
         shell.send_key("escape")
         _read_until_prompt(shell, after=dismiss_mark, timeout=15.0)
@@ -1129,9 +1133,113 @@ def test_shell_ctrl_e_expands_question_body_in_pager(tmp_path: Path) -> None:
         shell.send_key("ctrl_e")
         shell.read_until_contains(hidden_marker, after=expand_mark, timeout=15.0)
 
+        collapse_mark = shell.mark()
+        shell.send_key("q")
+        shell.wait_for_quiet(after=collapse_mark, quiet_period=0.3, timeout=5.0)
+
         shell.send_key("1")
         shell.read_until_contains("Plan approved", after=turn_mark, timeout=15.0)
         _read_until_prompt(shell, after=shell.mark())
+    finally:
+        shell.close()
+
+
+def test_shell_question_pager_quit_does_not_toggle_alternate_screen(tmp_path: Path) -> None:
+    pager_script = tmp_path / "fake_pager.py"
+    pager_script.write_text(
+        "\n".join(
+            [
+                f"#!{sys.executable}",
+                "import sys, termios, tty",
+                "sys.stdout.write(sys.stdin.read())",
+                "sys.stdout.flush()",
+                "with open('/dev/tty', 'rb', buffering=0) as tty_stream:",
+                "    fd = tty_stream.fileno()",
+                "    old = termios.tcgetattr(fd)",
+                "    try:",
+                "        tty.setraw(fd)",
+                "        while True:",
+                "            ch = tty_stream.read(1)",
+                "            if not ch or ch in {b'q', b'Q'}:",
+                "                break",
+                "    finally:",
+                "        termios.tcsetattr(fd, termios.TCSADRAIN, old)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    pager_script.chmod(0o755)
+
+    hidden_marker = "TURN-END-PAGER-LINE-4"
+    assistant_lines = [
+        "PREVIEW-LINE-1",
+        "PREVIEW-LINE-2",
+        "PREVIEW-LINE-3",
+        hidden_marker,
+        "如果你想，我可以直接继续改下去。",
+    ]
+    detector_payload = {
+        "has_question": True,
+        "questions": [
+            {
+                "question": "要继续应用这个修复吗？",
+                "options": [
+                    {"label": "继续", "description": "继续按当前方案处理"},
+                    {"label": "先别", "description": "先停在说明阶段"},
+                ],
+            }
+        ],
+    }
+    scripts = [
+        "\n".join(f"text: {line}" for line in assistant_lines),
+        f"text: {json.dumps(detector_payload, ensure_ascii=False)}",
+    ]
+    config_path = write_scripted_config(tmp_path, scripts)
+    work_dir = make_work_dir(tmp_path)
+    home_dir = make_home_dir(tmp_path)
+    shell = start_shell_pty(
+        config_path=config_path,
+        work_dir=work_dir,
+        home_dir=home_dir,
+        yolo=True,
+        extra_env={"PAGER": str(pager_script)},
+    )
+
+    try:
+        shell.read_until_contains("Welcome to Kimi Code CLI!")
+        _read_until_prompt(shell, after=shell.mark())
+
+        turn_mark = shell.mark()
+        shell.send_line("show detected turn-end question pager")
+        shell.read_until_contains("要继续应用这个修复吗？", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("PREVIEW-LINE-1", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("PREVIEW-LINE-2", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("PREVIEW-LINE-3", after=turn_mark, timeout=15.0)
+        shell.read_until_contains("Ctrl-E", after=turn_mark, timeout=15.0)
+
+        before_expand_raw = shell.raw_text()
+        expand_mark = shell.mark()
+        shell.send_key("ctrl_e")
+        shell.read_until_contains(hidden_marker, after=expand_mark, timeout=15.0)
+
+        dismiss_mark = shell.mark()
+        shell.send_key("q")
+        shell.wait_for_quiet(after=dismiss_mark, quiet_period=0.3, timeout=5.0)
+
+        raw_delta = shell.raw_text()[len(before_expand_raw) :]
+        assert "\x1b[?1049h" not in raw_delta
+        assert "\x1b[?1049l" not in raw_delta
+
+        escape_mark = shell.mark()
+        shell.send_key("escape")
+        _read_until_prompt(shell, after=escape_mark, timeout=15.0)
+        wait_for_wire_message_count(
+            home_dir,
+            work_dir,
+            message_type="TurnEnd",
+            expected_count=1,
+        )
     finally:
         shell.close()
 
@@ -1173,6 +1281,10 @@ def test_shell_ctrl_e_expands_approval_body_in_pager(tmp_path: Path) -> None:
         expand_mark = shell.mark()
         shell.send_key("ctrl_e")
         shell.read_until_contains(hidden_marker, after=expand_mark, timeout=15.0)
+
+        collapse_mark = shell.mark()
+        shell.send_key("q")
+        shell.wait_for_quiet(after=collapse_mark, quiet_period=0.3, timeout=5.0)
 
         shell.send_key("1")
         shell.read_until_contains("Approval expansion complete.", after=turn_mark, timeout=15.0)
