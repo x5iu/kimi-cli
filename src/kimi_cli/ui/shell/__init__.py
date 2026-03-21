@@ -123,15 +123,18 @@ class Shell:
                         user_input = await prompt_session.prompt()
                     except KeyboardInterrupt:
                         logger.debug("Exiting by KeyboardInterrupt")
+                        prompt_session.execute_deferred_erase()
                         console.print("[grey50]Tip: press Ctrl-D or send 'exit' to quit[/grey50]")
                         continue
                     except EOFError:
                         logger.debug("Exiting by EOF")
+                        prompt_session.execute_deferred_erase()
                         console.print("Bye!")
                         break
 
                     if not user_input:
                         logger.debug("Got empty input, skipping")
+                        prompt_session.execute_deferred_erase()
                         continue
                     logger.debug("Got user input: {user_input}", user_input=user_input)
 
@@ -153,6 +156,29 @@ class Shell:
             return user_input
         return message_stringify(Message(role="user", content=user_input))
 
+    @staticmethod
+    def _pre_render_user_echo(text: str) -> str:
+        """Pre-render the user prompt bubble to an ANSI string.
+
+        Separating the Rich render from the actual stdout write lets us
+        do the heavy work *before* the idle prompt erases, then flush the
+        pre-built bytes in a single fast write right after the erase —
+        minimizing the visible gap where no input box is shown.
+        """
+        from io import StringIO
+
+        from rich.console import Console as _C
+
+        sio = StringIO()
+        _C(
+            file=sio,
+            force_terminal=True,
+            color_system=console.color_system,
+            width=console.width,
+            highlight=False,
+        ).print(render_user_prompt_block(text))
+        return sio.getvalue()
+
     def _echo_agent_input(self, user_input: UserInput) -> None:
         if user_input.mode != PromptMode.AGENT:
             return
@@ -167,10 +193,12 @@ class Shell:
     ) -> bool:
         if user_input.command in ["exit", "quit", "/exit", "/quit"]:
             logger.debug("Exiting by slash command")
+            prompt_session.execute_deferred_erase()
             console.print("Bye!")
             return False
 
         if user_input.mode == PromptMode.SHELL:
+            prompt_session.execute_deferred_erase()
             await self._run_shell_command(user_input.command)
             return True
 
@@ -179,16 +207,27 @@ class Shell:
             slash_cmd_call is not None
             and shell_slash_registry.find_command(slash_cmd_call.name) is not None
         ):
+            prompt_session.execute_deferred_erase()
             await self._run_slash_command(slash_cmd_call)
             return True
 
-        if echo:
-            self._echo_agent_input(user_input)
+        # Pre-render the user echo *before* the turn starts.  The prompt
+        # Application is still on-screen at this point so the Rich render
+        # cost is hidden.  We pass the pre-rendered ANSI string into
+        # run_turn_ui which writes it via a fast sys.stdout.write right
+        # after the idle prompt erases — keeping the gap minimal.
+        pre_rendered_echo = ""
+        if echo and user_input.mode == PromptMode.AGENT:
+            pre_rendered_echo = self._pre_render_user_echo(
+                self._display_user_input(user_input)
+            )
 
         soul_input: str | list[ContentPart] = (
             user_input.command if slash_cmd_call is not None else user_input.content
         )
-        keep_running = await self._run_interactive_turn(prompt_session, soul_input)
+        keep_running = await self._run_interactive_turn(
+            prompt_session, soul_input, pre_rendered_echo=pre_rendered_echo,
+        )
         console.print()
         return keep_running
 
@@ -209,6 +248,8 @@ class Shell:
         self,
         prompt_session: CustomPromptSession,
         user_input: str | list[ContentPart],
+        *,
+        pre_rendered_echo: str = "",
     ) -> bool:
         logger.info(
             "Running interactive soul turn with user input: {user_input}",
@@ -261,6 +302,7 @@ class Shell:
                     submit_handler=_submit_handler,
                     cancel_handler=_cancel_handler,
                     turn_prompt=self._display_turn_prompt(user_input),
+                    pre_rendered_echo=pre_rendered_echo,
                 ),
                 cancel_event,
                 self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,

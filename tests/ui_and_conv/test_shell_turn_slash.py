@@ -35,6 +35,7 @@ def _fake_soul(**overrides: Any) -> Soul:
 
 
 def _fake_prompt_session(**overrides: Any) -> CustomPromptSession:
+    overrides.setdefault("execute_deferred_erase", lambda: None)
     return cast(CustomPromptSession, SimpleNamespace(**overrides))
 
 
@@ -339,7 +340,7 @@ async def test_top_level_soul_slash_command_uses_interactive_turn(
     prompt_session = _fake_prompt_session()
     received: list[object] = []
 
-    async def fake_run_interactive_turn(prompt_session_arg, user_input) -> bool:
+    async def fake_run_interactive_turn(prompt_session_arg, user_input, **kwargs) -> bool:
         assert prompt_session_arg is prompt_session
         received.append(user_input)
         return True

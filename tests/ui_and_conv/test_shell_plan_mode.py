@@ -46,6 +46,8 @@ async def test_shell_prompt_plan_mode_toggle_callback_uses_manual_toggle(
 
         async def prompt(self):
             raise EOFError
+        def execute_deferred_erase(self):
+            pass
 
     async def fake_replay_recent_history(*args, **kwargs) -> None:
         return None

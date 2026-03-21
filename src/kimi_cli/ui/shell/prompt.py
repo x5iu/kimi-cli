@@ -289,7 +289,7 @@ def _shell_style_dict() -> dict[str, str]:
 
 
 class CustomPromptSession:
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         *,
         status_provider: Callable[[], StatusSnapshot],
@@ -306,6 +306,9 @@ class CustomPromptSession:
         history_dir = get_share_dir() / "user-history"
         history_dir.mkdir(parents=True, exist_ok=True)
         work_dir_id = md5(str(KaosPath.cwd()).encode(encoding="utf-8")).hexdigest()
+        self._deferred_erase_pending = False
+        self._deferred_erase_x = 0
+        self._deferred_erase_y = 0
         self._history_file = (history_dir / work_dir_id).with_suffix(".jsonl")
         self._status_provider = status_provider
         self._editor_command_provider = editor_command_provider
@@ -1036,8 +1039,51 @@ class CustomPromptSession:
             refresh_interval=None,
             terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
+        self._install_deferred_erase(app)
         last_layout_signature = _prompt_layout_signature()
         return app, text_area
+
+    def _install_deferred_erase(self, app: Application[Any]) -> None:
+        """Monkey-patch the prompt app renderer to defer erase on exit.
+
+        Keeps the input box on-screen until `execute_deferred_erase` is
+        called (right before the turn UI starts), eliminating the flash.
+        """
+        renderer = app.renderer
+        original_erase = renderer.erase
+
+        def _deferred_erase(leave_alternate_screen: bool = True) -> None:
+            x, y = renderer._cursor_pos.x, renderer._cursor_pos.y
+            # (0,0) means the app hasn't rendered yet — this happens when
+            # _hard_redraw calls erase() before the first render.  Fall
+            # back to the real erase so _hard_redraw keeps working.
+            if x == 0 and y == 0:
+                original_erase(leave_alternate_screen=leave_alternate_screen)
+                return
+            self._deferred_erase_x = x
+            self._deferred_erase_y = y
+            self._deferred_erase_pending = True
+            output = renderer.output
+            output.reset_attributes()
+            output.enable_autowrap()
+            output.flush()
+            renderer.reset(leave_alternate_screen=leave_alternate_screen)
+
+        renderer.erase = _deferred_erase  # type: ignore[method-assign]
+
+    def execute_deferred_erase(self) -> None:
+        """Perform the erase that was deferred when the prompt app exited."""
+        if not self._deferred_erase_pending:
+            return
+        import sys
+
+        if self._deferred_erase_x > 0:
+            sys.stdout.write(f"\033[{self._deferred_erase_x}D")
+        if self._deferred_erase_y > 0:
+            sys.stdout.write(f"\033[{self._deferred_erase_y}A")
+        sys.stdout.write("\033[J")
+        sys.stdout.flush()
+        self._deferred_erase_pending = False
 
     def _get_prompt_application(self) -> tuple[Application[str], TextArea]:
         if self._prompt_app is None or self._prompt_text_area is None:
@@ -1547,6 +1593,7 @@ class CustomPromptSession:
         submit_handler: Callable[[UserInput], TurnSubmitResult],
         cancel_handler: Callable[[], None],
         turn_prompt: str | None = None,
+        pre_rendered_echo: str = "",
     ) -> None:
         self._mode = PromptMode.AGENT
         feedback_message = ""
@@ -2306,10 +2353,55 @@ class CustomPromptSession:
 
         consume_task = asyncio.create_task(_consume_wire())
         animate_task = asyncio.create_task(_animate())
+
+        # --- Flicker-free transition -------------------------------------------
+        # Write the deferred erase and the pre-rendered user echo into the
+        # prompt_toolkit *output buffer* (not sys.stdout).  Then suppress
+        # every ``output.flush()`` call until the first render is done.
+        # This way the terminal receives the erase, the echo, **and** the
+        # first full frame of the turn UI in a single write — completely
+        # eliminating the visible flash where the PROMPT frame would
+        # briefly disappear between the idle prompt and the turn UI.
+        output = app.output
+
+        if self._deferred_erase_pending:
+            if self._deferred_erase_x > 0:
+                output.cursor_backward(self._deferred_erase_x)
+            if self._deferred_erase_y > 0:
+                output.cursor_up(self._deferred_erase_y)
+            output.erase_down()
+            self._deferred_erase_pending = False
+
+        if pre_rendered_echo:
+            output.write_raw(pre_rendered_echo)
+
+        _original_flush = output.flush
+        _first_render_flushed = False
+
+        def _suppressed_flush() -> None:
+            pass
+
+        def _flush_after_first_render(_app: object) -> None:
+            nonlocal _first_render_flushed
+            if _first_render_flushed:
+                return
+            _first_render_flushed = True
+            output.flush = _original_flush
+            output.flush()
+            app.after_render -= _flush_after_first_render
+
+        output.flush = _suppressed_flush  # type: ignore[method-assign]
+        app.after_render += _flush_after_first_render
+
         try:
             with patch_stdout(raw=True):
                 await app.run_async()
         finally:
+            # Always restore the original flush in case after_render
+            # never fired (e.g. the app errored out before rendering).
+            if not _first_render_flushed:
+                output.flush = _original_flush  # type: ignore[method-assign]
+                output.flush()
             consume_task.cancel()
             animate_task.cancel()
             with suppress(asyncio.CancelledError):
