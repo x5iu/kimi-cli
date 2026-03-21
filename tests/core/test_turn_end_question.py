@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from kosong.message import Message
+from kosong.message import ImageURLPart, Message
 from kosong.message import TextPart as KosongTextPart
 from kosong.message import ThinkPart as KosongThinkPart
 from kosong.tooling.empty import EmptyToolset
@@ -115,11 +116,13 @@ async def test_detect_turn_end_question_calls_generate(
         context=Context(file_backend=tmp_path / "history.jsonl"),
     )
 
-    captured: dict[str, object] = {}
+    captured_system_prompt: str | None = None
+    captured_history: list[Message] = []
 
-    async def fake_generate(*, chat_provider, system_prompt, tools, history):
-        captured["system_prompt"] = system_prompt
-        captured["history"] = history
+    async def fake_generate(*, chat_provider, system_prompt, tools, history: Sequence[Message]):
+        nonlocal captured_system_prompt, captured_history
+        captured_system_prompt = system_prompt
+        captured_history = list(history)
         return SimpleNamespace(
             message=Message(
                 role="assistant",
@@ -140,12 +143,13 @@ async def test_detect_turn_end_question_calls_generate(
     assert len(result.questions) == 1
     assert result.questions[0].question == "A or B?"
     # The side-channel should wrap text in a user message for the detector
-    history = captured["history"]
-    assert len(history) == 1
-    assert history[0].role == "user"
-    history_text = history[0].extract_text()
+    assert captured_system_prompt is not None
+    assert len(captured_history) == 1
+    first_message = captured_history[0]
+    assert first_message.role == "user"
+    history_text = first_message.extract_text()
     assert "Latest message ending excerpt:" in history_text
-    assert "Latest full assistant message:" in history_text
+    assert "Latest full assistant message (trimmed if needed):" in history_text
     assert "Should I do A or B?" in history_text
 
 
@@ -177,10 +181,11 @@ async def test_detect_turn_end_question_includes_recent_three_turns_of_context(
         ]
     )
 
-    captured: dict[str, object] = {}
+    captured_history: list[Message] = []
 
-    async def fake_generate(*, chat_provider, system_prompt, tools, history):
-        captured["history"] = history
+    async def fake_generate(*, chat_provider, system_prompt, tools, history: Sequence[Message]):
+        nonlocal captured_history
+        captured_history = list(history)
         return SimpleNamespace(
             message=Message(
                 role="assistant",
@@ -193,18 +198,84 @@ async def test_detect_turn_end_question_includes_recent_three_turns_of_context(
     assistant_msg = Message(role="assistant", content="Should I continue?")
     await soul._detect_turn_end_question(assistant_msg)
 
-    history = captured["history"]
-    assert len(history) == 1
-    history_text = history[0].extract_text()
+    assert len(captured_history) == 1
+    history_text = captured_history[0].extract_text()
     assert "Recent turns (last 3, oldest to newest):" in history_text
     assert "User:\nu2" in history_text
     assert "Assistant:\na2" in history_text
     assert "User:\nu3" in history_text
     assert "Assistant:\na3" in history_text
     assert "User:\nu4" in history_text
-    assert "Assistant:\nShould I continue?" in history_text
+    assert "Assistant:\n(latest message shown below)" in history_text
+    assert history_text.count("Should I continue?") == 2
     assert "User:\nu1" not in history_text
     assert "Assistant:\na1" not in history_text
+
+
+@pytest.mark.asyncio
+async def test_detect_turn_end_question_trims_recent_context_and_latest_message(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    long_user = "user-" + ("u" * 4000)
+    long_assistant = "assistant-" + ("a" * 4000)
+    latest = "latest-" + ("l" * 4000) + "-done?"
+    await soul._context.append_message(
+        [
+            Message(role="user", content=long_user),
+            Message(role="assistant", content=long_assistant),
+            Message(role="user", content="follow-up"),
+        ]
+    )
+
+    prompt = soul._build_turn_end_detector_prompt_input(Message(role="assistant", content=latest))
+
+    assert len(prompt) < 5000
+    assert "Assistant:\n(latest message shown below)" in prompt
+    assert latest not in prompt
+    assert "Latest full assistant message (trimmed if needed):" in prompt
+
+
+@pytest.mark.asyncio
+async def test_recent_turn_end_detection_context_does_not_reuse_old_text_for_non_text_reply(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    soul = KimiSoul(
+        Agent(
+            name="Test",
+            system_prompt="Test",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    assistant_msg = Message(
+        role="assistant",
+        content=[ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://example.com/x.png"))],
+    )
+    await soul._context.append_message(
+        [
+            Message(role="user", content="show me"),
+            Message(role="assistant", content="working on it"),
+        ]
+    )
+
+    turns = soul._recent_turn_end_detection_context(assistant_msg, max_turns=1)
+
+    assert turns == [("show me", "")]
 
 
 # -- Integration: _maybe_ask_turn_end_question --
@@ -228,10 +299,11 @@ async def test_detect_turn_end_question_strips_thinking_parts(
         context=Context(file_backend=tmp_path / "history.jsonl"),
     )
 
-    captured: dict[str, object] = {}
+    captured_history: list[Message] = []
 
-    async def fake_generate(*, chat_provider, system_prompt, tools, history):
-        captured["history"] = history
+    async def fake_generate(*, chat_provider, system_prompt, tools, history: Sequence[Message]):
+        nonlocal captured_history
+        captured_history = list(history)
         return SimpleNamespace(
             message=Message(
                 role="assistant",
@@ -253,12 +325,12 @@ async def test_detect_turn_end_question_strips_thinking_parts(
 
     # The side-channel should only see the text content, not the thinking,
     # wrapped in a user message for the detector.
-    history = captured["history"]
-    assert len(history) == 1
-    assert history[0].role == "user"
-    assert "Should I do A or B?" in history[0].extract_text()
+    assert len(captured_history) == 1
+    first_message = captured_history[0]
+    assert first_message.role == "user"
+    assert "Should I do A or B?" in first_message.extract_text()
     # Ensure no ThinkPart in the sent message
-    for part in history[0].content:
+    for part in first_message.content:
         assert not isinstance(part, KosongThinkPart)
 
 

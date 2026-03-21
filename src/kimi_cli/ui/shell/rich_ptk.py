@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, cast
 
 from prompt_toolkit.data_structures import Point
+from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from rich.console import Console as RichConsole
 from rich.console import RenderableType
@@ -11,7 +12,19 @@ from rich.segment import Segment
 from rich.style import Style as RichStyle
 from rich.text import Text as RichText
 
-from kimi_cli.ui.shell.console import _RIGHT_PADDING
+from kimi_cli.ui.shell.console import RIGHT_PADDING
+
+
+def _no_cursor_line(_line_count: int) -> int | None:
+    return None
+
+
+def _no_max_line_count(_width: int) -> int | None:
+    return None
+
+
+def _no_window_start(_line_count: int, _visible_count: int) -> int | None:
+    return None
 
 
 def _rich_from_ansi(text: str) -> RichText:
@@ -70,7 +83,7 @@ class _RichRenderableControl(UIControl):
         self._content_cache.clear()
 
     def _render_lines(self, width: int) -> tuple[tuple[tuple[str, str], ...], ...]:
-        normalized_width = max(20, width - _RIGHT_PADDING)
+        normalized_width = max(20, width - RIGHT_PADDING)
         self._invalidate_cache_if_needed()
         cached = self._rendered_lines_cache.get(normalized_width)
         if cached is not None:
@@ -94,6 +107,9 @@ class _RichRenderableControl(UIControl):
         cached = tuple(rendered_lines)
         self._rendered_lines_cache[normalized_width] = cached
         return cached
+
+    def render_lines(self, width: int) -> tuple[tuple[tuple[str, str], ...], ...]:
+        return self._render_lines(width)
 
     def line_count(self, width: int) -> int:
         return len(self._render_lines(width))
@@ -136,9 +152,9 @@ class _StackedRichRenderableControl(UIControl):
         get_window_start: Callable[[int, int], int | None] | None = None,
     ) -> None:
         self._sections = list(sections)
-        self._get_cursor_line = get_cursor_line or (lambda _line_count: None)
-        self._get_max_line_count = get_max_line_count or (lambda _width: None)
-        self._get_window_start = get_window_start or (lambda _line_count, _visible_count: None)
+        self._get_cursor_line = get_cursor_line or _no_cursor_line
+        self._get_max_line_count = get_max_line_count or _no_max_line_count
+        self._get_window_start = get_window_start or _no_window_start
 
     def _visible_window(
         self,
@@ -179,7 +195,7 @@ class _StackedRichRenderableControl(UIControl):
         return start, start + visible_count, clamped_cursor - start
 
     def _section_lines(self, width: int) -> list[tuple[tuple[tuple[str, str], ...], ...]]:
-        return [section._render_lines(width) for section in self._sections]
+        return [section.render_lines(width) for section in self._sections]
 
     def total_line_count(self, width: int) -> int:
         return sum(len(lines) for lines in self._section_lines(width))
@@ -213,12 +229,12 @@ class _StackedRichRenderableControl(UIControl):
         )
         visible_line_count = max(0, visible_end - visible_start)
 
-        def _get_line(i: int) -> list[tuple[str, str]]:
+        def _get_line(i: int) -> StyleAndTextTuples:
             actual_index = visible_start + i
             for start, lines in offsets:
                 end = start + len(lines)
                 if start <= actual_index < end:
-                    return list(lines[actual_index - start])
+                    return cast(StyleAndTextTuples, list(lines[actual_index - start]))
             return []
 
         cursor_position = None
@@ -234,3 +250,9 @@ class _StackedRichRenderableControl(UIControl):
             show_cursor=False,
             cursor_position=cursor_position,
         )
+
+
+RichRenderableControl = _RichRenderableControl
+StackedRichRenderableControl = _StackedRichRenderableControl
+rich_from_ansi = _rich_from_ansi
+rich_style_to_prompt_toolkit = _rich_style_to_prompt_toolkit

@@ -1,12 +1,12 @@
 """Tests for _StatusBlock partial-update logic."""
 
-from kimi_cli.ui.shell.visualize import _StatusBlock
+from kimi_cli.ui.shell.blocks import StatusBlock
 from kimi_cli.wire.types import StatusUpdate
 
 
 def test_full_initial_status():
     """All three fields provided — should display percentage and token counts."""
-    block = _StatusBlock(
+    block = StatusBlock(
         StatusUpdate(
             context_usage=0.42,
             context_tokens=4200,
@@ -20,7 +20,7 @@ def test_full_initial_status():
 
 def test_partial_update_preserves_tokens():
     """Updating only context_usage should keep previous token values."""
-    block = _StatusBlock(
+    block = StatusBlock(
         StatusUpdate(
             context_usage=0.30,
             context_tokens=3000,
@@ -37,7 +37,7 @@ def test_partial_update_preserves_tokens():
 
 def test_update_tokens_only_rerenders_with_latest_counts():
     """Updating token counts should refresh the displayed status line."""
-    block = _StatusBlock(
+    block = StatusBlock(
         StatusUpdate(
             context_usage=0.30,
             context_tokens=3000,
@@ -54,7 +54,7 @@ def test_update_tokens_only_rerenders_with_latest_counts():
 
 def test_all_none_update_is_noop():
     """An empty StatusUpdate should change nothing."""
-    block = _StatusBlock(
+    block = StatusBlock(
         StatusUpdate(
             context_usage=0.30,
             context_tokens=3000,
@@ -68,5 +68,5 @@ def test_all_none_update_is_noop():
 
 def test_initial_all_none():
     """Initial status with all None fields — text should remain empty."""
-    block = _StatusBlock(StatusUpdate())
+    block = StatusBlock(StatusUpdate())
     assert block.text.plain == ""

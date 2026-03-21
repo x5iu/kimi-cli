@@ -58,9 +58,7 @@ class ExecuteTodoParams(BaseModel):
             "The exact title of the todo item to execute from the current session todo list."
         )
     )
-    description: str = Field(
-        description="A short (3-5 word) description of the delegated task."
-    )
+    description: str = Field(description="A short (3-5 word) description of the delegated task.")
     prompt: str = Field(
         description=(
             "The detailed prompt for the delegated Task call. You must still provide all "

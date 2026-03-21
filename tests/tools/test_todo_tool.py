@@ -175,7 +175,9 @@ async def test_execute_todo_marks_todo_blocked_when_task_fails(
 
     await set_todo_list_tool(
         Params(
-            todos=[Todo(title="Fix build", status="pending", executor="task", subagent_name="coder")]
+            todos=[
+                Todo(title="Fix build", status="pending", executor="task", subagent_name="coder")
+            ]
         )
     )
 
@@ -191,7 +193,10 @@ async def test_execute_todo_marks_todo_blocked_when_task_fails(
     assert result.message == "Blocked Todo: Fix build. Delegated Task failed."
     assert "1 todos, blocked=1" in result.output
     assert "Next state: blocked" in result.output
-    assert "Suggested next step: inspect [Task output], revise the prompt, or update the todo state before retrying." in result.output
+    assert (
+        "Suggested next step: inspect [Task output], revise the prompt, or update the todo state before retrying."
+        in result.output
+    )
     assert runtime.session.state.todos[0].status == "blocked"
 
 
@@ -215,7 +220,12 @@ async def test_execute_todo_can_leave_todo_in_progress_after_task_failure(
     await set_todo_list_tool(
         Params(
             todos=[
-                Todo(title="Investigate flaky test", status="pending", executor="task", subagent_name="coder")
+                Todo(
+                    title="Investigate flaky test",
+                    status="pending",
+                    executor="task",
+                    subagent_name="coder",
+                )
             ]
         )
     )
@@ -230,8 +240,13 @@ async def test_execute_todo_can_leave_todo_in_progress_after_task_failure(
     )
 
     assert result.is_error
-    assert result.message == "Todo Still In Progress: Investigate flaky test. Delegated Task failed."
+    assert (
+        result.message == "Todo Still In Progress: Investigate flaky test. Delegated Task failed."
+    )
     assert "1 todos, in_progress=1" in result.output
     assert "Next state: in_progress" in result.output
-    assert "Suggested next step: inspect [Task output] before retrying ExecuteTodo or updating the todo state." in result.output
+    assert (
+        "Suggested next step: inspect [Task output] before retrying ExecuteTodo or updating the todo state."
+        in result.output
+    )
     assert runtime.session.state.todos[0].status == "in_progress"

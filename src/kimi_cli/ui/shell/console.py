@@ -37,7 +37,7 @@ class _PaddedConsole(Console):
     """Console subclass that reserves a right-side padding column."""
 
     @property
-    def size(self) -> ConsoleDimensions:  # type: ignore[override]
+    def size(self) -> ConsoleDimensions:  # pyright: ignore[reportIncompatibleMethodOverride]
         dims = super().size
         return ConsoleDimensions(
             max(1, dims.width - _RIGHT_PADDING),
@@ -46,3 +46,6 @@ class _PaddedConsole(Console):
 
 
 console = _PaddedConsole(highlight=False, theme=_NEUTRAL_MARKDOWN_THEME)
+
+
+RIGHT_PADDING = _RIGHT_PADDING

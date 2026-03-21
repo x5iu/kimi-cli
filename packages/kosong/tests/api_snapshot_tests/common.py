@@ -1,8 +1,8 @@
 """Common test cases and utilities for snapshot tests."""
 
 import json
-from collections.abc import Sequence
-from typing import Any, TypedDict
+from collections.abc import Iterator, Sequence
+from typing import Any, TypedDict, cast
 
 import respx
 
@@ -94,6 +94,22 @@ class Case(TypedDict, total=False):
     """The list of tools."""
     history: list[Message]
     """The message history."""
+
+
+def _is_omit(value: object) -> bool:
+    return value.__class__.__name__ in {"Omit", "NotGiven"}
+
+
+def _normalize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for key, value in kwargs.items():
+        if _is_omit(value):
+            continue
+        if isinstance(value, Iterator):
+            normalized[key] = list(cast(Iterator[Any], value))
+        else:
+            normalized[key] = value
+    return normalized
 
 
 # Common test cases shared across providers
@@ -217,23 +233,54 @@ COMMON_CASES: dict[str, Case] = {
 
 
 async def capture_request(
-    mock: respx.MockRouter,
+    mock: respx.MockRouter | None,
     provider: ChatProvider,
     system: str,
     tools: Sequence[Tool],
     history: list[Message],
 ) -> dict[str, Any]:
     """Generate and capture the request body."""
-    stream = await provider.generate(system, tools, history)
-    async for _ in stream:
-        pass
-    request = mock.calls.last.request
-    assert request.content is not None
-    return json.loads(request.content.decode())
+    match provider.__class__.__module__:
+        case "kosong.contrib.chat_provider.openai_legacy":
+            from openai.types.chat import ChatCompletion
+
+            captured: dict[str, Any] = {}
+
+            async def _fake_openai_create(**kwargs: Any) -> ChatCompletion:
+                captured.update(_normalize_request_kwargs(kwargs))
+                return ChatCompletion.model_validate(make_chat_completion_response())
+
+            provider.client.chat.completions.create = _fake_openai_create  # type: ignore[method-assign]
+            stream = await provider.generate(system, tools, history)
+            async for _ in stream:
+                pass
+            return captured
+        case "kosong.contrib.chat_provider.anthropic":
+            from anthropic.types import Message as AnthropicMessage
+
+            captured = {}
+
+            async def _fake_anthropic_create(**kwargs: Any) -> AnthropicMessage:
+                captured.update(_normalize_request_kwargs(kwargs))
+                return AnthropicMessage.model_validate(make_anthropic_response())
+
+            provider._client.messages.create = _fake_anthropic_create  # type: ignore[method-assign]
+            stream = await provider.generate(system, tools, history)
+            async for _ in stream:
+                pass
+            return captured
+        case _:
+            assert mock is not None
+            stream = await provider.generate(system, tools, history)
+            async for _ in stream:
+                pass
+            request = mock.calls.last.request
+            assert request.content is not None
+            return json.loads(request.content.decode())
 
 
 async def run_test_cases(
-    mock: respx.MockRouter,
+    mock: respx.MockRouter | None,
     provider: ChatProvider,
     cases: dict[str, Case],
     extract_keys: tuple[str, ...],

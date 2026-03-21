@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
+from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
@@ -27,6 +28,7 @@ from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wai
 from kimi_cli.background import build_active_task_snapshot
 from kimi_cli.llm import ModelCapability
 from kimi_cli.notifications import (
+    NotificationView,
     build_notification_message,
     extract_notification_ids,
 )
@@ -45,6 +47,7 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.attachment import Attachment, AttachmentProvider, normalize_history
 from kimi_cli.soul.attachments.plan_mode import PlanModeAttachmentProvider
 from kimi_cli.soul.compaction import (
+    Compaction,
     CompactionResult,
     SimpleCompaction,
     estimate_text_tokens,
@@ -273,7 +276,8 @@ class KimiSoul:
         self._approval = agent.runtime.approval
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
-        self._compaction = SimpleCompaction()  # TODO: maybe configurable and composable
+        self._compaction: Compaction = SimpleCompaction()
+        # TODO: maybe configurable and composable
 
         for tool in agent.toolset.tools:
             if tool.name == SendDMail_NAME:
@@ -928,6 +932,9 @@ class KimiSoul:
     _TURN_END_DETECT_MAX_ATTEMPTS = 2
     _TURN_END_DETECT_TIMEOUT = 15.0  # seconds
     _TURN_END_DETECT_CONTEXT_TURNS = 3
+    _TURN_END_DETECT_CONTEXT_CHARS = 600
+    _TURN_END_DETECT_EXCERPT_CHARS = 600
+    _TURN_END_DETECT_LATEST_MESSAGE_CHARS = 2000
 
     async def _detect_turn_end_question(
         self,
@@ -960,49 +967,74 @@ class KimiSoul:
             return text.strip()
         return "\n".join(units[-3:])
 
+    def _clip_turn_end_detector_text(self, text: str, *, max_chars: int) -> str:
+        text = text.strip()
+        if len(text) <= max_chars:
+            return text
+        if max_chars <= 3:
+            return text[:max_chars]
+        separator = "\n...\n"
+        keep = max(1, (max_chars - len(separator)) // 2)
+        return f"{text[:keep].rstrip()}{separator}{text[-keep:].lstrip()}"
+
     def _recent_turn_end_detection_context(
         self,
         assistant_message: Message,
         *,
         max_turns: int,
     ) -> list[tuple[str, str]]:
-        history = list(self._context.history)
+        history = self._context.history
+        messages = reversed(history)
         if not history or history[-1] != assistant_message:
-            history.append(assistant_message)
+            messages = chain((assistant_message,), messages)
 
-        turns: list[tuple[str, str]] = []
-        current_user: str | None = None
-        current_assistant = ""
+        turns_reversed: list[tuple[str, str]] = []
+        current_assistant: str | None = None
 
-        for msg in history:
-            if is_real_user_turn_start_message(msg):
-                if current_user is not None:
-                    turns.append((current_user, current_assistant))
-                current_user = msg.extract_text(sep="\n").strip()
-                current_assistant = ""
+        for msg in messages:
+            if msg.role == "assistant" and current_assistant is None:
+                current_assistant = msg.extract_text(sep="\n").strip()
+
+            if not is_real_user_turn_start_message(msg):
                 continue
-            if current_user is None:
-                continue
-            if msg.role == "assistant":
-                assistant_text = msg.extract_text(sep="\n").strip()
-                if assistant_text:
-                    current_assistant = assistant_text
 
-        if current_user is not None:
-            turns.append((current_user, current_assistant))
-        return turns[-max_turns:]
+            turns_reversed.append((msg.extract_text(sep="\n").strip(), current_assistant or ""))
+            current_assistant = None
+            if len(turns_reversed) >= max_turns:
+                break
+
+        turns_reversed.reverse()
+        return turns_reversed
 
     def _build_turn_end_detector_prompt_input(self, assistant_message: Message) -> str:
-        text_only = assistant_message.extract_text(" ")
-        excerpt = self._turn_end_question_excerpt(text_only)
+        text_only = assistant_message.extract_text(" ").strip()
+        excerpt = self._clip_turn_end_detector_text(
+            self._turn_end_question_excerpt(text_only),
+            max_chars=self._TURN_END_DETECT_EXCERPT_CHARS,
+        )
+        latest_message = self._clip_turn_end_detector_text(
+            text_only,
+            max_chars=self._TURN_END_DETECT_LATEST_MESSAGE_CHARS,
+        )
         recent_turns = self._recent_turn_end_detection_context(
             assistant_message,
             max_turns=self._TURN_END_DETECT_CONTEXT_TURNS,
         )
+        if recent_turns and recent_turns[-1][1] == text_only and text_only:
+            recent_turns = [
+                *recent_turns[:-1],
+                (recent_turns[-1][0], "(latest message shown below)"),
+            ]
 
         lines = [
-            "Analyze whether the latest assistant message asks the user to choose between options or make a decision.",
-            "Use recent turns only as supporting context. Base has_question on the latest assistant message, not on older turns.",
+            (
+                "Analyze whether the latest assistant message asks the user to choose "
+                "between options or make a decision."
+            ),
+            (
+                "Use recent turns only as supporting context. Base has_question on "
+                "the latest assistant message, not on older turns."
+            ),
         ]
         if recent_turns:
             lines.extend(
@@ -1012,25 +1044,36 @@ class KimiSoul:
                 ]
             )
             for idx, (user_text, assistant_text) in enumerate(recent_turns, start=1):
+                clipped_user = self._clip_turn_end_detector_text(
+                    user_text,
+                    max_chars=self._TURN_END_DETECT_CONTEXT_CHARS,
+                )
+                clipped_assistant = self._clip_turn_end_detector_text(
+                    assistant_text,
+                    max_chars=self._TURN_END_DETECT_CONTEXT_CHARS,
+                )
                 lines.extend(
                     [
                         "",
                         f"[Turn {idx}]",
-                        f"User:\n{user_text or '(empty)'}",
-                        f"Assistant:\n{assistant_text or '(no textual reply)'}",
+                        f"User:\n{clipped_user or '(empty)'}",
+                        f"Assistant:\n{clipped_assistant or '(no textual reply)'}",
                     ]
                 )
 
         lines.extend(
             [
                 "",
-                "Focus on the ending of the latest assistant message, but use the full latest message if earlier lines contain the options.",
+                (
+                    "Focus on the ending of the latest assistant message, but use "
+                    "the full latest message if earlier lines contain the options."
+                ),
                 "",
                 "Latest message ending excerpt:",
                 excerpt,
                 "",
-                "Latest full assistant message:",
-                text_only,
+                "Latest full assistant message (trimmed if needed):",
+                latest_message,
             ]
         )
         return "\n".join(lines)
@@ -1131,7 +1174,9 @@ class KimiSoul:
         # is often only present in the last 1-3 sentences.
         # Wrap in a user message so the detector model clearly sees it as content
         # to analyze, not as its own prior output.
-        text_only = assistant_message.extract_text(" ")
+        text_only = assistant_message.extract_text(" ").strip()
+        if not text_only:
+            return None
         heuristic_detection = self._heuristic_turn_end_question(text_only)
         history: list[Message] = [
             Message(
@@ -1408,7 +1453,7 @@ class KimiSoul:
 
         if self._runtime.role == "root":
 
-            async def _append_notification(view):
+            async def _append_notification(view: NotificationView) -> None:
                 await self._context.append_message(build_notification_message(view, self._runtime))
 
             await self._runtime.notifications.deliver_pending(

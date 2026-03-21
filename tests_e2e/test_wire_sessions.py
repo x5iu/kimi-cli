@@ -194,7 +194,9 @@ def test_clear_context_rotates(tmp_path) -> None:
                         "context_tokens": 0,
                         "max_context_tokens": 100000,
                         "token_usage": None,
-                        "message_id": None, "plan_mode": None},
+                        "message_id": None,
+                        "plan_mode": None,
+                    },
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -269,7 +271,9 @@ def test_manual_compact(tmp_path) -> None:
                         "context_tokens": 1,
                         "max_context_tokens": 100000,
                         "token_usage": None,
-                        "message_id": None, "plan_mode": None},
+                        "message_id": None,
+                        "plan_mode": None,
+                    },
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -387,7 +391,7 @@ def test_replay_streams_wire_history(tmp_path) -> None:
         assert resp.get("result") == snapshot(
             {
                 "status": "finished",
-                "events": 11,
+                "events": 12,
                 "requests": 1,
             }
         )
@@ -422,7 +426,9 @@ def test_replay_streams_wire_history(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None, "plan_mode": False},
+                        "message_id": None,
+                        "plan_mode": False,
+                    },
                 },
                 {
                     "method": "request",
@@ -455,6 +461,11 @@ def test_replay_streams_wire_history(tmp_path) -> None:
                         },
                     },
                 },
+                {
+                    "method": "event",
+                    "type": "ToolCallOutput",
+                    "payload": {"tool_call_id": "tc-1", "text": "ok\n", "stream": "stdout"},
+                },
                 {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
                 {
                     "method": "event",
@@ -469,7 +480,9 @@ def test_replay_streams_wire_history(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None, "plan_mode": False},
+                        "message_id": None,
+                        "plan_mode": False,
+                    },
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]

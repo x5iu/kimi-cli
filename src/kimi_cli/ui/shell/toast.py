@@ -58,3 +58,12 @@ def _current_toast(position: Literal["left", "right"] = "left") -> _ToastEntry |
     if not queue:
         return None
     return queue[0]
+
+
+toast_queues = _toast_queues
+
+ToastEntry = _ToastEntry
+
+
+def current_toast(position: Literal["left", "right"] = "left") -> ToastEntry | None:
+    return _current_toast(position)

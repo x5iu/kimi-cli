@@ -74,7 +74,9 @@ def test_directory_completion_scans_only_matching_subtree(
     assert texts == snapshot(["src/", "src/pkg/", "src/pkg/module.py"])
     assert visited
     assert visited[0] == tmp_path / "src"
-    assert all(path == tmp_path / "src" or path.is_relative_to(tmp_path / "src") for path in visited)
+    assert all(
+        path == tmp_path / "src" or path.is_relative_to(tmp_path / "src") for path in visited
+    )
 
 
 def test_completed_file_short_circuits_completions(tmp_path: Path):

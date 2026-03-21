@@ -72,8 +72,8 @@ def test_live_view_renders_stderr_output_in_red() -> None:
     content = control.create_content(width=80, height=None)
     lines = [content.get_line(i) for i in range(content.line_count)]
 
-    stderr_line = next(line for line in lines if any("ERR" in text for _, text in line))
-    assert any("ERR" in text and style == "fg:#ff8a8a" for style, text in stderr_line)
+    stderr_line = next(line for line in lines if any("ERR" in fragment[1] for fragment in line))
+    assert any("ERR" in fragment[1] and fragment[0] == "fg:#ff8a8a" for fragment in stderr_line)
 
 
 def test_live_view_rich_ptk_keeps_stdout_output_visible() -> None:
@@ -90,8 +90,8 @@ def test_live_view_rich_ptk_keeps_stdout_output_visible() -> None:
     content = control.create_content(width=80, height=None)
     lines = [content.get_line(i) for i in range(content.line_count)]
 
-    stdout_line = next(line for line in lines if any("OUT" in text for _, text in line))
-    assert any("OUT" in text and style == "fg:#b8b8b8" for style, text in stdout_line)
+    stdout_line = next(line for line in lines if any("OUT" in fragment[1] for fragment in line))
+    assert any("OUT" in fragment[1] and fragment[0] == "fg:#b8b8b8" for fragment in stdout_line)
 
 
 def test_live_view_hides_output_tail_for_whitespace_only_output() -> None:
@@ -113,8 +113,7 @@ def test_live_view_hides_output_tail_for_whitespace_only_output() -> None:
     assert "Output tail" not in finished
 
 
-
-def test_live_view_hides_shell_failure_summary_when_output_tail_exists() -> None:
+def test_live_view_keeps_shell_failure_summary_when_output_tail_exists() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
     tool_call = ToolCall(
         id="shell-fail",
@@ -140,7 +139,7 @@ def test_live_view_hides_shell_failure_summary_when_output_tail_exists() -> None
     assert "Output tail" in rendered
     assert "fatal: bad command" in rendered
     assert rendered.count("fatal: bad command") == 1
-    assert "Command failed with exit code: 2." not in rendered
+    assert "Command failed with exit code: 2." in rendered
 
 
 @pytest.mark.asyncio
@@ -854,7 +853,7 @@ def test_live_view_accepts_expand_command_for_question(monkeypatch: pytest.Monke
     shown: list[str] = []
     monkeypatch.setattr(
         visualize_module,
-        "_show_question_body_in_pager",
+        "show_question_body_in_pager",
         lambda panel: shown.append(panel.current_question_text),
     )
 

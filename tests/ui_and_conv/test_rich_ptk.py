@@ -111,11 +111,19 @@ def test_source_numbered_diff_uses_soft_colors() -> None:
     content = control.create_content(width=80, height=None)
     lines = [content.get_line(i) for i in range(content.line_count)]
 
-    deleted_line = next(line for line in lines if any("-before" in text for _, text in line))
-    inserted_line = next(line for line in lines if any("+after" in text for _, text in line))
+    deleted_line = next(
+        line for line in lines if any("-before" in fragment[1] for fragment in line)
+    )
+    inserted_line = next(
+        line for line in lines if any("+after" in fragment[1] for fragment in line)
+    )
 
-    assert any("-before" in text and style == "fg:#ff8a8a" for style, text in deleted_line)
-    assert any("+after" in text and style == "fg:#8fcd8f" for style, text in inserted_line)
+    assert any(
+        "-before" in fragment[1] and fragment[0] == "fg:#ff8a8a" for fragment in deleted_line
+    )
+    assert any(
+        "+after" in fragment[1] and fragment[0] == "fg:#8fcd8f" for fragment in inserted_line
+    )
 
 
 def test_unified_diff_syntax_uses_soft_colors() -> None:
@@ -131,8 +139,16 @@ def test_unified_diff_syntax_uses_soft_colors() -> None:
     content = control.create_content(width=80, height=None)
     lines = [content.get_line(i) for i in range(content.line_count)]
 
-    deleted_line = next(line for line in lines if any("-before" in text for _, text in line))
-    inserted_line = next(line for line in lines if any("+after" in text for _, text in line))
+    deleted_line = next(
+        line for line in lines if any("-before" in fragment[1] for fragment in line)
+    )
+    inserted_line = next(
+        line for line in lines if any("+after" in fragment[1] for fragment in line)
+    )
 
-    assert any("-before" in text and style == "fg:#ff8a8a" for style, text in deleted_line)
-    assert any("+after" in text and style == "fg:#8fcd8f" for style, text in inserted_line)
+    assert any(
+        "-before" in fragment[1] and fragment[0] == "fg:#ff8a8a" for fragment in deleted_line
+    )
+    assert any(
+        "+after" in fragment[1] and fragment[0] == "fg:#8fcd8f" for fragment in inserted_line
+    )

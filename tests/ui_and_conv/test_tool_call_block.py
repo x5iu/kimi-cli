@@ -5,7 +5,7 @@ from io import StringIO
 from kosong.tooling import BriefDisplayBlock, ToolError, ToolReturnValue
 from rich.console import Console
 
-from kimi_cli.ui.shell.visualize import MAX_TOOL_ERROR_OUTPUT_LINES, _ToolCallBlock
+from kimi_cli.ui.shell.blocks import MAX_TOOL_ERROR_OUTPUT_LINES, ToolCallBlock
 from kimi_cli.wire.types import (
     DiffDisplayBlock,
     TodoDisplayBlock,
@@ -15,7 +15,7 @@ from kimi_cli.wire.types import (
 )
 
 
-def _render_to_str(block: _ToolCallBlock) -> str:
+def _render_to_str(block: ToolCallBlock) -> str:
     buf = StringIO()
     console = Console(file=buf, force_terminal=False, width=120)
     console.print(block.compose())
@@ -23,43 +23,43 @@ def _render_to_str(block: _ToolCallBlock) -> str:
 
 
 class TestExtractFullUrl:
-    """Tests for _ToolCallBlock._extract_full_url static method."""
+    """Tests for ToolCallBlock._extract_full_url static method."""
 
     def test_fetchurl_normal_url(self):
-        url = _ToolCallBlock._extract_full_url(
+        url = ToolCallBlock._extract_full_url(
             '{"url": "https://example.com/very/long/path"}', "FetchURL"
         )
         assert url == "https://example.com/very/long/path"
 
     def test_fetchurl_short_url(self):
-        url = _ToolCallBlock._extract_full_url('{"url": "https://x.co"}', "FetchURL")
+        url = ToolCallBlock._extract_full_url('{"url": "https://x.co"}', "FetchURL")
         assert url == "https://x.co"
 
     def test_non_fetchurl_tool(self):
-        url = _ToolCallBlock._extract_full_url('{"url": "https://example.com"}', "ReadFile")
+        url = ToolCallBlock._extract_full_url('{"url": "https://example.com"}', "ReadFile")
         assert url is None
 
     def test_arguments_none(self):
-        url = _ToolCallBlock._extract_full_url(None, "FetchURL")
+        url = ToolCallBlock._extract_full_url(None, "FetchURL")
         assert url is None
 
     def test_invalid_json(self):
-        url = _ToolCallBlock._extract_full_url("not json", "FetchURL")
+        url = ToolCallBlock._extract_full_url("not json", "FetchURL")
         assert url is None
 
     def test_missing_url_field(self):
-        url = _ToolCallBlock._extract_full_url('{"query": "hello"}', "FetchURL")
+        url = ToolCallBlock._extract_full_url('{"query": "hello"}', "FetchURL")
         assert url is None
 
     def test_empty_string(self):
-        url = _ToolCallBlock._extract_full_url("", "FetchURL")
+        url = ToolCallBlock._extract_full_url("", "FetchURL")
         assert url is None
 
 
 class TestHeadlineRendering:
     def test_renders_full_shell_command_without_truncation(self):
         long_command = "echo " + "x" * 80
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_1",
                 function=ToolCall.FunctionBody(
@@ -75,7 +75,7 @@ class TestHeadlineRendering:
         assert "..." not in rendered
 
     def test_append_args_part_returns_false_when_headline_is_unchanged(self):
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_2",
                 function=ToolCall.FunctionBody(name="Shell", arguments=None),
@@ -87,7 +87,7 @@ class TestHeadlineRendering:
         assert changed is False
 
     def test_append_args_part_returns_true_when_key_argument_becomes_available(self):
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_3",
                 function=ToolCall.FunctionBody(name="Shell", arguments=None),
@@ -99,7 +99,7 @@ class TestHeadlineRendering:
         assert changed is True
 
     def test_renders_set_todo_list_headline_with_ready_summary(self):
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_4",
                 function=ToolCall.FunctionBody(
@@ -118,7 +118,7 @@ class TestHeadlineRendering:
         assert "Updating Todo List (2 todos; ready: Inspect parser @coder)" in rendered
 
     def test_set_todo_list_status_text_prioritizes_ready_todo(self):
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_4_status",
                 function=ToolCall.FunctionBody(
@@ -135,7 +135,7 @@ class TestHeadlineRendering:
         assert block.status_text == "Updating Todo List (ready: Inspect parser @coder)"
 
     def test_renders_execute_todo_headline_with_title(self):
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_5",
                 function=ToolCall.FunctionBody(
@@ -152,7 +152,7 @@ class TestHeadlineRendering:
 
 class TestErrorRendering:
     def test_renders_error_message_and_output(self):
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_1",
                 function=ToolCall.FunctionBody(
@@ -174,8 +174,8 @@ class TestErrorRendering:
         assert "Command failed with exit code: 1." in rendered
         assert "ls: /missing: No such file or directory" in rendered
 
-    def test_hides_shell_error_details_when_output_tail_exists(self):
-        block = _ToolCallBlock(
+    def test_keeps_shell_error_summary_when_output_tail_exists(self):
+        block = ToolCallBlock(
             ToolCall(
                 id="call_shell_fail",
                 function=ToolCall.FunctionBody(
@@ -197,10 +197,35 @@ class TestErrorRendering:
 
         assert "Output tail" in rendered
         assert rendered.count("ls: /missing: No such file or directory") == 1
-        assert "Command failed with exit code: 1." not in rendered
+        assert "Command failed with exit code: 1." in rendered
+
+    def test_keeps_shell_error_output_when_tail_does_not_cover_everything(self):
+        block = ToolCallBlock(
+            ToolCall(
+                id="call_shell_partial",
+                function=ToolCall.FunctionBody(
+                    name="Shell",
+                    arguments='{"command": "echo hi; false"}',
+                ),
+            )
+        )
+        block.append_output("line 2\n", stream="stderr")
+        block.finish(
+            ToolError(
+                message="Command failed with exit code: 1.",
+                brief="Failed with exit code: 1",
+                output="line 1\nline 2\n",
+            )
+        )
+
+        rendered = _render_to_str(block)
+
+        assert "Command failed with exit code: 1." in rendered
+        assert "line 1" in rendered
+        assert rendered.count("line 2") == 2
 
     def test_renders_detailed_error_message_instead_of_generic_brief(self):
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_1",
                 function=ToolCall.FunctionBody(
@@ -226,7 +251,7 @@ class TestErrorRendering:
 
     def test_truncates_long_error_output_preview(self):
         output = "\n".join(f"line {idx}" for idx in range(MAX_TOOL_ERROR_OUTPUT_LINES + 5))
-        block = _ToolCallBlock(
+        block = ToolCallBlock(
             ToolCall(
                 id="call_1",
                 function=ToolCall.FunctionBody(name="Shell", arguments='{"command": "bad"}'),
@@ -243,7 +268,7 @@ class TestErrorRendering:
 
 
 def test_renders_line_numbers_for_writefile_diff_display() -> None:
-    block = _ToolCallBlock(
+    block = ToolCallBlock(
         ToolCall(
             id="call_write",
             function=ToolCall.FunctionBody(
@@ -279,7 +304,7 @@ def test_renders_line_numbers_for_writefile_diff_display() -> None:
 
 
 def test_renders_diff_display_for_subagent_file_edit_result() -> None:
-    block = _ToolCallBlock(
+    block = ToolCallBlock(
         ToolCall(
             id="task_1",
             function=ToolCall.FunctionBody(
@@ -328,7 +353,7 @@ def test_renders_diff_display_for_subagent_file_edit_result() -> None:
 
 
 def test_renders_line_numbers_for_top_level_edit_diff_display() -> None:
-    block = _ToolCallBlock(
+    block = ToolCallBlock(
         ToolCall(
             id="call_edit",
             function=ToolCall.FunctionBody(
@@ -362,7 +387,7 @@ def test_renders_line_numbers_for_top_level_edit_diff_display() -> None:
 
 
 def test_renders_ready_to_execute_todo_hint() -> None:
-    block = _ToolCallBlock(
+    block = ToolCallBlock(
         ToolCall(
             id="call_todo",
             function=ToolCall.FunctionBody(name="SetTodoList", arguments='{"todos": []}'),
@@ -395,7 +420,7 @@ def test_renders_ready_to_execute_todo_hint() -> None:
 
 
 def test_omits_ready_to_execute_todo_hint_when_multiple_candidates_exist() -> None:
-    block = _ToolCallBlock(
+    block = ToolCallBlock(
         ToolCall(
             id="call_todo_many",
             function=ToolCall.FunctionBody(name="SetTodoList", arguments='{"todos": []}'),
@@ -433,7 +458,7 @@ def test_omits_ready_to_execute_todo_hint_when_multiple_candidates_exist() -> No
 
 
 def test_renders_completed_todo_brief_for_execute_todo_result() -> None:
-    block = _ToolCallBlock(
+    block = ToolCallBlock(
         ToolCall(
             id="call_exec_todo",
             function=ToolCall.FunctionBody(
@@ -470,7 +495,7 @@ def test_renders_completed_todo_brief_for_execute_todo_result() -> None:
 
 
 def test_renders_blocked_todo_error_for_execute_todo_result() -> None:
-    block = _ToolCallBlock(
+    block = ToolCallBlock(
         ToolCall(
             id="call_exec_todo_fail",
             function=ToolCall.FunctionBody(

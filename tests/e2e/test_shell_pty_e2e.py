@@ -767,7 +767,10 @@ def test_shell_cancel_running_command_kills_process_and_recovers(tmp_path: Path)
 
         cancel_mark = shell.mark()
         shell.send_line("start cancellable command")
-        shell.read_until_contains("Using Shell (sleep 2 && printf should-", after=cancel_mark)
+        shell.read_until_contains(
+            "Shell (sleep 2 && printf should-not-exist > cancel_output.txt)",
+            after=cancel_mark,
+        )
         shell.send_key("escape")
         shell.read_until_contains("Interrupted by user", after=cancel_mark)
         cancel_prompt_mark = shell.mark()
@@ -792,7 +795,9 @@ def test_shell_long_stream_tail_appears_before_turn_end(tmp_path: Path) -> None:
             [
                 *[f"text: Stream line {i:02d}" for i in range(1, 41)],
                 f"text: {tail_marker}",
-                build_shell_tool_call("tc-stream-tail", "sleep 5 && printf stream-done > stream_done.txt"),
+                build_shell_tool_call(
+                    "tc-stream-tail", "sleep 5 && printf stream-done > stream_done.txt"
+                ),
             ]
         ),
         "text: Stream tail recovery completed.",
@@ -828,7 +833,9 @@ def test_shell_long_stream_tail_appears_before_turn_end(tmp_path: Path) -> None:
 
         recovery_mark = shell.mark()
         shell.send_line("confirm stream follow recovery")
-        shell.read_until_contains("Stream tail recovery completed.", after=recovery_mark, timeout=15.0)
+        shell.read_until_contains(
+            "Stream tail recovery completed.", after=recovery_mark, timeout=15.0
+        )
         _read_until_prompt(shell, after=shell.mark())
     finally:
         shell.close()
@@ -897,8 +904,6 @@ def test_shell_question_panel_stays_visible_in_small_terminal(tmp_path: Path) ->
         assert json.loads(output) == {"answers": {"Continue?": "Yes"}}
     finally:
         shell.close()
-
-
 
 
 def test_shell_ctrl_l_reveals_latest_output_during_question_prompt(tmp_path: Path) -> None:

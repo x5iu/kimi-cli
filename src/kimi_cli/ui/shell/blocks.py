@@ -408,12 +408,24 @@ class _ToolCallBlock:
 
         return Group(Text("Output tail", style="cyan dim"), rendered)
 
-    def _should_suppress_error_details(self, *, tool_name: str) -> bool:
-        return (
-            tool_name == "Shell"
-            and tool_name == self._tool_name
-            and self._has_visible_output_tail()
-        )
+    def _output_tail_text(self) -> str:
+        return "".join(line for _, line, _ in self._output_tail).strip("\n")
+
+    def _should_suppress_error_output(
+        self,
+        result: ToolReturnValue,
+        *,
+        tool_name: str,
+    ) -> bool:
+        if (
+            tool_name != "Shell"
+            or tool_name != self._tool_name
+            or not self._has_visible_output_tail()
+            or self._output_tail_truncated
+        ):
+            return False
+
+        return self._output_tail_text() == self._stringify_output(result.output).strip("\n")
 
     def _render_result_display(
         self,
@@ -424,14 +436,13 @@ class _ToolCallBlock:
         lines: list[RenderableType] = []
         tool_name = tool_name or self._tool_name
         if result.is_error:
-            if not self._should_suppress_error_details(tool_name=tool_name):
-                error_message = self._extract_error_message(result)
-                if error_message:
-                    lines.append(Text(error_message, style="red", overflow="fold"))
+            error_message = self._extract_error_message(result)
+            if error_message:
+                lines.append(Text(error_message, style="red", overflow="fold"))
 
-                error_output = self._extract_error_output(result)
-                if error_output:
-                    lines.append(Text(error_output, style="red", overflow="fold"))
+            error_output = self._extract_error_output(result)
+            if error_output and not self._should_suppress_error_output(result, tool_name=tool_name):
+                lines.append(Text(error_output, style="red", overflow="fold"))
         else:
             has_diff_display = any(isinstance(block, DiffDisplayBlock) for block in result.display)
             if result.message and has_diff_display:
@@ -517,6 +528,8 @@ class _ToolCallBlock:
                 details.append("`Shell(bg)`")
             case "main":
                 details.append("`main`")
+            case None:
+                pass
         if todo.done_when:
             details.append(f"when: {todo.done_when}")
         return f" — {' · '.join(details)}" if details else ""
@@ -582,3 +595,8 @@ class _StatusBlock:
                 self._max_context_tokens,
             )
         return has_update
+
+
+ContentBlock = _ContentBlock
+ToolCallBlock = _ToolCallBlock
+StatusBlock = _StatusBlock

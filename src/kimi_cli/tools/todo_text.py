@@ -42,8 +42,6 @@ def execute_todo_suggested_next_step(next_state: str) -> str:
 
 def execute_todo_failure_message(title: str, *, next_state: str) -> str:
     label = (
-        blocked_todo_text(title)
-        if next_state == "blocked"
-        else todo_still_in_progress_text(title)
+        blocked_todo_text(title) if next_state == "blocked" else todo_still_in_progress_text(title)
     )
     return f"{label}. Delegated Task failed."

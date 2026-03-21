@@ -13,7 +13,6 @@ _HUNK_HEADER_RE = re.compile(
 )
 
 
-
 def format_unified_diff(
     old_text: str,
     new_text: str,

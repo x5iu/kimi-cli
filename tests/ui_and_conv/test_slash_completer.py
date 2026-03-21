@@ -13,12 +13,11 @@ from prompt_toolkit.utils import get_cwidth
 
 import kimi_cli.ui.shell.completion as completion_mod
 from kimi_cli.soul import StatusSnapshot
+from kimi_cli.ui.shell.completion import find_prompt_float_container, wrap_to_width
 from kimi_cli.ui.shell.prompt import (
     CustomPromptSession,
     SlashCommandCompleter,
     SlashCommandMenuControl,
-    _find_prompt_float_container,
-    _wrap_to_width,
 )
 from kimi_cli.utils.slashcmd import SlashCommand
 
@@ -118,8 +117,8 @@ def test_completion_display_uses_canonical_command_name():
     assert completions[0].display_meta_text == "help command"
 
 
-def test_wrap_to_width_respects_width():
-    lines = _wrap_to_width(
+def testwrap_to_width_respects_width():
+    lines = wrap_to_width(
         "Help address review issue comments on the open GitHub PR",
         18,
     )
@@ -128,8 +127,8 @@ def test_wrap_to_width_respects_width():
     assert all(get_cwidth(line) <= 18 for line in lines)
 
 
-def test_wrap_to_width_respects_max_lines():
-    lines = _wrap_to_width(
+def testwrap_to_width_respects_max_lines():
+    lines = wrap_to_width(
         "Help address review issue comments on the open GitHub PR for the current branch",
         20,
         max_lines=2,
@@ -241,7 +240,7 @@ def test_completion_menu_height_is_stable_for_selected_description(monkeypatch) 
     assert "Ctrl-O" in detail_line
 
 
-def test_find_prompt_float_container_supports_conditional_container_shape():
+def testfind_prompt_float_container_supports_conditional_container_shape():
     float_container = FloatContainer(content=Window(), floats=[])
     root = HSplit(
         [
@@ -253,14 +252,14 @@ def test_find_prompt_float_container_supports_conditional_container_shape():
         ]
     )
 
-    assert _find_prompt_float_container(root) is float_container
+    assert find_prompt_float_container(root) is float_container
 
 
-def test_find_prompt_float_container_supports_direct_float_container_shape():
+def testfind_prompt_float_container_supports_direct_float_container_shape():
     float_container = FloatContainer(content=Window(), floats=[])
     root = HSplit([float_container])
 
-    assert _find_prompt_float_container(root) is float_container
+    assert find_prompt_float_container(root) is float_container
 
 
 def test_prompt_session_wraps_root_layout_for_slash_menu(
@@ -290,7 +289,7 @@ def test_prompt_session_wraps_root_layout_for_slash_menu(
     assert slash_float.right == 0
     assert slash_float.ycursor is True
 
-    inner_float_container = _find_prompt_float_container(root_container.content)
+    inner_float_container = find_prompt_float_container(root_container.content)
     assert isinstance(inner_float_container, FloatContainer)
     assert not any(
         isinstance(float_.content, CompletionsMenu) for float_ in inner_float_container.floats

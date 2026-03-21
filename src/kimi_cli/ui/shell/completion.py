@@ -744,3 +744,7 @@ class LocalFileMentionCompleter(Completer):
             yield from candidates
         finally:
             self._fragment_hint = None
+
+
+wrap_to_width = _wrap_to_width
+find_prompt_float_container = _find_prompt_float_container

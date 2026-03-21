@@ -6,6 +6,7 @@ import pytest
 
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.soul.agent import Runtime, load_agent
+from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.file.replace import EditTool
 
 
@@ -35,6 +36,7 @@ async def test_default_agent(runtime: Runtime):
         "ExitPlanMode",
         "EnterPlanMode",
     ]
+    assert isinstance(agent.toolset, KimiToolset)
     assert isinstance(agent.toolset.find("Edit"), EditTool)
 
     prompt = agent.system_prompt.replace(

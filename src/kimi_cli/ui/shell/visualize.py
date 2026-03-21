@@ -15,14 +15,14 @@ from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
-from kimi_cli.ui.shell.blocks import _ContentBlock, _StatusBlock, _ToolCallBlock
-from kimi_cli.ui.shell.console import _RIGHT_PADDING, console
+from kimi_cli.ui.shell.blocks import ContentBlock, StatusBlock, ToolCallBlock
+from kimi_cli.ui.shell.console import RIGHT_PADDING, console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.panels import (
-    _ApprovalRequestPanel,
-    _QuestionRequestPanel,
-    _show_approval_in_pager,
-    _show_question_body_in_pager,
+    ApprovalRequestPanel,
+    QuestionRequestPanel,
+    show_approval_in_pager,
+    show_question_body_in_pager,
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.logging import logger
@@ -36,6 +36,7 @@ from kimi_cli.wire.types import (
     FollowUpInput,
     MCPLoadingBegin,
     MCPLoadingEnd,
+    NotificationNotice,
     QuestionRequest,
     SkillReminderNotice,
     StatusUpdate,
@@ -65,7 +66,7 @@ LIVE_VIEW_REFRESH_INTERVAL = 1.0
 
 def is_significant_for_render(msg: object) -> bool:
     """Whether a wire message should trigger an immediate repaint."""
-    if isinstance(msg, (ContentPart, ToolCallPart, ToolCallOutput, StatusUpdate, ApprovalResponse)):
+    if isinstance(msg, (ToolCallOutput, StatusUpdate, ApprovalResponse)):
         return False
     if isinstance(msg, SubagentEvent):
         return is_significant_for_render(msg.event)
@@ -172,20 +173,20 @@ class LiveView:
         self._compacting_spinner: Spinner | None = None
         self._mcp_loading_spinner: Spinner | None = None
 
-        self._current_content_block: _ContentBlock | None = None
-        self._tool_call_blocks: dict[str, _ToolCallBlock] = {}
-        self._last_tool_call_block: _ToolCallBlock | None = None
+        self._current_content_block: ContentBlock | None = None
+        self._tool_call_blocks: dict[str, ToolCallBlock] = {}
+        self._last_tool_call_block: ToolCallBlock | None = None
         self._approval_request_queue = deque[ApprovalRequest]()
         """
         It is possible that multiple subagents request approvals at the same time,
         in which case we will have to queue them up and show them one by one.
         """
-        self._current_approval_request_panel: _ApprovalRequestPanel | None = None
+        self._current_approval_request_panel: ApprovalRequestPanel | None = None
         self._reject_all_following = False
         self._question_request_queue = deque[QuestionRequest]()
-        self._current_question_panel: _QuestionRequestPanel | None = None
+        self._current_question_panel: QuestionRequestPanel | None = None
         self._question_waiting_for_other_text = False
-        self._status_block = _StatusBlock(initial_status)
+        self._status_block = StatusBlock(initial_status)
         self._live: Live | None = None
         self._flush_to_console = flush_to_console
         self._allow_expand = allow_expand
@@ -338,7 +339,7 @@ class LiveView:
         return any(not block.finished for block in self._tool_call_blocks.values())
 
     def _renderable_to_ansi(self, renderable: RenderableType, width: int) -> str:
-        width = max(20, width - _RIGHT_PADDING)
+        width = max(20, width - RIGHT_PADDING)
         sio = StringIO()
         render_console = Console(
             file=sio,
@@ -414,7 +415,11 @@ class LiveView:
                 return "Enter the custom answer, then press Enter."
             case "question":
                 panel = self._current_question_panel
-                dismiss_hint = " Select Exit to dismiss." if panel is not None and panel.has_exit_option else ""
+                dismiss_hint = (
+                    " Select Exit to dismiss."
+                    if panel is not None and panel.has_exit_option
+                    else ""
+                )
                 if panel is not None and panel.is_multi_select:
                     return (
                         "Use ↑/↓ to focus, Space or Enter to select, and Enter to submit. "
@@ -466,7 +471,7 @@ class LiveView:
             if live is not None:
                 live.stop()
             try:
-                _show_approval_in_pager(self._current_approval_request_panel)
+                show_approval_in_pager(self._current_approval_request_panel)
             finally:
                 if live is not None:
                     self._reset_live_shape(live)
@@ -480,7 +485,7 @@ class LiveView:
             if live is not None:
                 live.stop()
             try:
-                _show_question_body_in_pager(self._current_question_panel)
+                show_question_body_in_pager(self._current_question_panel)
             finally:
                 if live is not None:
                     self._reset_live_shape(live)
@@ -508,7 +513,7 @@ class LiveView:
         return int(text) - 1
 
     @staticmethod
-    def _find_question_option_index(panel: _QuestionRequestPanel, text: str) -> int | None:
+    def _find_question_option_index(panel: QuestionRequestPanel, text: str) -> int | None:
         normalized = text.casefold()
         for i, (label, _) in enumerate(panel.options):
             if label.casefold() == normalized:
@@ -551,7 +556,7 @@ class LiveView:
 
     def _resolve_question_submission(
         self,
-        panel: _QuestionRequestPanel,
+        panel: QuestionRequestPanel,
         *,
         all_done: bool,
     ) -> None:
@@ -577,7 +582,7 @@ class LiveView:
             return self._submit_multi_select_question_line(panel, text)
         return self._submit_single_select_question_line(panel, text)
 
-    def _submit_single_select_question_line(self, panel: _QuestionRequestPanel, text: str) -> bool:
+    def _submit_single_select_question_line(self, panel: QuestionRequestPanel, text: str) -> bool:
         idx = self._parse_index_token(text)
         if idx is None:
             idx = self._find_question_option_index(panel, text)
@@ -600,7 +605,7 @@ class LiveView:
         self._resolve_question_submission(panel, all_done=all_done)
         return True
 
-    def _submit_multi_select_question_line(self, panel: _QuestionRequestPanel, text: str) -> bool:
+    def _submit_multi_select_question_line(self, panel: QuestionRequestPanel, text: str) -> bool:
         tokens = [token.strip() for token in text.replace("\n", ",").split(",") if token.strip()]
         if not tokens:
             return False
@@ -862,6 +867,8 @@ class LiveView:
                 self.refresh_active()
             case SkillReminderNotice(skills=skills):
                 self.append_skill_reminder(skills)
+            case NotificationNotice():
+                pass
             case StatusUpdate():
                 if self._status_block.update(msg):
                     self._need_recompose = True
@@ -1098,10 +1105,10 @@ class LiveView:
                     return
                 is_think = isinstance(part, ThinkPart)
                 if self._current_content_block is None:
-                    self._current_content_block = _ContentBlock(is_think)
+                    self._current_content_block = ContentBlock(is_think)
                 elif self._current_content_block.is_think != is_think:
                     self.flush_content()
-                    self._current_content_block = _ContentBlock(is_think)
+                    self._current_content_block = ContentBlock(is_think)
                 self._current_content_block.append(text)
                 self.refresh_active()
             case _:
@@ -1110,7 +1117,7 @@ class LiveView:
 
     def append_tool_call(self, tool_call: ToolCall) -> None:
         self.flush_content()
-        self._tool_call_blocks[tool_call.id] = _ToolCallBlock(tool_call)
+        self._tool_call_blocks[tool_call.id] = ToolCallBlock(tool_call)
         self._last_tool_call_block = self._tool_call_blocks[tool_call.id]
         self.refresh_active()
 
@@ -1164,7 +1171,7 @@ class LiveView:
             if request.resolved:
                 # skip resolved requests
                 continue
-            self._current_approval_request_panel = _ApprovalRequestPanel(request)
+            self._current_approval_request_panel = ApprovalRequestPanel(request)
             self.refresh_active()
             break
         else:
@@ -1195,7 +1202,7 @@ class LiveView:
             request = self._question_request_queue.popleft()
             if request.resolved:
                 continue
-            self._current_question_panel = _QuestionRequestPanel(
+            self._current_question_panel = QuestionRequestPanel(
                 request,
                 allow_exit=self._question_request_allows_exit(request),
             )
@@ -1229,3 +1236,6 @@ class LiveView:
                 # ignore other events for now
                 # TODO: may need to handle multi-level nested subagents
                 pass
+
+
+recent_output_notice_text = _recent_output_notice_text

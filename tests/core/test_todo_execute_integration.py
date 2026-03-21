@@ -180,7 +180,9 @@ async def test_default_agent_exposes_execute_todo_guidance_to_llm_and_runs_flow(
     assert runtime.session.state.todos[0].status == "done"
     assert runtime.session.state.todos[0].subagent_name == "coder"
 
-    tool_messages = [message.extract_text("\n") for message in context.history if message.role == "tool"]
+    tool_messages = [
+        message.extract_text("\n") for message in context.history if message.role == "tool"
+    ]
     assert any("Todo list updated" in text for text in tool_messages)
     assert any("Ready to ExecuteTodo: Inspect parser @coder" in text for text in tool_messages)
     assert any('Todo "Inspect parser" completed via Task.' in text for text in tool_messages)

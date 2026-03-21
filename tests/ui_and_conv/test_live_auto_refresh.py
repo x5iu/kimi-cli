@@ -84,7 +84,7 @@ async def test_live_view_disables_auto_refresh(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_live_view_defers_non_significant_updates_until_periodic_refresh(monkeypatch) -> None:
+async def test_live_view_refreshes_text_stream_updates_immediately(monkeypatch) -> None:
     created: list[_DummyLive] = []
 
     def _fake_live(*args, **kwargs):
@@ -99,10 +99,10 @@ async def test_live_view_defers_non_significant_updates_until_periodic_refresh(m
     await view.visualize_loop(cast(WireUISide, _SequenceWire([TextPart(text="hello")])))
 
     assert created
-    assert len(created[0].updated) == 1
+    assert len(created[0].updated) == 2
 
 
-def test_is_significant_for_render_filters_streaming_messages() -> None:
-    assert is_significant_for_render(TextPart(text="hello")) is False
+def test_is_significant_for_render_only_defers_shell_output_and_status() -> None:
+    assert is_significant_for_render(TextPart(text="hello")) is True
     assert is_significant_for_render(ToolCallOutput(tool_call_id="call-1", text="line\n")) is False
     assert is_significant_for_render(StatusUpdate(context_usage=0.1)) is False

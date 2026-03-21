@@ -22,7 +22,7 @@ from prompt_toolkit.clipboard.pyperclip import PyperclipClipboard
 from prompt_toolkit.completion import merge_completers
 from prompt_toolkit.cursor_shapes import CursorShape, SimpleCursorShapeConfig
 from prompt_toolkit.document import Document
-from prompt_toolkit.filters import Condition, has_completions, has_focus, is_done
+from prompt_toolkit.filters import Condition, Filter, has_completions, has_focus, is_done
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent, merge_key_bindings
@@ -44,22 +44,18 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame, TextArea
 from pydantic import BaseModel, ValidationError
 from rich.style import Style as _RichStyle
-from rich.text import Text as RichText
 
 from kimi_cli.llm import ModelCapability
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import StatusSnapshot, format_context_status
 from kimi_cli.ui.shell import placeholders as prompt_placeholders
-from kimi_cli.ui.shell import rich_ptk as _rich_ptk
-from kimi_cli.ui.shell import toast as _toast
 from kimi_cli.ui.shell.completion import (
     LocalFileMentionCompleter,
     SlashCommandCompleter,
     SlashCommandMenuControl,
-    _find_prompt_float_container,
 )
 from kimi_cli.ui.shell.completion import (
-    _wrap_to_width as _completion_wrap_to_width,
+    find_prompt_float_container as _find_prompt_float_container,
 )
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.keyboard import KeyEvent
@@ -68,13 +64,27 @@ from kimi_cli.ui.shell.placeholders import (
     normalize_pasted_text,
     sanitize_surrogates,
 )
+from kimi_cli.ui.shell.rich_ptk import (
+    RichRenderableControl as _RichRenderableControl,
+)
+from kimi_cli.ui.shell.rich_ptk import (
+    StackedRichRenderableControl as _StackedRichRenderableControl,
+)
+from kimi_cli.ui.shell.rich_ptk import (
+    rich_from_ansi,
+    rich_style_to_prompt_toolkit,
+)
+from kimi_cli.ui.shell.toast import current_toast as _current_toast
+from kimi_cli.ui.shell.toast import toast, toast_queues
 from kimi_cli.ui.shell.visualize import (
     MAX_ACTIVE_TURN_CONTENT_CHARS,
     MAX_ACTIVE_TURN_FLUSHED_BLOCKS,
     MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS,
-    _recent_output_notice_text,
     is_significant_for_render,
     render_user_prompt_block,
+)
+from kimi_cli.ui.shell.visualize import (
+    recent_output_notice_text as _recent_output_notice_text,
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.clipboard import (
@@ -89,15 +99,10 @@ AttachmentCache = prompt_placeholders.AttachmentCache
 CachedAttachment = prompt_placeholders.CachedAttachment
 _parse_attachment_kind = prompt_placeholders.parse_attachment_kind
 _sanitize_surrogates = sanitize_surrogates  # backward compat re-export
-_RichRenderableControl = _rich_ptk._RichRenderableControl
-_StackedRichRenderableControl = _rich_ptk._StackedRichRenderableControl
-_rich_from_ansi = _rich_ptk._rich_from_ansi
-_rich_style_to_prompt_toolkit = _rich_ptk._rich_style_to_prompt_toolkit
-_toast_queues = _toast._toast_queues
-_current_toast = _toast._current_toast
-toast = _toast.toast
+_rich_from_ansi = rich_from_ansi
+_rich_style_to_prompt_toolkit = rich_style_to_prompt_toolkit
+_toast_queues = toast_queues
 RichStyle = _RichStyle
-_wrap_to_width = _completion_wrap_to_width
 
 PROMPT_SYMBOL = "✨"
 PROMPT_SYMBOL_SHELL = "$"
@@ -491,7 +496,7 @@ class CustomPromptSession:
             filter=~self._build_inline_completion_filter(buffer),
         )
 
-    def _build_inline_completion_filter(self, buffer: Buffer) -> Condition:
+    def _build_inline_completion_filter(self, buffer: Buffer) -> Filter:
         return has_focus(buffer) & has_completions & ~is_done
 
     def _build_inline_completion_menu(self, buffer: Buffer) -> ConditionalContainer:

@@ -498,14 +498,14 @@ def test_callable_tool_2_double_encoded_json_string():
     )
 
     # Double-encoded JSON object string — should be transparently parsed
-    assert asyncio.run(
-        tool.call({"name": "a", "config": '{"kind": "x", "value": 1}'})
-    ) == ToolOk(output="a:x:1")
+    assert asyncio.run(tool.call({"name": "a", "config": '{"kind": "x", "value": 1}'})) == ToolOk(
+        output="a:x:1"
+    )
 
     # Double-encoded JSON array string — should be transparently parsed
-    assert asyncio.run(
-        tool.call({"name": "b", "config": '[{"kind": "y", "value": 2}]'})
-    ) == ToolOk(output="b:1")
+    assert asyncio.run(tool.call({"name": "b", "config": '[{"kind": "y", "value": 2}]'})) == ToolOk(
+        output="b:1"
+    )
 
     # Plain string that is not JSON — should remain a string (and fail validation)
     result = asyncio.run(tool.call({"name": "c", "config": "not json"}))

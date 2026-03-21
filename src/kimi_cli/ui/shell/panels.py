@@ -529,3 +529,9 @@ def _show_question_body_in_pager(panel: _QuestionRequestPanel) -> None:
         console.print()
         for renderable in panel.render_full_body():
             console.print(renderable)
+
+
+ApprovalRequestPanel = _ApprovalRequestPanel
+QuestionRequestPanel = _QuestionRequestPanel
+show_approval_in_pager = _show_approval_in_pager
+show_question_body_in_pager = _show_question_body_in_pager

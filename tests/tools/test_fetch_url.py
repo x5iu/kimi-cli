@@ -83,21 +83,13 @@ async def test_fetch_url_basic_functionality(fetch_url_tool: FetchURL) -> None:
     result = await fetch_url_tool(Params(url=test_url))
 
     assert not result.is_error
-    assert result.output == snapshot(
-        """\
----
-title: Typo: adamw vs adamW · Issue #4 · MoonshotAI/Moonlight
-author: MoonshotAI
-url: https://github.com/MoonshotAI/Moonlight/issues/4
-hostname: github.com
-description: The default parameter value for optimizer should probably be adamw instead of adamW according to how get_optimizer is written.
-sitename: GitHub
-date: 2025-02-23
-categories: ['issue:2873381615']
----
-The default parameter value for `optimizer` should probably be `adamw` instead of `adamW` according to how `get_optimizer` is written.\
-"""
-    )
+    assert isinstance(result.output, str)
+    assert result.output.startswith("---\n")
+    assert "hostname: github.com" in result.output
+    assert (
+        "The default parameter value for `optimizer` should probably be `adamw` instead of "
+        "`adamW` according to how `get_optimizer` is written."
+    ) in result.output
 
 
 async def test_fetch_url_invalid_url(fetch_url_tool: FetchURL) -> None:

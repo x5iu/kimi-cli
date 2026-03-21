@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 
 from kimi_cli.config import NotificationConfig
@@ -11,6 +11,7 @@ from kimi_cli.utils.logging import logger
 from .models import (
     NotificationDelivery,
     NotificationEvent,
+    NotificationSink,
     NotificationSinkState,
     NotificationView,
 )
@@ -42,9 +43,11 @@ class NotificationManager:
         self,
         view: NotificationView,
         *,
-        targets: list[str],
+        targets: Sequence[NotificationSink],
     ) -> NotificationView:
-        merged_targets = list(dict.fromkeys([*view.event.targets, *targets]))
+        merged_targets: list[NotificationSink] = list(
+            dict.fromkeys([*view.event.targets, *targets])
+        )
         if merged_targets == view.event.targets:
             return view
 

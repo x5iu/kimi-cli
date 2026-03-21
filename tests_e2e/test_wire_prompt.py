@@ -88,7 +88,9 @@ def test_basic_prompt_events(tmp_path) -> None:
                             "input_cache_read": 0,
                             "input_cache_creation": 0,
                         },
-                        "message_id": "scripted-1", "plan_mode": False},
+                        "message_id": "scripted-1",
+                        "plan_mode": False,
+                    },
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]
@@ -289,7 +291,9 @@ def test_max_steps_reached(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None, "plan_mode": False},
+                        "message_id": None,
+                        "plan_mode": False,
+                    },
                 },
                 {
                     "method": "event",
@@ -298,12 +302,20 @@ def test_max_steps_reached(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "return_value": {
                             "is_error": False,
-                            "output": "",
+                            "output": "1 todos, pending=1",
                             "message": "Todo list updated",
                             "display": [
                                 {
                                     "type": "todo",
-                                    "items": [{"title": "x", "status": "pending"}],
+                                    "items": [
+                                        {
+                                            "title": "x",
+                                            "status": "pending",
+                                            "executor": None,
+                                            "subagent_name": None,
+                                            "done_when": None,
+                                        }
+                                    ],
                                 }
                             ],
                             "extras": None,
@@ -363,7 +375,9 @@ def test_status_update_fields(tmp_path) -> None:
                         "input_cache_read": 0,
                         "input_cache_creation": 0,
                     },
-                    "message_id": "scripted-1", "plan_mode": False},
+                    "message_id": "scripted-1",
+                    "plan_mode": False,
+                },
             }
         )
     finally:
@@ -458,7 +472,9 @@ def test_concurrent_prompt_error(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None, "plan_mode": False},
+                        "message_id": None,
+                        "plan_mode": False,
+                    },
                 },
                 {
                     "method": "request",
@@ -491,6 +507,11 @@ def test_concurrent_prompt_error(tmp_path) -> None:
                         },
                     },
                 },
+                {
+                    "method": "event",
+                    "type": "ToolCallOutput",
+                    "payload": {"tool_call_id": "tc-1", "text": "hi\n", "stream": "stdout"},
+                },
                 {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
                 {
                     "method": "event",
@@ -505,7 +526,9 @@ def test_concurrent_prompt_error(tmp_path) -> None:
                         "context_tokens": None,
                         "max_context_tokens": None,
                         "token_usage": None,
-                        "message_id": None, "plan_mode": False},
+                        "message_id": None,
+                        "plan_mode": False,
+                    },
                 },
                 {"method": "event", "type": "TurnEnd", "payload": {}},
             ]

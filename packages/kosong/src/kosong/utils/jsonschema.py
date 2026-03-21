@@ -69,11 +69,7 @@ def deref_json_schema(schema: JsonDict) -> JsonDict:
             props = branch.get("properties")
             if not isinstance(props, dict):
                 return None
-            const_keys = {
-                k
-                for k, v in props.items()
-                if isinstance(v, dict) and "const" in v
-            }
+            const_keys = {k for k, v in props.items() if isinstance(v, dict) and "const" in v}
             if not const_keys:
                 return None
             candidates = const_keys if candidates is None else candidates & const_keys
@@ -141,13 +137,11 @@ def deref_json_schema(schema: JsonDict) -> JsonDict:
                             break
 
                     final_props: JsonDict = {disc_key: disc_schema, **merged_props}
-                    final_required = sorted(
-                        {disc_key} | (merged_required or set())
-                    )
+                    final_required = sorted({disc_key} | (merged_required or set()))
 
                     flat: JsonDict = {"type": "object", "properties": final_props}
                     if final_required:
-                        flat["required"] = final_required
+                        flat["required"] = cast(JsonType, final_required)
                     # Preserve sibling keys (e.g. description) from the parent,
                     # but drop oneOf (replaced) and discriminator (now redundant).
                     for k, v in node.items():

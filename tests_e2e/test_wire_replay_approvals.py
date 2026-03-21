@@ -152,7 +152,7 @@ def test_replay_restores_approve_for_session_response(tmp_path) -> None:
         replay_resp, replay_messages = collect_until_response(wire, "replay-1")
         assert replay_resp.get("result") == {
             "status": "finished",
-            "events": 21,
+            "events": 23,
             "requests": 1,
         }
 

@@ -13,7 +13,7 @@ from typing import Any
 from kaos.local import local_kaos
 
 from kimi_cli.config import BackgroundConfig
-from kimi_cli.notifications import NotificationEvent, NotificationManager
+from kimi_cli.notifications import NotificationEvent, NotificationManager, NotificationSink
 from kimi_cli.session import Session
 from kimi_cli.utils.logging import logger
 
@@ -43,7 +43,7 @@ class BackgroundTaskManager:
         self._notifications = notifications
         self._owner_role = owner_role
         self._store = BackgroundTaskStore(session.context_file.parent / "tasks")
-        self._notification_targets_getter: Callable[[], tuple[str, ...]] | None = None
+        self._notification_targets_getter: Callable[[], tuple[NotificationSink, ...]] | None = None
 
     @property
     def store(self) -> BackgroundTaskStore:
@@ -53,7 +53,7 @@ class BackgroundTaskManager:
     def role(self) -> str:
         return self._owner_role
 
-    def bind_notification_targets(self, getter: Callable[[], tuple[str, ...]]) -> None:
+    def bind_notification_targets(self, getter: Callable[[], tuple[NotificationSink, ...]]) -> None:
         self._notification_targets_getter = getter
 
     def copy_for_role(self, role: str) -> BackgroundTaskManager:
@@ -80,7 +80,7 @@ class BackgroundTaskManager:
             1 for view in self._store.list_views() if not is_terminal_status(view.runtime.status)
         )
 
-    def _notification_targets(self) -> list[str]:
+    def _notification_targets(self) -> list[NotificationSink]:
         if self._notification_targets_getter is None:
             return ["llm", "shell"]
         targets = list(dict.fromkeys(self._notification_targets_getter()))

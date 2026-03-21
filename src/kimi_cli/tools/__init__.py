@@ -1,5 +1,5 @@
 import json
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 from kaos.path import KaosPath
@@ -15,21 +15,29 @@ class SkipThisTool(Exception):
     pass
 
 
-def _todo_label_from_dict(todo: dict[str, Any]) -> str | None:
+class _TodoSummaryDict(TypedDict, total=False):
+    title: object
+    subagent_name: object
+    status: object
+    executor: object
+
+
+def _todo_label_from_dict(todo: _TodoSummaryDict) -> str | None:
     title = todo.get("title")
-    if not title:
+    if not isinstance(title, str) or not title:
         return None
     subagent_name = todo.get("subagent_name")
     return todo_label(
-        str(title),
-        str(subagent_name) if subagent_name else None,
+        title,
+        subagent_name if isinstance(subagent_name, str) and subagent_name else None,
     )
 
 
 def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
-    todos = curr_args.get("todos")
-    if not isinstance(todos, list):
+    raw_todos = curr_args.get("todos")
+    if not isinstance(raw_todos, list):
         return None
+    todos = cast(list[object], raw_todos)
     if not todos:
         return "empty"
 
@@ -38,10 +46,11 @@ def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
     for todo in todos:
         if not isinstance(todo, dict):
             continue
-        if todo.get("status") == "in_progress":
+        typed_todo = cast(_TodoSummaryDict, todo)
+        if typed_todo.get("status") == "in_progress":
             n_in_progress += 1
-        label = _todo_label_from_dict(todo)
-        if todo.get("executor") == "task" and todo.get("status") == "pending" and label:
+        label = _todo_label_from_dict(typed_todo)
+        if typed_todo.get("executor") == "task" and typed_todo.get("status") == "pending" and label:
             ready_task_todos.append(label)
 
     summary = f"{len(todos)} todos"
@@ -94,15 +103,17 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
         case "SetTodoList":
             if not isinstance(curr_args, dict):
                 return None
-            key_argument = _summarize_set_todo_list_argument(curr_args)
-            if key_argument is None:
+            summary = _summarize_set_todo_list_argument(curr_args)
+            if summary is None:
                 return None
+            key_argument = summary
         case "ExecuteTodo":
             if not isinstance(curr_args, dict):
                 return None
-            key_argument = _summarize_execute_todo_argument(curr_args)
-            if key_argument is None:
+            summary = _summarize_execute_todo_argument(curr_args)
+            if summary is None:
                 return None
+            key_argument = summary
         case "Shell":
             if not isinstance(curr_args, dict) or not curr_args.get("command"):
                 return None

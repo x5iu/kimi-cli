@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from pathlib import Path
-from typing import Self, override
+from typing import Literal, Self, override
 
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
@@ -101,7 +101,7 @@ class Shell(CallableTool2[Params]):
         tool_call = get_current_tool_call_or_none()
         has_live_output = tool_call is not None and get_wire_or_none() is not None
 
-        def output_cb(text: str, stream: str) -> None:
+        def output_cb(text: str, stream: Literal["stdout", "stderr"]) -> None:
             if has_live_output and tool_call is not None and text:
                 wire_send(ToolCallOutput(tool_call_id=tool_call.id, text=text, stream=stream))
 

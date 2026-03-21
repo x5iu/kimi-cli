@@ -1,8 +1,10 @@
 import asyncio
 import contextlib
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout.containers import FloatContainer
@@ -632,7 +634,7 @@ def test_dismiss_input_clears_buffer_text_and_completion() -> None:
 
     buffer = _DummyBuffer()
 
-    handled = CustomPromptSession._dismiss_input(buffer)
+    handled = CustomPromptSession._dismiss_input(cast(Buffer, buffer))
 
     assert handled is True
     assert buffer.text == ""
@@ -647,7 +649,7 @@ def test_dismiss_input_returns_false_when_nothing_to_clear() -> None:
         def cancel_completion(self) -> None:
             raise AssertionError("cancel_completion should not be called")
 
-    assert CustomPromptSession._dismiss_input(_DummyBuffer()) is False
+    assert CustomPromptSession._dismiss_input(cast(Buffer, _DummyBuffer())) is False
 
 
 def test_turn_input_hint_text_shows_pending_question_hint() -> None:
@@ -746,7 +748,9 @@ def test_immediate_toast_replaces_older_messages() -> None:
     shell_prompt.toast("new toast", position="left", immediate=True)
 
     assert len(_toast_queues["left"]) == 1
-    assert shell_prompt._current_toast("left").message == "new toast"
+    toast = shell_prompt._current_toast("left")
+    assert toast is not None
+    assert toast.message == "new toast"
 
 
 def test_render_toast_line_shows_left_and_right_toasts(monkeypatch) -> None:

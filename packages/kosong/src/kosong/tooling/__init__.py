@@ -1,6 +1,7 @@
 import json
 from abc import ABC, abstractmethod
 from asyncio import Future
+from contextlib import suppress
 from typing import Any, ClassVar, Protocol, Self, cast, override, runtime_checkable
 
 import jsonschema
@@ -230,7 +231,6 @@ class _GenerateJsonSchemaNoTitles(GenerateJsonSchema):
         json_schema.pop("title", None)
 
 
-
 def _try_parse_json_strings(arguments: JsonType) -> JsonType:
     """Attempt to parse string values that look like JSON objects or arrays.
 
@@ -248,11 +248,10 @@ def _try_parse_json_strings(arguments: JsonType) -> JsonType:
             if (stripped.startswith("{") and stripped.endswith("}")) or (
                 stripped.startswith("[") and stripped.endswith("]")
             ):
-                try:
+                with suppress(json.JSONDecodeError, ValueError):
                     result[key] = json.loads(value)
-                except (json.JSONDecodeError, ValueError):
-                    pass
     return result
+
 
 class CallableTool2[Params: BaseModel](ABC):
     """

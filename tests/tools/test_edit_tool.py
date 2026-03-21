@@ -82,11 +82,13 @@ async def test_replace_lines_negative_indices(edit_tool, temp_work_dir: KaosPath
     result = await edit_tool(
         EditParams(
             path=str(file_path),
-            edit=[ReplaceLinesOp(
-                start_line=-2,
-                end_line=-1,
-                content="three\nfour\n",
-            )],
+            edit=[
+                ReplaceLinesOp(
+                    start_line=-2,
+                    end_line=-1,
+                    content="three\nfour\n",
+                )
+            ],
         )
     )
 
