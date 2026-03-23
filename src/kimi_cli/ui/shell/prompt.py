@@ -104,6 +104,18 @@ _rich_style_to_prompt_toolkit = rich_style_to_prompt_toolkit
 _toast_queues = toast_queues
 RichStyle = _RichStyle
 
+# -- Terminal focus reporting -------------------------------------------------
+# Register the CSI focus-in/focus-out escape sequences so prompt_toolkit's
+# Vt100 parser recognises (and silently swallows) them instead of treating
+# each byte as literal input.  The actual repaint on focus-in is handled by
+# _install_focus_repaint which monkey-patches the input's read_keys method.
+from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES as _ANSI_SEQUENCES
+
+_ANSI_SEQUENCES.setdefault("\x1b[I", Keys.Ignore)
+_ANSI_SEQUENCES.setdefault("\x1b[O", Keys.Ignore)
+
+_FOCUS_IN_SEQ = "\x1b[I"
+
 PROMPT_SYMBOL = "✨"
 PROMPT_SYMBOL_SHELL = "$"
 PROMPT_SYMBOL_THINKING = "💫"
@@ -1461,7 +1473,65 @@ class CustomPromptSession:
         fragments.append(("fg:#9ca3af", right_text))
         return FormattedText(fragments)
 
+    def _install_focus_repaint(self) -> None:
+        """Monkey-patch the shared Vt100 parser to detect focus-in events.
+
+        When the terminal sends CSI I (focus gained), we force a full
+        repaint so the differential renderer doesn't produce artefacts.
+        """
+        import sys as _sys
+
+        if not _sys.stdin.isatty() or not _sys.stdout.isatty():
+            return
+
+        try:
+            from prompt_toolkit.input.vt100 import Vt100Input
+        except ImportError:
+            return
+
+        vt100_input = getattr(self._session.app, "input", None)
+        if not isinstance(vt100_input, Vt100Input):
+            return
+
+        parser = vt100_input.vt100_parser
+        original_callback = parser.feed_key_callback
+
+        def _focus_aware_callback(key_press: Any) -> None:
+            if (
+                getattr(key_press, "key", None) == Keys.Ignore
+                and getattr(key_press, "data", None) == _FOCUS_IN_SEQ
+            ):
+                app = get_app_or_none()
+                if app is not None:
+                    self._force_turn_full_repaint(app)
+                return  # swallow the event
+            original_callback(key_press)
+
+        parser.feed_key_callback = _focus_aware_callback
+        self._original_parser_callback = original_callback
+        self._focus_parser = parser
+
+    def _uninstall_focus_repaint(self) -> None:
+        parser = getattr(self, "_focus_parser", None)
+        original = getattr(self, "_original_parser_callback", None)
+        if parser is not None and original is not None:
+            parser.feed_key_callback = original
+        self._focus_parser = None
+        self._original_parser_callback = None
+
     def __enter__(self) -> CustomPromptSession:
+        # Enable terminal focus reporting so we receive \x1b[I / \x1b[O
+        # when the terminal window gains / loses focus.  This lets us
+        # trigger a full repaint on focus-in and avoid screen corruption
+        # after the user switches away and back.
+        import sys as _sys
+
+        if _sys.stdout.isatty():
+            _sys.stdout.write("\x1b[?1004h")
+            _sys.stdout.flush()
+
+        self._install_focus_repaint()
+
         if self._status_refresh_task is not None and not self._status_refresh_task.done():
             return self
 
@@ -1492,6 +1562,15 @@ class CustomPromptSession:
         return self
 
     def __exit__(self, *_) -> None:
+        self._uninstall_focus_repaint()
+
+        # Disable terminal focus reporting.
+        import sys as _sys
+
+        if _sys.stdout.isatty():
+            _sys.stdout.write("\x1b[?1004l")
+            _sys.stdout.flush()
+
         if self._status_refresh_task is not None and not self._status_refresh_task.done():
             self._status_refresh_task.cancel()
         self._status_refresh_task = None
