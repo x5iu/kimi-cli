@@ -1060,11 +1060,42 @@ class CustomPromptSession:
 
         Keeps the input box on-screen until `execute_deferred_erase` is
         called (right before the turn UI starts), eliminating the flash.
+
+        IMPORTANT — resize correctness
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        prompt_toolkit's ``Application._on_resize()`` calls
+        ``renderer.erase()`` to wipe the old content before redrawing at
+        the new terminal dimensions.  If we unconditionally defer *every*
+        erase call, the old content is never cleared and the subsequent
+        redraw lands at a different cursor position — producing the
+        "ghost frames" / screen corruption visible on window resize.
+
+        The fix: only defer the erase when the app is **shutting down**
+        (``app._is_running is False``).  While the app is still running
+        (resize via ``_on_resize``, or manual ``Ctrl-L`` hard-redraw),
+        the original erase executes immediately so prompt_toolkit's
+        differential renderer starts from a clean slate.
+
+        Do NOT remove the ``app._is_running`` guard without verifying
+        that terminal resize no longer causes visual artefacts.
         """
         renderer = app.renderer
         original_erase = renderer.erase
 
         def _deferred_erase(leave_alternate_screen: bool = True) -> None:
+            # ── Resize / hard-redraw guard ──────────────────────────
+            # While the app is still running, renderer.erase() is being
+            # called by _on_resize (SIGWINCH) or _hard_redraw (Ctrl-L).
+            # We MUST execute the real erase here; deferring it leaves
+            # stale content on screen and causes visible corruption.
+            if app._is_running:
+                original_erase(leave_alternate_screen=leave_alternate_screen)
+                return
+            # ── App exit path (erase_when_done) ────────────────────
+            # The app is no longer running — this is the final cleanup
+            # erase triggered by erase_when_done=True.  Defer it so the
+            # input box stays visible until the turn UI seamlessly takes
+            # over (via execute_deferred_erase).
             x, y = renderer._cursor_pos.x, renderer._cursor_pos.y
             # (0,0) means the app hasn't rendered yet — this happens when
             # _hard_redraw calls erase() before the first render.  Fall
