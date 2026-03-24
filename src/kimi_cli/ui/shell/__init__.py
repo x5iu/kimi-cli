@@ -102,6 +102,13 @@ class Shell:
                 return await self.soul.toggle_plan_mode_from_manual()
             return False
 
+        async def _redraw() -> None:
+            if isinstance(self.soul, KimiSoul):
+                await replay_recent_history(
+                    self.soul.context.history,
+                    wire_file=self.soul.wire_file,
+                )
+
         with CustomPromptSession(
             status_provider=lambda: self.soul.status,
             model_capabilities=self.soul.model_capabilities or set(),
@@ -114,6 +121,7 @@ class Shell:
             ),
             plan_mode_toggle_callback=_plan_mode_toggle,
             working_dir_provider=self._working_dir_text,
+            redraw_callback=_redraw,
         ) as prompt_session:
             try:
                 while True:

@@ -116,6 +116,14 @@ _ANSI_SEQUENCES.setdefault("\x1b[O", Keys.Ignore)
 
 _FOCUS_IN_SEQ = "\x1b[I"
 
+
+class _ClearScreenRequest(Exception):
+    """Raised when Ctrl-L is pressed to request full screen clear + history replay."""
+
+    def __init__(self, buffer_text: str = ""):
+        self.buffer_text = buffer_text
+        super().__init__()
+
 PROMPT_SYMBOL = "✨"
 PROMPT_SYMBOL_SHELL = "$"
 PROMPT_SYMBOL_THINKING = "💫"
@@ -314,6 +322,7 @@ class CustomPromptSession:
         plan_mode_toggle_callback: Callable[[], Awaitable[bool]] | None = None,
         input_box_state_provider: Callable[[], InputBoxState] | None = None,
         working_dir_provider: Callable[[], str] | None = None,
+        redraw_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         history_dir = get_share_dir() / "user-history"
         history_dir.mkdir(parents=True, exist_ok=True)
@@ -327,6 +336,7 @@ class CustomPromptSession:
         self._plan_mode_toggle_callback = plan_mode_toggle_callback
         self._input_box_state_provider = input_box_state_provider or (lambda: InputBoxState())
         self._working_dir_provider = working_dir_provider or (lambda: str(KaosPath.cwd()))
+        self._redraw_callback = redraw_callback
         self._model_capabilities = model_capabilities
         self._model_name = model_name
         self._last_history_content: str | None = None
@@ -416,7 +426,10 @@ class CustomPromptSession:
 
         @_kb.add("c-l", eager=True)
         def _(event: KeyPressEvent) -> None:
-            self._hard_redraw(event.app)
+            if self._redraw_callback is not None:
+                event.app.exit(exception=_ClearScreenRequest(event.current_buffer.text))
+            else:
+                self._hard_redraw(event.app)
 
         @_kb.add(Keys.BracketedPaste, eager=True)
         def _(event: KeyPressEvent) -> None:
@@ -1684,12 +1697,29 @@ class CustomPromptSession:
         )
 
     async def prompt(self) -> UserInput:
-        app, _ = self._prepare_prompt_application()
-        with patch_stdout(raw=True):
-            command = str(await app.run_async()).strip()
-        self._append_history_entry(command)
-        self._tip_rotation_index += 1
-        return self._build_user_input(command)
+        restore_text = ""
+        while True:
+            app, text_area = self._prepare_prompt_application()
+            if restore_text:
+                text_area.buffer.document = Document(
+                    text=restore_text, cursor_position=len(restore_text)
+                )
+                restore_text = ""
+            try:
+                with patch_stdout(raw=True):
+                    command = str(await app.run_async()).strip()
+            except _ClearScreenRequest as req:
+                import sys
+
+                sys.stdout.write("\033[2J\033[H")
+                sys.stdout.flush()
+                if self._redraw_callback is not None:
+                    await self._redraw_callback()
+                restore_text = req.buffer_text
+                continue
+            self._append_history_entry(command)
+            self._tip_rotation_index += 1
+            return self._build_user_input(command)
 
     async def run_turn_ui(
         self,
