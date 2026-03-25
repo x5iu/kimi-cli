@@ -10,6 +10,7 @@ import copy
 import json
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict, Unpack, cast
+import httpx
 
 from anthropic import (
     AnthropicError,
@@ -229,7 +230,7 @@ class Anthropic:
                 **generation_kwargs,
             )
             return AnthropicStreamedMessage(response)
-        except AnthropicError as e:
+        except (AnthropicError, httpx.HTTPError) as e:
             raise _convert_error(e) from e
 
     def _use_adaptive_thinking(self) -> bool:
@@ -338,7 +339,7 @@ class Anthropic:
         for tool_call in message.tool_calls or []:
             if tool_call.function.arguments:
                 try:
-                    parsed_arguments = json.loads(tool_call.function.arguments)
+                    parsed_arguments = json.loads(tool_call.function.arguments, strict=False)
                 except json.JSONDecodeError as exc:  # pragma: no cover - defensive guard
                     raise ChatProviderError("Tool call arguments must be valid JSON.") from exc
                 if not isinstance(parsed_arguments, dict):
@@ -469,7 +470,7 @@ class AnthropicStreamedMessage:
                             self._update_usage(event.usage)
                     elif isinstance(event, MessageStopEvent):
                         continue
-        except AnthropicError as exc:
+        except (AnthropicError, httpx.HTTPError) as exc:
             raise _convert_error(exc) from exc
 
 
@@ -539,7 +540,19 @@ def _image_url_part_to_anthropic(part: ImageURLPart) -> ImageBlockParam:
         )
 
 
-def _convert_error(error: AnthropicError) -> ChatProviderError:
+def _convert_error(error: AnthropicError | httpx.HTTPError) -> ChatProviderError:
+    # httpx errors may leak through the Anthropic SDK during streaming;
+    # handle them directly.
+    if isinstance(error, httpx.HTTPError):
+        if isinstance(error, httpx.TimeoutException):
+            return APITimeoutError(str(error))
+        if isinstance(error, (httpx.NetworkError, httpx.RemoteProtocolError)):
+            return APIConnectionError(str(error))
+        if isinstance(error, httpx.HTTPStatusError):
+            return APIStatusError(error.response.status_code, str(error))
+        return ChatProviderError(f"httpx error: {error}")
+    # Anthropic SDK errors — check subclasses before parents to avoid
+    # misclassification (e.g. APITimeoutError inherits APIConnectionError).
     if isinstance(error, AnthropicAPIStatusError):
         return APIStatusError(error.status_code, str(error))
     if isinstance(error, AnthropicAuthenticationError):
@@ -548,8 +561,8 @@ def _convert_error(error: AnthropicError) -> ChatProviderError:
         return APIStatusError(getattr(error, "status_code", 403), str(error))
     if isinstance(error, AnthropicRateLimitError):
         return APIStatusError(getattr(error, "status_code", 429), str(error))
-    if isinstance(error, AnthropicAPIConnectionError):
-        return APIConnectionError(str(error))
     if isinstance(error, AnthropicAPITimeoutError):
         return APITimeoutError(str(error))
+    if isinstance(error, AnthropicAPIConnectionError):
+        return APIConnectionError(str(error))
     return ChatProviderError(f"Anthropic error: {error}")

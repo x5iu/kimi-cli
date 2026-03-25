@@ -397,27 +397,27 @@ class KimiSoul:
         # ExitPlanMode has a special bind() method
         from kimi_cli.tools.plan import ExitPlanMode
 
+        def yolo_checker() -> bool:
+            return self._approval.is_yolo()
+
         exit_tool = self._agent.toolset.find("ExitPlanMode")
         if isinstance(exit_tool, ExitPlanMode):
-            exit_tool.bind(self.toggle_plan_mode, path_getter, checker)
+            exit_tool.bind(self.toggle_plan_mode, path_getter, checker, yolo_checker)
 
         # EnterPlanMode has a special bind() with yolo_checker
         from kimi_cli.tools.plan.enter import EnterPlanMode
 
         enter_tool = self._agent.toolset.find("EnterPlanMode")
         if isinstance(enter_tool, EnterPlanMode):
-
-            def yolo_checker() -> bool:
-                return self._approval.is_yolo()
-
             enter_tool.bind(self.toggle_plan_mode, path_getter, checker, yolo_checker)
 
-        # AskUserQuestion gets plan mode checker for dynamic description
+        # AskUserQuestion gets plan mode checker + yolo auto-dismiss
         from kimi_cli.tools.ask_user import AskUserQuestion
 
         ask_tool = self._agent.toolset.find("AskUserQuestion")
         if isinstance(ask_tool, AskUserQuestion):
             ask_tool.bind_plan_mode(checker)
+            ask_tool.bind_approval(yolo_checker)
 
     def _bind_context_recall_tools(self) -> None:
         """Bind current context file accessors to tools that need trajectory-local state."""
@@ -1810,6 +1810,7 @@ class KimiSoul:
             500,  # Internal Server Error
             502,  # Bad Gateway
             503,  # Service Unavailable
+            504,  # Gateway Timeout
         )
 
     async def _run_with_connection_recovery(

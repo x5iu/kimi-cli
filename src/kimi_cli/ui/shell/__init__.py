@@ -123,9 +123,40 @@ class Shell:
             working_dir_provider=self._working_dir_text,
             redraw_callback=_redraw,
         ) as prompt_session:
+            _MAX_BG_AUTO_TRIGGER_FAILURES = 3
+            bg_auto_failures = 0
             try:
                 while True:
                     ensure_tty_sane()
+
+                    # Auto-trigger: check for pending LLM notifications from
+                    # completed background tasks before showing the prompt.
+                    if (
+                        isinstance(self.soul, KimiSoul)
+                        and bg_auto_failures < _MAX_BG_AUTO_TRIGGER_FAILURES
+                    ):
+                        self.soul.runtime.background_tasks.reconcile()
+                        if self.soul.runtime.notifications.has_pending_for_sink("llm"):
+                            logger.info(
+                                "Background task completed while idle, auto-triggering agent"
+                            )
+                            ok = await self.run_soul_command(
+                                "<system-reminder>"
+                                "Background tasks completed while you were idle."
+                                "</system-reminder>"
+                            )
+                            console.print()
+                            if not ok:
+                                bg_auto_failures += 1
+                                logger.warning(
+                                    "Background auto-trigger failed ({n}/{max})",
+                                    n=bg_auto_failures,
+                                    max=_MAX_BG_AUTO_TRIGGER_FAILURES,
+                                )
+                            else:
+                                bg_auto_failures = 0
+                            continue
+
                     try:
                         ensure_new_line()
                         user_input = await prompt_session.prompt()
@@ -145,6 +176,7 @@ class Shell:
                         prompt_session.execute_deferred_erase()
                         continue
                     logger.debug("Got user input: {user_input}", user_input=user_input)
+                    bg_auto_failures = 0
 
                     if not await self._handle_agent_input(prompt_session, user_input):
                         break

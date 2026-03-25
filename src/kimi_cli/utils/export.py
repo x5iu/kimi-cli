@@ -54,7 +54,7 @@ def _extract_tool_call_hint(args_json: str) -> str:
     short string value.  Returns ``""`` when nothing useful is found.
     """
     try:
-        parsed: object = json.loads(args_json)
+        parsed: object = json.loads(args_json, strict=False)
     except (json.JSONDecodeError, TypeError):
         return ""
     if not isinstance(parsed, dict):
@@ -103,7 +103,7 @@ def _format_tool_call_md(tool_call: ToolCall) -> str:
         title += f" (`{hint}`)"
 
     try:
-        args_formatted = json.dumps(json.loads(args_raw), indent=2, ensure_ascii=False)
+        args_formatted = json.dumps(json.loads(args_raw, strict=False), indent=2, ensure_ascii=False)
     except json.JSONDecodeError:
         args_formatted = args_raw
 
@@ -403,7 +403,7 @@ def _stringify_tool_calls(tool_calls: Sequence[ToolCall]) -> str:
     for tc in tool_calls:
         args_raw = tc.function.arguments or "{}"
         try:
-            args = json.loads(args_raw)
+            args = json.loads(args_raw, strict=False)
             args_str = json.dumps(args, ensure_ascii=False)
         except (json.JSONDecodeError, TypeError):
             args_str = args_raw

@@ -502,6 +502,15 @@ def kimi(
             if changed:
                 session.save_state()
 
+        # Redirect stderr *before* KimiCLI.create() so that MCP server
+        # subprocesses (e.g. mcp-remote OAuth debug logs) write to the log
+        # file instead of polluting the user's terminal.  CLI argument
+        # parsing has already succeeded at this point, so Typer/Click
+        # startup errors are no longer a concern.  Fatal errors from
+        # create() are still visible because _emit_fatal_error() writes to
+        # the saved original stderr fd.
+        redirect_stderr_to_logger()
+
         instance = await KimiCLI.create(
             session,
             config=config,
@@ -515,9 +524,6 @@ def kimi(
             max_retries_per_step=max_retries_per_step,
             max_ralph_iterations=max_ralph_iterations,
         )
-        # Install stderr redirection only after initialization succeeded, so runtime
-        # stderr noise is captured into logs without hiding startup failures.
-        redirect_stderr_to_logger()
         try:
             match ui:
                 case "shell":
