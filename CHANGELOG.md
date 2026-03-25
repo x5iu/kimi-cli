@@ -11,7 +11,8 @@ Only write entries that are worth mentioning to users.
 
 ## Unreleased
 
-- Kosong: Fix Google GenAI provider sending `id` in `FunctionCall`/`FunctionResponse` parts — Gemini API returns HTTP 400 when `id` is included; remove the field from wire format while keeping internal `tool_call_id` tracking unchanged
+- Shell: Fix subprocess hang on interactive prompts — the `Shell` tool now closes stdin immediately and sets `GIT_TERMINAL_PROMPT=0` so commands that require credentials (e.g. `git push` over HTTPS) fail fast instead of blocking until timeout
+
 
 ## 1.19.0 (2026-03-10)
 

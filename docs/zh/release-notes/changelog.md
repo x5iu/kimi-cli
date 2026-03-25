@@ -4,7 +4,8 @@
 
 ## 未发布
 
-- Kosong：修复 Google GenAI 提供商在 `FunctionCall`/`FunctionResponse` 中包含 `id` 字段的问题——Gemini API 在包含 `id` 时返回 HTTP 400；从 wire 格式中移除该字段，同时保持内部 `tool_call_id` 跟踪不变
+- Shell：修复子进程遇到交互式提示时挂起的问题——`Shell` 工具现在会立即关闭 stdin 并设置 `GIT_TERMINAL_PROMPT=0`，使需要凭证的命令（如通过 HTTPS 执行 `git push`）快速失败，而非阻塞至超时
+
 
 ## 1.19.0 (2026-03-10)
 
