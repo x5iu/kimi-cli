@@ -4,6 +4,8 @@ This page documents the changes in each Kimi Code CLI release.
 
 ## Unreleased
 
+- Kosong: Fix Google GenAI provider sending `id` in `FunctionCall`/`FunctionResponse` parts — Gemini API returns HTTP 400 when `id` is included; remove the field from wire format while keeping internal `tool_call_id` tracking unchanged
+
 ## 1.19.0 (2026-03-10)
 
 - Core: Add plan mode — the agent can enter a planning phase (`EnterPlanMode`) where only read-only tools (Glob, Grep, ReadFile) are available, write a structured plan to a file, and present it for user approval (`ExitPlanMode`) before executing; toggle manually via `/plan` slash command or `Shift-Tab` keyboard shortcut

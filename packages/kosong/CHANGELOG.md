@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Google GenAI: Fix `FunctionCall` and `FunctionResponse` wire format — remove `id` field from outbound messages as Gemini API returns HTTP 400 when it is included; internal `tool_call_id` tracking remains unchanged
+
 ## 0.44.0 (2026-03-09)
 
 - Anthropic: Support optional `metadata` parameter in `Anthropic` chat provider for passing metadata (e.g., `user_id`) to the API

@@ -483,7 +483,6 @@ def _tool_message_to_function_response_part(
     response_data, tool_result_parts = _tool_result_to_response_and_parts(message.content)
     return Part(
         function_response=FunctionResponse(
-            id=message.tool_call_id,
             name=_tool_call_id_to_name(message.tool_call_id, tool_name_by_id),
             response=response_data,
             parts=tool_result_parts,
@@ -658,7 +657,6 @@ def message_to_google_genai(message: Message) -> Content:
             args = {}
 
         function_call = FunctionCall(
-            id=tool_call.id,
             name=tool_call.function.name,
             args=args,
         )

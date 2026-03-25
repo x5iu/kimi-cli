@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- Kosong：修复 Google GenAI 提供商在 `FunctionCall`/`FunctionResponse` 中包含 `id` 字段的问题——Gemini API 在包含 `id` 时返回 HTTP 400；从 wire 格式中移除该字段，同时保持内部 `tool_call_id` 跟踪不变
+
 ## 1.19.0 (2026-03-10)
 
 - Core：新增 Plan 模式——AI 在编码前先制定实施方案并提交审批。Plan 模式下仅允许使用只读工具（`Glob`、`Grep`、`ReadFile`）探索代码库，将方案写入 plan 文件后通过 `ExitPlanMode` 提交审批，用户可批准、拒绝或提供修改意见；支持 `Shift-Tab` 快捷键和 `/plan` 斜杠命令切换
