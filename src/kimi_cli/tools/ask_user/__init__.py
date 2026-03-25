@@ -101,7 +101,7 @@ class AskUserQuestion(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
-        if self._is_yolo and self._is_yolo():
+        if self._is_yolo and self._is_yolo() and get_wire_or_none() is None:
             return ToolReturnValue(
                 is_error=False,
                 output=(
