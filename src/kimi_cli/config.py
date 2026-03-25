@@ -207,6 +207,7 @@ class Config(BaseModel):
     )
     services: Services = Field(default_factory=Services, description="Services configuration")
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
+    env: dict[str, str] = Field(default_factory=dict, description="Environment variables")
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:

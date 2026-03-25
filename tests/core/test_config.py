@@ -49,6 +49,7 @@ def test_default_config_dump():
             "notifications": {"claim_stale_after_ms": 15000},
             "services": {"moonshot_search": None, "moonshot_fetch": None},
             "mcp": {"client": {"tool_call_timeout_ms": 60000}},
+            "env": {},
         }
     )
 
@@ -126,3 +127,13 @@ def test_load_config_compaction_trigger_ratio_too_low():
 def test_load_config_compaction_trigger_ratio_too_high():
     with pytest.raises(ConfigError, match="compaction_trigger_ratio"):
         load_config_from_string('{"loop_control": {"compaction_trigger_ratio": 1.0}}')
+
+
+def test_load_config_env():
+    config = load_config_from_string('[env]\nFOO = "bar"\nBAZ = "qux"\n')
+    assert config.env == {"FOO": "bar", "BAZ": "qux"}
+
+
+def test_load_config_env_default():
+    config = load_config_from_string("{}")
+    assert config.env == {}

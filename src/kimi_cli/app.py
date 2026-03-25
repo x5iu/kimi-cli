@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import asyncio
 import contextlib
@@ -113,6 +114,10 @@ class KimiCLI:
         if max_ralph_iterations is not None:
             config.loop_control.max_ralph_iterations = max_ralph_iterations
         logger.info("Loaded config: {config}", config=config)
+        # Inject user-defined environment variables so that Shell commands,
+        # background tasks and subagents all inherit them.
+        if config.env:
+            os.environ.update(config.env)
 
         oauth = OAuthManager(config)
 
