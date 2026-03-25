@@ -396,6 +396,13 @@ class _QuestionRequestPanel:
                 )
             )
             lines.append(Text(""))
+        elif allow_expand and not self._allow_exit:
+            lines.append(
+                Text.from_markup(
+                    "[bold cyan]  ▶ Press Ctrl-E to view output[/bold cyan]"
+                )
+            )
+            lines.append(Text(""))
 
         exit_index = self.exit_index
         for i, (label, description) in enumerate(self._options):

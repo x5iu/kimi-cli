@@ -434,9 +434,12 @@ class LiveView:
     def input_hint(self) -> str:
         if self.is_inline_panel_expanded:
             return "Use ↑/↓, PgUp/PgDn, Home/End to scroll. Press q or Esc to return."
-        expand_hint = (
-            " Press Ctrl-E or type /more to expand." if self.can_expand_current_panel else ""
-        )
+        if self.can_expand_current_panel:
+            expand_hint = " Press Ctrl-E or type /more to expand."
+        elif self.has_pending_input_request:
+            expand_hint = " Ctrl-E to view output."
+        else:
+            expand_hint = ""
         match self.input_mode:
             case "approval":
                 return f"Type 1/2/3 and press Enter.{expand_hint}"

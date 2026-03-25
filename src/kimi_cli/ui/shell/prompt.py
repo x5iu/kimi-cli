@@ -1791,6 +1791,8 @@ class CustomPromptSession:
             return self._render_turn_prompt_title(live_view)
 
         def _turn_hint_text() -> str:
+            if reveal_latest_output and live_view.has_pending_input_request:
+                return "Ctrl-E to return · Ctrl-Y for full history"
             if history_view_enabled and not text_area.buffer.text:
                 if feedback_message:
                     return self._truncate_text(feedback_message, 160)
@@ -2150,6 +2152,7 @@ class CustomPromptSession:
         )
         route_live_navigation = Condition(
             lambda: not history_view_enabled
+            and not reveal_latest_output
             and not getattr(live_view, "is_inline_panel_expanded", False)
             and self._should_route_live_navigation(live_view, text_area.buffer.text)
         )
@@ -2177,7 +2180,9 @@ class CustomPromptSession:
             )
         )
         expand_panel = Condition(
-            lambda: live_view.can_expand_current_panel and live_view.input_mode != "question_other"
+            lambda: live_view.has_pending_input_request
+            and live_view.input_mode != "question_other"
+            and not getattr(live_view, "is_inline_panel_expanded", False)
         )
 
         @key_bindings.add("enter", filter=has_completions)
@@ -2337,7 +2342,14 @@ class CustomPromptSession:
         def _(event: KeyPressEvent) -> None:
             nonlocal feedback_message
             feedback_message = ""
-            self._open_live_view_expansion(event, live_view)
+            if live_view.can_expand_current_panel:
+                self._open_live_view_expansion(event, live_view)
+            elif reveal_latest_output:
+                _clear_turn_output_reveal()
+                _refresh_turn_view(event.app)
+            else:
+                _reveal_turn_output_tail()
+                _refresh_turn_view(event.app)
 
         @key_bindings.add("escape", filter=route_idle_escape_cancel, eager=True)
         def _(event: KeyPressEvent) -> None:
