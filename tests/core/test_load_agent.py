@@ -59,6 +59,52 @@ def test_load_system_prompt_include(builtin_args: BuiltinSystemPromptArgs):
     assert "End." in prompt
 
 
+def test_load_system_prompt_include_path_traversal_blocked(
+    builtin_args: BuiltinSystemPromptArgs,
+):
+    """Path traversal via {% include %} must be blocked."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+
+        # Create a file outside the template directory
+        parent = tmpdir / "parent"
+        parent.mkdir()
+        outside = tmpdir / "outside.txt"
+        outside.write_text("OUTSIDE SECRET")
+
+        system_md = parent / "system.md"
+        system_md.write_text('Main. {% include "../outside.txt" %} End.')
+        with pytest.raises(SystemPromptTemplateError):
+            _load_system_prompt(system_md, {}, builtin_args)
+
+
+def test_load_system_prompt_include_nonexistent_file(
+    builtin_args: BuiltinSystemPromptArgs,
+):
+    """Including a non-existent file should raise an error."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        system_md = tmpdir / "system.md"
+        system_md.write_text('Main. {% include "no_such_file.md" %} End.')
+        with pytest.raises(SystemPromptTemplateError):
+            _load_system_prompt(system_md, {}, builtin_args)
+
+
+def test_load_system_prompt_nested_include(builtin_args: BuiltinSystemPromptArgs):
+    """Nested includes (A includes B includes C) should work normally."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        (tmpdir / "c.md").write_text("LEAF")
+        (tmpdir / "b.md").write_text('MID {% include "c.md" %} MID')
+        system_md = tmpdir / "system.md"
+        system_md.write_text('ROOT {% include "b.md" %} ROOT')
+        prompt = _load_system_prompt(system_md, {}, builtin_args)
+
+    assert "ROOT" in prompt
+    assert "MID" in prompt
+    assert "LEAF" in prompt
+
+
 def test_load_system_prompt_missing_arg_raises(builtin_args: BuiltinSystemPromptArgs):
     """Missing template args should raise a dedicated error."""
     with tempfile.TemporaryDirectory() as tmpdir:

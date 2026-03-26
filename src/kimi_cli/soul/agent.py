@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import typing
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -8,8 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
-from jinja2 import Environment as JinjaEnvironment
-from jinja2 import FileSystemLoader, StrictUndefined, TemplateError, UndefinedError
+from jinja2 import BaseLoader, Environment as JinjaEnvironment
+from jinja2 import FileSystemLoader, StrictUndefined, TemplateError, TemplateNotFound, UndefinedError
 from kaos.path import KaosPath
 from kosong.tooling import Toolset
 
@@ -433,6 +434,29 @@ async def load_agent(
     )
 
 
+class _SandboxedLoader(BaseLoader):
+    """A Jinja2 loader that wraps FileSystemLoader and blocks path traversal.
+
+    Ensures that all resolved template paths stay within the allowed root directory,
+    preventing ``{% include "../../etc/passwd" %}`` style attacks.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self._root = root.resolve()
+        self._inner = FileSystemLoader(self._root)
+
+    def get_source(
+        self, environment: JinjaEnvironment, template: str
+    ) -> tuple[str, str | None, typing.Callable[[], bool] | None]:
+        resolved = (self._root / template).resolve()
+        if not resolved.is_relative_to(self._root):
+            raise TemplateNotFound(template)
+        return self._inner.get_source(environment, template)
+
+    def list_templates(self) -> list[str]:
+        return self._inner.list_templates()
+
+
 def _load_system_prompt(
     path: Path, args: dict[str, str], builtin_args: BuiltinSystemPromptArgs
 ) -> str:
@@ -444,7 +468,7 @@ def _load_system_prompt(
         spec_args=args,
     )
     env = JinjaEnvironment(
-        loader=FileSystemLoader(path.parent),
+        loader=_SandboxedLoader(path.parent),
         keep_trailing_newline=True,
         lstrip_blocks=True,
         trim_blocks=True,
