@@ -37,8 +37,10 @@ def _load_mcp_config() -> dict[str, Any]:
 
 def _save_mcp_config(config: dict[str, Any]) -> None:
     """Save MCP config to default file."""
+    from kimi_cli.utils.io import atomic_json_write
+
     mcp_file = get_global_mcp_config_file()
-    mcp_file.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_json_write(config, mcp_file)
 
 
 def _get_mcp_server(name: str, *, require_remote: bool = False) -> dict[str, Any]:

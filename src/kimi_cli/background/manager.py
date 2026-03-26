@@ -263,6 +263,8 @@ class BackgroundTaskManager:
                 return
             if runtime.child_pid is not None:
                 os.kill(runtime.child_pid, signal.SIGTERM)
+            elif runtime.worker_pid is not None:
+                os.kill(runtime.worker_pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
         except Exception:
@@ -341,6 +343,7 @@ class BackgroundTaskManager:
                     if fresh_runtime.heartbeat_at is None
                     else "Background worker heartbeat expired"
                 )
+            self._best_effort_kill(fresh_runtime)
             self._store.write_runtime(view.spec.id, runtime)
 
     def reconcile(self, *, limit: int | None = None) -> list[str]:

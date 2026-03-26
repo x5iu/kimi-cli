@@ -141,6 +141,7 @@ class KimiToolset:
                     ret = await tool.call(arguments)
                     return ToolResult(tool_call_id=tool_call.id, return_value=ret)
                 except Exception as e:
+                    logger.exception('Tool %s raised unexpected error', tool_call.function.name if hasattr(tool_call, 'function') else 'unknown')
                     return ToolResult(
                         tool_call_id=tool_call.id, return_value=ToolRuntimeError(str(e))
                     )

@@ -10,6 +10,7 @@ from kosong.chat_provider import ChatProvider
 from pydantic import SecretStr
 
 from kimi_cli.constant import USER_AGENT
+from kimi_cli.exception import ConfigError
 
 if TYPE_CHECKING:
     from kimi_cli.auth.oauth import OAuthManager
@@ -73,7 +74,12 @@ def augment_provider_with_env_vars(provider: LLMProvider, model: LLMModel) -> di
                 model.model = model_name
                 applied["KIMI_MODEL_NAME"] = model_name
             if max_context_size := os.getenv("KIMI_MODEL_MAX_CONTEXT_SIZE"):
-                model.max_context_size = int(max_context_size)
+                try:
+                    model.max_context_size = int(max_context_size)
+                except ValueError:
+                    raise ConfigError(
+                        f"KIMI_MODEL_MAX_CONTEXT_SIZE must be an integer, got {max_context_size!r}"
+                    ) from None
                 applied["KIMI_MODEL_MAX_CONTEXT_SIZE"] = max_context_size
             if capabilities := os.getenv("KIMI_MODEL_CAPABILITIES"):
                 caps_lower = (cap.strip().lower() for cap in capabilities.split(",") if cap.strip())
@@ -137,11 +143,26 @@ def create_llm(
             if session_id:
                 gen_kwargs["prompt_cache_key"] = session_id
             if temperature := os.getenv("KIMI_MODEL_TEMPERATURE"):
-                gen_kwargs["temperature"] = float(temperature)
+                try:
+                    gen_kwargs["temperature"] = float(temperature)
+                except ValueError:
+                    raise ConfigError(
+                        f"KIMI_MODEL_TEMPERATURE must be a number, got {temperature!r}"
+                    ) from None
             if top_p := os.getenv("KIMI_MODEL_TOP_P"):
-                gen_kwargs["top_p"] = float(top_p)
+                try:
+                    gen_kwargs["top_p"] = float(top_p)
+                except ValueError:
+                    raise ConfigError(
+                        f"KIMI_MODEL_TOP_P must be a number, got {top_p!r}"
+                    ) from None
             if max_tokens := os.getenv("KIMI_MODEL_MAX_TOKENS"):
-                gen_kwargs["max_tokens"] = int(max_tokens)
+                try:
+                    gen_kwargs["max_tokens"] = int(max_tokens)
+                except ValueError:
+                    raise ConfigError(
+                        f"KIMI_MODEL_MAX_TOKENS must be an integer, got {max_tokens!r}"
+                    ) from None
 
             if gen_kwargs:
                 chat_provider = chat_provider.with_generation_kwargs(**gen_kwargs)

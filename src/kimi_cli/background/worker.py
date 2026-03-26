@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
 import signal
 import subprocess
@@ -136,7 +135,7 @@ async def run_background_task_worker(
                 os.killpg(target_pgid, signal.SIGKILL)
             else:
                 os.killpg(target_pgid, signal.SIGTERM)
-        except ProcessLookupError:
+        except OSError:
             pass
 
     async def _control_loop() -> None:
@@ -219,8 +218,12 @@ async def run_background_task_worker(
         for task in (heartbeat_task, control_task):
             if task is not None:
                 task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
+                try:
                     await task
+                except Exception:
+                    logger.exception('Background helper task failed')
+                except asyncio.CancelledError:
+                    pass
 
     control = store.read_control(task_id)
     runtime = finalize_task_runtime(

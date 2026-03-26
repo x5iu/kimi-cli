@@ -6,7 +6,7 @@ from pathlib import Path
 
 from kaos.local import local_kaos
 from kaos.path import KaosPath
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from kaos import get_current_kaos
 from kimi_cli.share import get_share_dir
@@ -68,9 +68,13 @@ def load_metadata() -> Metadata:
     if not metadata_file.exists():
         logger.debug("No metadata file found, creating empty metadata")
         return Metadata()
-    with open(metadata_file, encoding="utf-8") as f:
-        data = json.load(f)
-        return Metadata(**data)
+    try:
+        with open(metadata_file, encoding="utf-8") as f:
+            data = json.load(f)
+            return Metadata(**data)
+    except (json.JSONDecodeError, ValidationError):
+        logger.warning("Corrupted metadata file, using defaults: {path}", path=metadata_file)
+        return Metadata()
 
 
 def save_metadata(metadata: Metadata):
