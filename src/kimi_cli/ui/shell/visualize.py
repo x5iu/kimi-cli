@@ -1257,6 +1257,15 @@ class LiveView:
                 self.refresh_active()
 
     def request_question(self, request: QuestionRequest) -> None:
+        # During replay, answers are pre-filled by _build_replay_turns_from_wire.
+        # Render the Answer panel directly without creating an interactive panel.
+        replay_answers = getattr(request, '_replay_answers', None)
+        if replay_answers is not None:
+            self.flush_content()
+            self.echo_question_answers(request, replay_answers)
+            request.resolve(replay_answers)
+            return
+
         self._question_request_queue.append(request)
         if self._current_question_panel is None:
             console.bell()

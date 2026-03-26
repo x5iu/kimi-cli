@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -20,11 +21,14 @@ from kimi_cli.wire import Wire
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
     Event,
+    FollowUpInput,
+    QuestionRequest,
     StatusUpdate,
     StepBegin,
     TextPart,
     ToolResult,
     TurnBegin,
+    WireMessage,
     is_event,
 )
 
@@ -34,7 +38,7 @@ MAX_REPLAY_TURNS = 5
 @dataclass(slots=True)
 class _ReplayTurn:
     user_message: Message
-    events: list[Event]
+    events: list[WireMessage]
     n_steps: int = 0
 
 
@@ -88,6 +92,7 @@ async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_Rep
         return []
 
     turns: deque[_ReplayTurn] = deque(maxlen=MAX_REPLAY_TURNS)
+    pending_questions: dict[str, QuestionRequest] = {}
     try:
         async for record in wire_file.iter_records():
             wire_msg = record.to_wire_message()
@@ -102,12 +107,43 @@ async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_Rep
                         events=[],
                     )
                 )
+                pending_questions.clear()
                 continue
 
-            if not is_event(wire_msg) or not turns:
+            if not turns:
                 continue
 
             current_turn = turns[-1]
+
+            # Collect QuestionRequest and try to pair it with answers from
+            # subsequent events so it can be auto-resolved during replay.
+            if isinstance(wire_msg, QuestionRequest):
+                pending_questions[wire_msg.tool_call_id] = wire_msg
+                current_turn.events.append(wire_msg)
+                continue
+
+            # AskUserQuestion tool: the ToolResult for the same tool_call_id
+            # contains the structured answers as JSON in its output.
+            if isinstance(wire_msg, ToolResult) and wire_msg.tool_call_id in pending_questions:
+                question = pending_questions.pop(wire_msg.tool_call_id)
+                answers = _extract_answers_from_tool_result(wire_msg)
+                if answers:
+                    object.__setattr__(question, "_replay_answers", answers)
+                # ToolResult still needs to go into events for tool-call block rendering.
+
+            # Turn-end question: FollowUpInput carries the user's answer text.
+            if isinstance(wire_msg, FollowUpInput) and pending_questions:
+                for tcid, question in list(pending_questions.items()):
+                    if tcid.startswith("turn-end-"):
+                        answers = _extract_answers_from_followup(wire_msg.text, question)
+                        if answers:
+                            object.__setattr__(question, "_replay_answers", answers)
+                        del pending_questions[tcid]
+                        break
+
+            if not is_event(wire_msg):
+                continue
+
             if isinstance(wire_msg, StepBegin):
                 current_turn.n_steps = wire_msg.n
             current_turn.events.append(wire_msg)
@@ -115,6 +151,41 @@ async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_Rep
         logger.exception("Failed to build replay turns from wire file {file}:", file=wire_file.path)
         return []
     return list(turns)
+
+
+def _extract_answers_from_tool_result(result: ToolResult) -> dict[str, str] | None:
+    """Try to extract ``{"answers": {...}}`` from an AskUserQuestion ToolResult."""
+    rv = result.return_value
+    if rv.is_error:
+        return None
+    output = rv.output
+    if isinstance(output, str):
+        text = output
+    elif isinstance(output, list):
+        text = "".join(part.text for part in output if isinstance(part, TextPart))
+    else:
+        return None
+    try:
+        data = json.loads(text)
+        answers = data.get("answers")
+        if isinstance(answers, dict) and answers:
+            return answers
+    except Exception:
+        pass
+    return None
+
+
+def _extract_answers_from_followup(
+    text: str,
+    request: QuestionRequest,
+) -> dict[str, str]:
+    """Build an answers dict from FollowUpInput text and the QuestionRequest."""
+    answers: dict[str, str] = {}
+    parts = text.split("\n")
+    for i, q in enumerate(request.questions):
+        if i < len(parts):
+            answers[q.question] = parts[i]
+    return answers
 
 
 def _is_clear_command_input(user_input: str | list[ContentPart]) -> bool:
