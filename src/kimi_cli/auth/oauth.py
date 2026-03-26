@@ -144,8 +144,10 @@ def _device_id_path() -> Path:
 
 
 def _ensure_private_file(path: Path) -> None:
-    with suppress(OSError):
+    try:
         os.chmod(path, 0o600)
+    except OSError as exc:
+        logger.warning("Could not set permissions on %s: %s", path, exc)
 
 
 def _device_model() -> str:
@@ -187,7 +189,12 @@ def get_device_id() -> str:
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     device_id = uuid.uuid4().hex
-    path.write_text(device_id, encoding="utf-8")
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(device_id)
+    except BaseException:
+        raise
     _ensure_private_file(path)
     return device_id
 
@@ -217,7 +224,8 @@ def _common_headers() -> dict[str, str]:
 
 def _credentials_dir() -> Path:
     path = get_share_dir() / "credentials"
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(str(path), 0o700)
     return path
 
 
@@ -267,7 +275,12 @@ def _load_from_file(key: str) -> OAuthToken | None:
 
 def _save_to_file(key: str, token: OAuthToken) -> None:
     path = _credentials_path(key)
-    path.write_text(json.dumps(token.to_dict(), ensure_ascii=False), encoding="utf-8")
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(token.to_dict(), ensure_ascii=False))
+    except BaseException:
+        raise
     _ensure_private_file(path)
 
 

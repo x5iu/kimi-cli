@@ -15,14 +15,17 @@ from typing import override
 
 import aiohttp
 import ripgrepy  # pyright: ignore[reportMissingTypeStubs]
+from kaos.path import KaosPath
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.share import get_share_dir
+from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.file.rg_path import find_existing_rg, rg_binary_name
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.aiohttp import new_client_session
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.path import is_within_workspace
 
 
 class Params(BaseModel):
@@ -114,7 +117,7 @@ class Params(BaseModel):
 
 
 RG_VERSION = "15.0.0"
-RG_BASE_URL = "http://cdn.kimi.com/binaries/kimi-cli/rg"
+RG_BASE_URL = "https://cdn.kimi.com/binaries/kimi-cli/rg"
 _RG_DOWNLOAD_LOCK = asyncio.Lock()
 
 
@@ -224,9 +227,30 @@ class Grep(CallableTool2[Params]):
     description: str = load_desc(Path(__file__).parent / "grep.md")
     params: type[Params] = Params
 
+    def __init__(self, runtime: Runtime) -> None:
+        super().__init__()
+        self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
+        self._additional_dirs = runtime.additional_dirs
+
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         try:
+            # Validate path is within workspace
+            search_path = KaosPath(params.path).expanduser()
+            resolved_path = search_path.canonical()
+            if (
+                not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
+                and not search_path.is_absolute()
+            ):
+                return ToolError(
+                    message=(
+                        f"`{params.path}` is not an absolute path. "
+                        "You must provide an absolute path to search "
+                        "outside the working directory."
+                    ),
+                    brief="Invalid path",
+                )
+
             builder = ToolResultBuilder()
             message = ""
 

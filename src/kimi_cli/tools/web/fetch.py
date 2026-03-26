@@ -1,6 +1,9 @@
+import ipaddress
 import json
+import socket
 from pathlib import Path
 from typing import override
+from urllib.parse import urlparse
 
 import aiohttp
 import trafilatura
@@ -32,6 +35,11 @@ class FetchURL(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
+        validation_error = _validate_url(params.url)
+        if validation_error:
+            builder = ToolResultBuilder(max_line_length=None)
+            return builder.error(validation_error, brief="URL blocked")
+
         if self._service_config:
             ret = await self._fetch_with_service(params)
             if not ret.is_error:
@@ -170,6 +178,32 @@ class FetchURL(CallableTool2[Params]):
                 ),
                 brief="Network error when calling fetch service",
             )
+
+
+def _validate_url(url: str) -> str | None:
+    """Validate URL for security (SSRF prevention). Returns error message if blocked, None if OK."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"URL scheme '{parsed.scheme}' is not allowed. Only http and https are supported."
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "URL has no hostname."
+
+    try:
+        addrinfos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return f"Could not resolve hostname '{hostname}'."
+
+    for addrinfo in addrinfos:
+        ip = ipaddress.ip_address(addrinfo[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            return (
+                "URL blocked for security reasons: "
+                "requests to private/internal network addresses are not allowed."
+            )
+
+    return None
 
 
 def _format_error_response_body(body: str) -> str:
