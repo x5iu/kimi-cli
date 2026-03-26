@@ -207,8 +207,21 @@ async def test_ralph_loop_replays_original_prompt(runtime: Runtime, tmp_path: Pa
                             image_url=ImageURLPart.ImageURL(url="https://example.com/test.png")
                         ),
                     ],
-                ),
-                Message(role="assistant", content=[TextPart(text="first")]),
+                ), Message(
+    role="user",
+    name="_kimi_internal",
+    content=[
+        TextPart(
+            text="""\
+<system-reminder>
+Prefer Shell with `rg` for file-content search.
+`rg` path: `/opt/homebrew/bin/rg`.
+When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
+</system-reminder>\
+"""
+        )
+    ],
+), Message(role="assistant", content=[TextPart(text="first")]),
                 Message(
                     role="user",
                     content=[
@@ -275,8 +288,21 @@ async def test_ralph_loop_stops_on_choice(runtime: Runtime, tmp_path: Path) -> N
                     content=[
                         TextPart(text="do it"),
                     ],
-                ),
-                Message(role="assistant", content=[TextPart(text="first")]),
+                ), Message(
+    role="user",
+    name="_kimi_internal",
+    content=[
+        TextPart(
+            text="""\
+<system-reminder>
+Prefer Shell with `rg` for file-content search.
+`rg` path: `/opt/homebrew/bin/rg`.
+When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
+</system-reminder>\
+"""
+        )
+    ],
+), Message(role="assistant", content=[TextPart(text="first")]),
                 Message(
                     role="user",
                     content=[
@@ -328,8 +354,21 @@ async def test_ralph_loop_stops_on_tool_rejected(runtime: Runtime, tmp_path: Pat
                     content=[
                         TextPart(text="do it"),
                     ],
-                ),
-                Message(
+                ), Message(
+    role="user",
+    name="_kimi_internal",
+    content=[
+        TextPart(
+            text="""\
+<system-reminder>
+Prefer Shell with `rg` for file-content search.
+`rg` path: `/opt/homebrew/bin/rg`.
+When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
+</system-reminder>\
+"""
+        )
+    ],
+), Message(
                     role="assistant",
                     content=[],
                     tool_calls=[
@@ -370,8 +409,21 @@ async def test_ralph_loop_disabled_skips_loop_prompt(runtime: Runtime, tmp_path:
         context.history,
         snapshot(
             [
-                Message(role="user", content=[TextPart(text="hello")]),
-                Message(role="assistant", content=[TextPart(text="done")]),
+                Message(role="user", content=[TextPart(text="hello")]), Message(
+    role="user",
+    name="_kimi_internal",
+    content=[
+        TextPart(
+            text="""\
+<system-reminder>
+Prefer Shell with `rg` for file-content search.
+`rg` path: `/opt/homebrew/bin/rg`.
+When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
+</system-reminder>\
+"""
+        )
+    ],
+), Message(role="assistant", content=[TextPart(text="done")]),
             ]
         ),
     )

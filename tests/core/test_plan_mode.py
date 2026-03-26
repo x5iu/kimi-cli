@@ -290,9 +290,9 @@ class TestManualPlanModeAttachments:
 
         attachments = await soul._collect_attachments()
 
-        assert len(attachments) == 1
-        assert attachments[0].type == "plan_mode"
-        assert "Plan mode is active." in attachments[0].content
+        plan_attachments = [a for a in attachments if a.type == "plan_mode"]
+        assert len(plan_attachments) == 1
+        assert "Plan mode is active." in plan_attachments[0].content
         assert soul._pending_plan_activation_attachment is False
         assert soul.context.history == []
 
