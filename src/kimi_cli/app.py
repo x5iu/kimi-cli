@@ -16,6 +16,7 @@ from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.cli import InputFormat, OutputFormat
 from kimi_cli.config import Config, LLMModel, LLMProvider, load_config
+from kimi_cli.exception import ConfigError
 from kimi_cli.llm import augment_provider_with_env_vars, create_llm, model_display_name
 from kimi_cli.notifications import NotificationSink
 from kimi_cli.session import Session
@@ -118,7 +119,7 @@ class KimiCLI:
         # background tasks and subagents all inherit them.
         for key, value in config.env.items():
             existing = os.environ.get(key)
-            if existing:
+            if existing is not None:
                 logger.warning("env var {} already set, skipping config override", key)
             else:
                 os.environ[key] = value
@@ -143,8 +144,10 @@ class KimiCLI:
             provider = LLMProvider(type="kimi", base_url="", api_key=SecretStr(""))
 
         # try overwrite with environment variables
-        assert provider is not None
-        assert model is not None
+        if provider is None:
+            raise ConfigError("No LLM provider configured; check config or environment variables")
+        if model is None:
+            raise ConfigError("No LLM model configured; check config or environment variables")
         env_overrides = augment_provider_with_env_vars(provider, model)
 
         # determine thinking mode

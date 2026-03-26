@@ -2003,6 +2003,8 @@ class FlowRunner:
         base_prompt = self._build_flow_prompt(node, edges)
         prompt = base_prompt
         steps_used = 0
+        max_retries = 3
+        retries = 0
         while True:
             result = await self._flow_turn(
                 soul,
@@ -2033,6 +2035,9 @@ class FlowRunner:
                 choice=choice or "<missing>",
                 options=options,
             )
+            retries += 1
+            if retries >= max_retries:
+                raise MaxStepsReached(f'Flow decision node failed after {max_retries} retries')
             prompt = (
                 f"{base_prompt}\n\n"
                 "Your last response did not include a valid choice. "
@@ -2064,7 +2069,7 @@ class FlowRunner:
         if not choice:
             return None
         for edge in edges:
-            if edge.label == choice:
+            if edge.label.strip().lower() == choice.strip().lower():
                 return edge.dst
         return None
 

@@ -343,7 +343,7 @@ class _ToolCallBlock:
     ) -> bool:
         if (
             tool_name != "Shell"
-            or tool_name != self._tool_name
+            and tool_name != self._tool_name
             or not self._has_visible_output_tail()
             or self._output_tail_truncated
         ):
