@@ -116,8 +116,11 @@ class KimiCLI:
         logger.info("Loaded config: {config}", config=config)
         # Inject user-defined environment variables so that Shell commands,
         # background tasks and subagents all inherit them.
-        if config.env:
-            os.environ.update(config.env)
+        for key, value in config.env.items():
+            if key in os.environ:
+                logger.warning("env var {} already set, skipping config override", key)
+            else:
+                os.environ[key] = value
 
         oauth = OAuthManager(config)
 

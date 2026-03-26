@@ -153,6 +153,7 @@ class Shell:
                                     n=bg_auto_failures,
                                     max=_MAX_BG_AUTO_TRIGGER_FAILURES,
                                 )
+                                await asyncio.sleep(2)
                             else:
                                 bg_auto_failures = 0
                             continue
