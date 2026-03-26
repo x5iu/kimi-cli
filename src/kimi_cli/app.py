@@ -117,7 +117,8 @@ class KimiCLI:
         # Inject user-defined environment variables so that Shell commands,
         # background tasks and subagents all inherit them.
         for key, value in config.env.items():
-            if key in os.environ:
+            existing = os.environ.get(key)
+            if existing:
                 logger.warning("env var {} already set, skipping config override", key)
             else:
                 os.environ[key] = value

@@ -142,6 +142,18 @@ def test_load_config_env_default():
     assert config.env == {}
 
 
+def _apply_config_env(config):
+    """Mirror the env-injection logic from KimiCLI.create for testing."""
+    from kimi_cli.utils.logging import logger
+
+    for key, value in config.env.items():
+        existing = os.environ.get(key)
+        if existing:
+            logger.warning("env var {} already set, skipping config override", key)
+        else:
+            os.environ[key] = value
+
+
 def test_apply_config_env_sets_new_vars(monkeypatch):
     """New env vars from config should be injected into os.environ."""
     from kimi_cli.utils.logging import logger
@@ -150,11 +162,7 @@ def test_apply_config_env_sets_new_vars(monkeypatch):
     config = load_config_from_string('[env]\n_KIMI_TEST_NEW_VAR = "hello"\n')
 
     with patch.object(logger, "warning") as mock_warn:
-        for key, value in config.env.items():
-            if key in os.environ:
-                logger.warning("env var {} already set, skipping config override", key)
-            else:
-                os.environ[key] = value
+        _apply_config_env(config)
 
     assert os.environ["_KIMI_TEST_NEW_VAR"] == "hello"
     mock_warn.assert_not_called()
@@ -169,13 +177,23 @@ def test_apply_config_env_does_not_overwrite_existing(monkeypatch):
     config = load_config_from_string('[env]\n_KIMI_TEST_EXISTING = "overridden"\n')
 
     with patch.object(logger, "warning") as mock_warn:
-        for key, value in config.env.items():
-            if key in os.environ:
-                logger.warning("env var {} already set, skipping config override", key)
-            else:
-                os.environ[key] = value
+        _apply_config_env(config)
 
     assert os.environ["_KIMI_TEST_EXISTING"] == "original"
     mock_warn.assert_called_once_with(
         "env var {} already set, skipping config override", "_KIMI_TEST_EXISTING"
     )
+
+
+def test_apply_config_env_overwrites_empty_value(monkeypatch):
+    """Env vars that exist but are empty should be overwritten by config values."""
+    from kimi_cli.utils.logging import logger
+
+    monkeypatch.setenv("_KIMI_TEST_EMPTY", "")
+    config = load_config_from_string('[env]\n_KIMI_TEST_EMPTY = "filled"\n')
+
+    with patch.object(logger, "warning") as mock_warn:
+        _apply_config_env(config)
+
+    assert os.environ["_KIMI_TEST_EMPTY"] == "filled"
+    mock_warn.assert_not_called()
