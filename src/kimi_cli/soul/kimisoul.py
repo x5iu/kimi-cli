@@ -312,6 +312,9 @@ class KimiSoul:
         self._bind_plan_mode_tools()
         self._bind_context_recall_tools()
 
+        self._slash_command_content_parts: list[ContentPart] = []
+        """Non-text content parts (e.g. images) attached to the current slash command."""
+
         self._slash_commands = self._build_slash_commands()
         self._slash_command_map = self._index_slash_commands(self._slash_commands)
 
@@ -771,9 +774,22 @@ class KimiSoul:
                     # this should not happen actually, the shell should have filtered it out
                     wire_send(TextPart(text=f'Unknown slash command "/{command_call.name}".'))
                 else:
-                    ret = command.func(self, command_call.args)
-                    if isinstance(ret, Awaitable):
-                        await ret
+                    # Stash non-text content parts (e.g. images) so slash-command
+                    # handlers like skill runners can include them in their turn.
+                    if isinstance(user_message.content, list):
+                        self._slash_command_content_parts = [
+                            p for p in user_message.content if not isinstance(p, TextPart)
+                        ]
+                    else:
+                        # `run()` was called with a plain str (e.g. from tests or
+                        # non-shell callers), so there are no rich content parts.
+                        self._slash_command_content_parts = []
+                    try:
+                        ret = command.func(self, command_call.args)
+                        if isinstance(ret, Awaitable):
+                            await ret
+                    finally:
+                        self._slash_command_content_parts = []
             elif self._loop_control.max_ralph_iterations != 0:
                 runner = FlowRunner.ralph_loop(
                     user_message,
@@ -896,7 +912,13 @@ class KimiSoul:
             extra = args.strip()
             if extra:
                 skill_text = f"{skill_text}\n\nUser request:\n{extra}"
-            await soul._turn(Message(role="user", content=skill_text))
+            # Include non-text content parts (e.g. images) that were attached
+            # to the slash command invocation.
+            extra_parts = list(soul._slash_command_content_parts)
+            content: str | list[ContentPart] = (
+                [TextPart(text=skill_text), *extra_parts] if extra_parts else skill_text
+            )
+            await soul._turn(Message(role="user", content=content))
 
         _run_skill.__doc__ = skill.description
         return _run_skill

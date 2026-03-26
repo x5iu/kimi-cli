@@ -263,9 +263,7 @@ class Shell:
                 self._display_user_input(user_input)
             )
 
-        soul_input: str | list[ContentPart] = (
-            user_input.command if slash_cmd_call is not None else user_input.content
-        )
+        soul_input: str | list[ContentPart] = user_input.content
         keep_running = await self._run_interactive_turn(
             prompt_session, soul_input, pre_rendered_echo=pre_rendered_echo,
         )
