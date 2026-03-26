@@ -36,6 +36,9 @@ MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
 MAX_TOOL_OUTPUT_TAIL_LINES = 8
 MAX_TOOL_OUTPUT_TAIL_CHARS = 4000
 MAX_TOOL_OUTPUT_LINE_CHARS = 400
+MAX_FILE_CONTENT_DISPLAY_LINES = 12
+MAX_FILE_CONTENT_DISPLAY_CHARS = 4000
+_FILE_CONTENT_TOOLS = frozenset({"ReadFile"})
 _OUTPUT_GUTTER_SEPARATOR = " │ "
 _OUTPUT_GUTTER_STYLE = "bright_black"
 _OUTPUT_STDOUT_STYLE = "#b8b8b8"
@@ -368,6 +371,12 @@ class _ToolCallBlock:
             has_diff_display = any(isinstance(block, DiffDisplayBlock) for block in result.display)
             if result.message and has_diff_display:
                 lines.append(Markdown(result.message, style="dim"))
+            elif tool_name in _FILE_CONTENT_TOOLS:
+                if result.message:
+                    lines.append(Markdown(result.message, style="dim"))
+                file_content = self._render_file_content(result)
+                if file_content:
+                    lines.append(file_content)
 
         last_diff_path: str | None = None
         for block in result.display:
@@ -407,6 +416,66 @@ class _ToolCallBlock:
                 last_diff_path = None
 
         return lines
+
+    def _render_file_content(self, result: ToolReturnValue) -> RenderableType | None:
+        raw = self._stringify_output(result.output).strip("\n")
+        if not raw.strip():
+            return None
+
+        all_lines = raw.splitlines()
+        if not all_lines:
+            return None
+
+        truncated = len(all_lines) > MAX_FILE_CONTENT_DISPLAY_LINES
+        visible = all_lines[:MAX_FILE_CONTENT_DISPLAY_LINES] if truncated else all_lines
+
+        # Enforce character budget
+        total_chars = 0
+        capped: list[str] = []
+        for line in visible:
+            total_chars += len(line)
+            if total_chars > MAX_FILE_CONTENT_DISPLAY_CHARS and capped:
+                truncated = True
+                break
+            capped.append(line)
+        visible = capped
+
+        # Parse lines – ReadFile format: "{line_num:6d}\t{content}"
+        parsed: list[tuple[str, str]] = []
+        for line in visible:
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                parsed.append((parts[0].strip(), parts[1]))
+            else:
+                parsed.append(("", line))
+
+        if not parsed:
+            return None
+
+        gutter_width = max(len(ln) for ln, _ in parsed)
+        rendered = Text(no_wrap=False)
+
+        for index, (line_no, content) in enumerate(parsed):
+            rendered.append(
+                self._format_output_gutter(line_no, gutter_width),
+                style=_OUTPUT_GUTTER_STYLE,
+            )
+            rendered.append(
+                truncate_line(content.rstrip("\n"), MAX_TOOL_OUTPUT_LINE_CHARS),
+                style=_OUTPUT_STDOUT_STYLE,
+            )
+            if index < len(parsed) - 1:
+                rendered.append("\n")
+
+        if truncated:
+            rendered.append("\n")
+            rendered.append(
+                self._format_output_gutter("", gutter_width),
+                style=_OUTPUT_GUTTER_STYLE,
+            )
+            rendered.append("… remaining content omitted", style="grey50 italic")
+
+        return Group(Text("File content", style="cyan dim"), rendered)
 
     @classmethod
     def _extract_error_output(cls, result: ToolReturnValue) -> str:
