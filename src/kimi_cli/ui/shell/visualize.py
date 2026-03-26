@@ -42,7 +42,6 @@ from kimi_cli.wire.types import (
     StatusUpdate,
     StepBegin,
     StepInterrupted,
-    SubagentEvent,
     TextPart,
     ThinkPart,
     ToolCall,
@@ -55,7 +54,6 @@ from kimi_cli.wire.types import (
     WireMessage,
 )
 
-MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
 MAX_ACTIVE_TURN_FLUSHED_BLOCKS = 12
@@ -68,8 +66,6 @@ def is_significant_for_render(msg: object) -> bool:
     """Whether a wire message should trigger an immediate repaint."""
     if isinstance(msg, (ToolCallOutput, StatusUpdate, ApprovalResponse)):
         return False
-    if isinstance(msg, SubagentEvent):
-        return is_significant_for_render(msg.event)
     return True
 
 
@@ -178,7 +174,7 @@ class LiveView:
         self._last_tool_call_block: ToolCallBlock | None = None
         self._approval_request_queue = deque[ApprovalRequest]()
         """
-        It is possible that multiple subagents request approvals at the same time,
+        It is possible that multiple tools request approvals at the same time,
         in which case we will have to queue them up and show them one by one.
         """
         self._current_approval_request_panel: ApprovalRequestPanel | None = None
@@ -946,8 +942,6 @@ class LiveView:
             case ApprovalResponse():
                 # we don't need to handle this because the request is resolved on UI
                 pass
-            case SubagentEvent():
-                self.handle_subagent_event(msg)
             case ApprovalRequest():
                 self.request_approval(msg)
             case QuestionRequest():
@@ -1301,27 +1295,6 @@ class LiveView:
                 self._current_question_panel = None
                 self._question_waiting_for_other_text = False
                 self.refresh_active()
-
-    def handle_subagent_event(self, event: SubagentEvent) -> None:
-        block = self._tool_call_blocks.get(event.task_tool_call_id)
-        if block is None:
-            return
-
-        match event.event:
-            case ToolCall() as tool_call:
-                block.append_sub_tool_call(tool_call)
-            case ToolCallPart() as tool_call_part:
-                block.append_sub_tool_call_part(tool_call_part)
-            case ToolCallOutput():
-                # Ignore live subagent shell output for now; completed sub-tool calls still render.
-                pass
-            case ToolResult() as tool_result:
-                block.finish_sub_tool_call(tool_result)
-                self.refresh_active()
-            case _:
-                # ignore other events for now
-                # TODO: may need to handle multi-level nested subagents
-                pass
 
 
 recent_output_notice_text = _recent_output_notice_text

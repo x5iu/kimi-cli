@@ -43,16 +43,6 @@ class AgentSpec(BaseModel):
     exclude_tools: list[str] | None | Inherit = Field(
         default=inherit, description="Tools to exclude"
     )
-    subagents: dict[str, SubagentSpec] | None | Inherit = Field(
-        default=inherit, description="Subagents"
-    )
-
-
-class SubagentSpec(BaseModel):
-    """Subagent specification."""
-
-    path: Path = Field(description="Subagent file path")
-    description: str = Field(description="Subagent description")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -64,7 +54,6 @@ class ResolvedAgentSpec:
     system_prompt_args: dict[str, str]
     tools: list[str]
     exclude_tools: list[str]
-    subagents: dict[str, SubagentSpec]
 
 
 def load_agent_spec(agent_file: Path) -> ResolvedAgentSpec:
@@ -85,15 +74,12 @@ def load_agent_spec(agent_file: Path) -> ResolvedAgentSpec:
         raise AgentSpecError("Tools are required")
     if isinstance(agent_spec.exclude_tools, Inherit):
         agent_spec.exclude_tools = []
-    if isinstance(agent_spec.subagents, Inherit):
-        agent_spec.subagents = {}
     return ResolvedAgentSpec(
         name=agent_spec.name,
         system_prompt_path=agent_spec.system_prompt_path,
         system_prompt_args=agent_spec.system_prompt_args,
         tools=agent_spec.tools or [],
         exclude_tools=agent_spec.exclude_tools or [],
-        subagents=agent_spec.subagents or {},
     )
 
 
@@ -117,9 +103,6 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
         agent_spec.system_prompt_path = (
             agent_file.parent / agent_spec.system_prompt_path
         ).absolute()
-    if isinstance(agent_spec.subagents, dict):
-        for v in agent_spec.subagents.values():
-            v.path = (agent_file.parent / v.path).absolute()
     if agent_spec.extend:
         if agent_spec.extend == "default":
             base_agent_file = DEFAULT_AGENT_FILE
@@ -137,7 +120,5 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
             base_agent_spec.tools = agent_spec.tools
         if not isinstance(agent_spec.exclude_tools, Inherit):
             base_agent_spec.exclude_tools = agent_spec.exclude_tools
-        if not isinstance(agent_spec.subagents, Inherit):
-            base_agent_spec.subagents = agent_spec.subagents
         agent_spec = base_agent_spec
     return agent_spec

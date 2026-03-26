@@ -24,7 +24,6 @@ from kimi_cli.wire.types import (
     StatusUpdate,
     StepBegin,
     StepInterrupted,
-    SubagentEvent,
     TextPart,
     ToolCall,
     ToolCallOutput,
@@ -205,21 +204,6 @@ async def test_wire_message_serde():
         {
             "type": "ApprovalResponse",
             "payload": {"request_id": "request_123", "response": "approve"},
-        }
-    )
-    _test_serde(msg)
-
-    msg = SubagentEvent(
-        task_tool_call_id="task_789",
-        event=StepBegin(n=2),
-    )
-    assert serialize_wire_message(msg) == snapshot(
-        {
-            "type": "SubagentEvent",
-            "payload": {
-                "task_tool_call_id": "task_789",
-                "event": {"type": "StepBegin", "payload": {"n": 2}},
-            },
         }
     )
     _test_serde(msg)

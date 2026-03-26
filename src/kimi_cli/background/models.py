@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 type TaskKind = Literal["bash", "agent"]
 type TaskStatus = Literal["created", "starting", "running", "completed", "failed", "killed", "lost"]
-type TaskOwnerRole = Literal["root", "fixed_subagent", "dynamic_subagent"]
+type TaskOwnerRole = Literal["root"]
 
 TERMINAL_TASK_STATUSES: tuple[TaskStatus, ...] = ("completed", "failed", "killed", "lost")
 

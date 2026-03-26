@@ -28,12 +28,8 @@ def _visible_tool_names(toolset: KimiToolset) -> set[str]:
     return {tool.name for tool in toolset.tools}
 
 
-def _make_server(runtime: Runtime, tmp_path: Path) -> tuple[WireServer, KimiToolset, KimiToolset]:
+def _make_server(runtime: Runtime, tmp_path: Path) -> tuple[WireServer, KimiToolset]:
     root_toolset = _make_capability_toolset()
-    subagent_toolset = _make_capability_toolset()
-
-    runtime.labor_market.fixed_subagents.clear()
-    runtime.labor_market.fixed_subagent_descs.clear()
 
     root_agent = Agent(
         name="Wire Capability Root",
@@ -41,19 +37,9 @@ def _make_server(runtime: Runtime, tmp_path: Path) -> tuple[WireServer, KimiTool
         toolset=root_toolset,
         runtime=runtime,
     )
-    runtime.labor_market.add_fixed_subagent(
-        "sub",
-        Agent(
-            name="Wire Capability Subagent",
-            system_prompt="Test system prompt.",
-            toolset=subagent_toolset,
-            runtime=runtime.copy_for_fixed_subagent(),
-        ),
-        "Capability test subagent.",
-    )
 
     soul = KimiSoul(root_agent, context=Context(file_backend=tmp_path / "history.jsonl"))
-    return WireServer(soul), root_toolset, subagent_toolset
+    return WireServer(soul), root_toolset
 
 
 def _init_msg(
@@ -84,7 +70,7 @@ async def test_initialize_without_capabilities_hides_question_and_plan_tools(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server, root_toolset, subagent_toolset = _make_server(runtime, tmp_path)
+    server, root_toolset = _make_server(runtime, tmp_path)
     monkeypatch.setattr(server, "_ensure_notification_watcher", lambda: None)
 
     response = await server._handle_initialize(
@@ -97,7 +83,6 @@ async def test_initialize_without_capabilities_hides_question_and_plan_tools(
     assert server._client_supports_question is False
     assert server._client_supports_plan_mode is False
     assert _visible_tool_names(root_toolset) == set()
-    assert _visible_tool_names(subagent_toolset) == set()
 
 
 @pytest.mark.asyncio
@@ -106,7 +91,7 @@ async def test_initialize_with_question_support_only_unhides_ask_user_tool(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server, root_toolset, subagent_toolset = _make_server(runtime, tmp_path)
+    server, root_toolset = _make_server(runtime, tmp_path)
     monkeypatch.setattr(server, "_ensure_notification_watcher", lambda: None)
 
     response = await server._handle_initialize(
@@ -117,7 +102,6 @@ async def test_initialize_with_question_support_only_unhides_ask_user_tool(
     assert server._client_supports_question is True
     assert server._client_supports_plan_mode is False
     assert _visible_tool_names(root_toolset) == {"AskUserQuestion"}
-    assert _visible_tool_names(subagent_toolset) == {"AskUserQuestion"}
 
 
 @pytest.mark.asyncio
@@ -126,7 +110,7 @@ async def test_initialize_with_full_capabilities_unhides_all_capability_gated_to
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server, root_toolset, subagent_toolset = _make_server(runtime, tmp_path)
+    server, root_toolset = _make_server(runtime, tmp_path)
     monkeypatch.setattr(server, "_ensure_notification_watcher", lambda: None)
 
     response = await server._handle_initialize(
@@ -138,4 +122,3 @@ async def test_initialize_with_full_capabilities_unhides_all_capability_gated_to
     assert server._client_supports_plan_mode is True
     expected = {"AskUserQuestion", "EnterPlanMode", "ExitPlanMode"}
     assert _visible_tool_names(root_toolset) == expected
-    assert _visible_tool_names(subagent_toolset) == expected

@@ -17,21 +17,11 @@ class ApprovalStateData(BaseModel):
     auto_approve_actions: set[str] = Field(default_factory=set)
 
 
-class DynamicSubagentSpec(BaseModel):
-    name: str
-    system_prompt: str
-
-
 class TodoStateItem(BaseModel):
     title: str
     status: Literal["pending", "in_progress", "done", "blocked"]
-    executor: Literal["main", "task", "background_shell"] | None = None
-    subagent_name: str | None = None
+    executor: Literal["main", "background_shell"] | None = None
     done_when: str | None = None
-
-
-def _default_dynamic_subagents() -> list[DynamicSubagentSpec]:
-    return []
 
 
 def _default_todos() -> list[TodoStateItem]:
@@ -41,7 +31,6 @@ def _default_todos() -> list[TodoStateItem]:
 class SessionState(BaseModel):
     version: int = 1
     approval: ApprovalStateData = Field(default_factory=ApprovalStateData)
-    dynamic_subagents: list[DynamicSubagentSpec] = Field(default_factory=_default_dynamic_subagents)
     additional_dirs: list[str] = Field(default_factory=list)
     plan_mode: bool = False
     plan_session_id: str | None = None

@@ -5,7 +5,6 @@ from __future__ import annotations
 from inline_snapshot import snapshot
 
 from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop
-from kimi_cli.tools.multiagent.create import CreateSubagent
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
@@ -15,55 +14,10 @@ from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import ExecuteTodo, SetTodoList
+from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
-
-
-def test_task_params_schema(task_tool: Task):
-    """Test the schema of Task tool parameters."""
-    assert task_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "description": {
-                    "description": "A short (3-5 word) description of the task",
-                    "type": "string",
-                },
-                "subagent_name": {
-                    "description": "The name of the specialized subagent to use for this task",
-                    "type": "string",
-                },
-                "prompt": {
-                    "description": "The task for the subagent to perform. You must provide a detailed prompt with all necessary background information because the subagent cannot see anything in your context.",
-                    "type": "string",
-                },
-            },
-            "required": ["description", "subagent_name", "prompt"],
-            "type": "object",
-        }
-    )
-
-
-def test_create_subagent_params_schema(create_subagent_tool: CreateSubagent):
-    """Test the schema of CreateSubagent tool parameters."""
-    assert create_subagent_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "name": {
-                    "description": "Unique name for this agent configuration (e.g., 'summarizer', 'code_reviewer'). This name will be used to reference the agent in the Task tool.",
-                    "type": "string",
-                },
-                "system_prompt": {
-                    "description": "System prompt defining the agent's role, capabilities, and boundaries.",
-                    "type": "string",
-                },
-            },
-            "required": ["name", "system_prompt"],
-            "type": "object",
-        }
-    )
 
 
 def test_send_dmail_params_schema(send_dmail_tool: SendDMail):
@@ -122,18 +76,13 @@ def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
                             "executor": {
                                 "anyOf": [
                                     {
-                                        "enum": ["main", "task", "background_shell"],
+                                        "enum": ["main", "background_shell"],
                                         "type": "string",
                                     },
                                     {"type": "null"},
                                 ],
                                 "default": None,
-                                "description": "How this todo should be executed. Prefer `task` for narrow, independent work that can be delegated to a subagent; use `main` for work done by the root agent; use `background_shell` for long-running shell work.",
-                            },
-                            "subagent_name": {
-                                "anyOf": [{"type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "description": "The preferred subagent name when `executor` is `task`.",
+                                "description": "How this todo should be executed. Use `main` for work done by the agent; use `background_shell` for long-running shell work.",
                             },
                             "done_when": {
                                 "anyOf": [{"type": "string"}, {"type": "null"}],
@@ -148,40 +97,6 @@ def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
                 }
             },
             "required": ["todos"],
-            "type": "object",
-        }
-    )
-
-
-def test_execute_todo_params_schema(execute_todo_tool: ExecuteTodo):
-    """Test the schema of ExecuteTodo tool parameters."""
-    assert execute_todo_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "title": {
-                    "description": "The exact title of the todo item to execute from the current session todo list.",
-                    "type": "string",
-                },
-                "description": {
-                    "description": "A short (3-5 word) description of the delegated task.",
-                    "type": "string",
-                },
-                "prompt": {
-                    "description": "The detailed prompt for the delegated Task call. You must still provide all necessary background because the subagent cannot see your context.",
-                    "type": "string",
-                },
-                "subagent_name": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Optional override for the subagent name. Defaults to `todos[].subagent_name`.",
-                },
-                "mark_blocked_on_error": {
-                    "default": True,
-                    "description": "Whether to mark the todo as `blocked` when Task returns an error.",
-                    "type": "boolean",
-                },
-            },
-            "required": ["title", "description", "prompt"],
             "type": "object",
         }
     )

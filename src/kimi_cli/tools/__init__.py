@@ -17,7 +17,6 @@ class SkipThisTool(Exception):
 
 class _TodoSummaryDict(TypedDict, total=False):
     title: object
-    subagent_name: object
     status: object
     executor: object
 
@@ -26,11 +25,7 @@ def _todo_label_from_dict(todo: _TodoSummaryDict) -> str | None:
     title = todo.get("title")
     if not isinstance(title, str) or not title:
         return None
-    subagent_name = todo.get("subagent_name")
-    return todo_label(
-        title,
-        subagent_name if isinstance(subagent_name, str) and subagent_name else None,
-    )
+    return todo_label(title)
 
 
 def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
@@ -41,7 +36,6 @@ def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
     if not todos:
         return "empty"
 
-    ready_task_todos: list[str] = []
     n_in_progress = 0
     for todo in todos:
         if not isinstance(todo, dict):
@@ -49,27 +43,11 @@ def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
         typed_todo = cast(_TodoSummaryDict, todo)
         if typed_todo.get("status") == "in_progress":
             n_in_progress += 1
-        label = _todo_label_from_dict(typed_todo)
-        if typed_todo.get("executor") == "task" and typed_todo.get("status") == "pending" and label:
-            ready_task_todos.append(label)
 
     summary = f"{len(todos)} todos"
-    if len(ready_task_todos) == 1:
-        return f"{summary}; ready: {ready_task_todos[0]}"
     if n_in_progress:
         return f"{summary}; active={n_in_progress}"
     return summary
-
-
-def _summarize_execute_todo_argument(curr_args: dict[str, Any]) -> str | None:
-    title = curr_args.get("title")
-    if not title:
-        return None
-    key_argument = str(title)
-    subagent_name = curr_args.get("subagent_name")
-    if subagent_name:
-        key_argument += f" @{subagent_name}"
-    return key_argument
 
 
 def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str) -> str | None:
@@ -86,14 +64,6 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
     key_argument: str = ""
     should_truncate = True
     match tool_name:
-        case "Task":
-            if not isinstance(curr_args, dict) or not curr_args.get("description"):
-                return None
-            key_argument = str(curr_args["description"])
-        case "CreateSubagent":
-            if not isinstance(curr_args, dict) or not curr_args.get("name"):
-                return None
-            key_argument = str(curr_args["name"])
         case "SendDMail":
             return None
         case "Think":
@@ -104,13 +74,6 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict):
                 return None
             summary = _summarize_set_todo_list_argument(curr_args)
-            if summary is None:
-                return None
-            key_argument = summary
-        case "ExecuteTodo":
-            if not isinstance(curr_args, dict):
-                return None
-            summary = _summarize_execute_todo_argument(curr_args)
             if summary is None:
                 return None
             key_argument = summary

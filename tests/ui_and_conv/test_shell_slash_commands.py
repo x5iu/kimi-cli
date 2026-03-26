@@ -273,7 +273,6 @@ class TestTaskCommand:
         from kimi_cli.soul.kimisoul import KimiSoul
 
         mock_soul = Mock(spec=KimiSoul)
-        runtime.role = "root"
         mock_soul.runtime = runtime
         shell = Mock()
         shell.soul = mock_soul

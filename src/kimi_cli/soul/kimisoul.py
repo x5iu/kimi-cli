@@ -306,8 +306,7 @@ class KimiSoul:
             PreferShellRgAttachmentProvider(),
         ]
 
-        if self._runtime.role == "root":
-            self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
+        self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
 
         # Bind tool state that depends on the live soul/context
         self._bind_plan_mode_tools()
@@ -348,15 +347,11 @@ class KimiSoul:
         return attachments
 
     def _plan_mode_bound_toolsets(self) -> list[KimiToolset]:
-        """Collect root/fixed-subagent toolsets that track plan mode state."""
+        """Collect toolsets that track plan mode state."""
         if not isinstance(self._agent.toolset, KimiToolset):
             return []
 
-        toolsets = [self._agent.toolset]
-        for subagent in self._runtime.labor_market.fixed_subagents.values():
-            if isinstance(subagent.toolset, KimiToolset):
-                toolsets.append(subagent.toolset)
-        return toolsets
+        return [self._agent.toolset]
 
     def _sync_plan_mode_visibility(self, toolsets: list[KimiToolset] | None = None) -> None:
         """Hide plan-incompatible tools from the LLM while plan mode is active."""
@@ -1576,17 +1571,15 @@ class KimiSoul:
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider
 
-        if self._runtime.role == "root":
+        async def _append_notification(view: NotificationView) -> None:
+            await self._context.append_message(build_notification_message(view, self._runtime))
 
-            async def _append_notification(view: NotificationView) -> None:
-                await self._context.append_message(build_notification_message(view, self._runtime))
-
-            await self._runtime.notifications.deliver_pending(
-                "llm",
-                limit=4,
-                before_claim=self._runtime.background_tasks.reconcile,
-                on_notification=_append_notification,
-            )
+        await self._runtime.notifications.deliver_pending(
+            "llm",
+            limit=4,
+            before_claim=self._runtime.background_tasks.reconcile,
+            on_notification=_append_notification,
+        )
 
         # Attachment injection
         attachments = await self._collect_attachments()
@@ -1778,21 +1771,20 @@ class KimiSoul:
             messages=final_messages, usage=compaction_result.usage
         ).estimated_token_count
 
-        if self._runtime.role == "root":
-            active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
-            if active_task_snapshot is not None:
-                active_task_message = Message(
-                    role="user",
-                    content=[
-                        system(
-                            "The following background tasks are still active after compaction. "
-                            "Use TaskList if you need to re-enumerate them later."
-                        ),
-                        TextPart(text=active_task_snapshot),
-                    ],
-                )
-                await self._context.append_message(active_task_message)
-                estimated_token_count += estimate_text_tokens([active_task_message])
+        active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
+        if active_task_snapshot is not None:
+            active_task_message = Message(
+                role="user",
+                content=[
+                    system(
+                        "The following background tasks are still active after compaction. "
+                        "Use TaskList if you need to re-enumerate them later."
+                    ),
+                    TextPart(text=active_task_snapshot),
+                ],
+            )
+            await self._context.append_message(active_task_message)
+            estimated_token_count += estimate_text_tokens([active_task_message])
 
         # Estimate token count so context_usage is not reported as 0%
         await self._context.update_token_count(estimated_token_count)

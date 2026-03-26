@@ -483,10 +483,6 @@ def task(app: Shell, args: str):
     if args.strip():
         console.print('[yellow]Usage: "/task" lists background tasks for this session.[/yellow]')
         return
-    if soul.runtime.role != "root":
-        console.print("[yellow]Background tasks are only available from the root agent.[/yellow]")
-        return
-
     active = list_task_views(soul.runtime.background_tasks, active_only=True, limit=20)
     console.print(format_task_list(active, active_only=True), markup=False)
 

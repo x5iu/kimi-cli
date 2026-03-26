@@ -188,14 +188,12 @@ def _runtime_with_llm(runtime: Runtime, llm: LLM) -> Runtime:
         builtin_args=runtime.builtin_args,
         denwa_renji=runtime.denwa_renji,
         approval=runtime.approval,
-        labor_market=runtime.labor_market,
         environment=runtime.environment,
         notifications=runtime.notifications,
         background_tasks=runtime.background_tasks,
         skills=runtime.skills,
         oauth=runtime.oauth,
         additional_dirs=runtime.additional_dirs,
-        role=runtime.role,
     )
 
 

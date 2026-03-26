@@ -22,7 +22,7 @@ from kosong.tooling import (
     UnknownDisplayBlock,
 )
 from kosong.utils.typing import JsonType
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field
 
 from kimi_cli.tools.display import (
     BackgroundTaskDisplayBlock,
@@ -160,43 +160,6 @@ class ToolCallOutput(BaseModel):
 
     stream: Literal["stdout", "stderr"] = "stdout"
     """Which stream produced this chunk."""
-
-
-class SubagentEvent(BaseModel):
-    """
-    An event from a subagent.
-    """
-
-    task_tool_call_id: str
-    """The ID of the task tool call associated with this subagent."""
-    event: Event
-    """The event from the subagent."""
-    # TODO: maybe restrict the event types? to exclude approval request, etc.
-
-    @field_serializer("event", when_used="json")
-    def _serialize_event(self, event: Event) -> dict[str, Any]:
-        envelope = WireMessageEnvelope.from_wire_message(event)
-        return envelope.model_dump(mode="json")
-
-    @field_validator("event", mode="before")
-    @classmethod
-    def _validate_event(cls, value: Any) -> Event:
-        if is_wire_message(value):
-            if is_event(value):
-                return value
-            raise ValueError("SubagentEvent event must be an Event")
-
-        if not isinstance(value, dict):
-            raise ValueError("SubagentEvent event must be a dict")
-        event_type = cast(dict[str, Any], value).get("type")
-        event_payload = cast(dict[str, Any], value).get("payload")
-        envelope = WireMessageEnvelope.model_validate(
-            {"type": event_type, "payload": event_payload}
-        )
-        event = envelope.to_wire_message()
-        if not is_event(event):
-            raise ValueError("SubagentEvent event must be an Event")
-        return event
 
 
 class ApprovalResponse(BaseModel):
@@ -427,7 +390,6 @@ type Event = (
     | ToolCallOutput
     | ToolResult
     | ApprovalResponse
-    | SubagentEvent
 )
 """Any event, including control flow and content/tooling events."""
 
@@ -514,7 +476,6 @@ __all__ = [
     "ToolCallOutput",
     "ToolResult",
     "ApprovalResponse",
-    "SubagentEvent",
     "ApprovalRequest",
     "ToolCallRequest",
     "QuestionOption",

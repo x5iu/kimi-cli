@@ -2,12 +2,10 @@ version: 1
 agent:
   extend: default
   tools:
-    - "kimi_cli.tools.multiagent:Task"
     # - "kimi_cli.tools.multiagent:CreateSubagent"
     - "kimi_cli.tools.dmail:SendDMail"
     # - "kimi_cli.tools.think:Think"
     - "kimi_cli.tools.todo:SetTodoList"
-    - "kimi_cli.tools.todo:ExecuteTodo"
     - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.file:ReadFile"
     - "kimi_cli.tools.file:ReadMediaFile"

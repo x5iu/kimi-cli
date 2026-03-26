@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import deque
 from collections.abc import Sequence
-from typing import Any, NamedTuple, cast
+from typing import Any, cast
 
 import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 from rich.console import Group, RenderableType
@@ -13,7 +13,7 @@ from rich.text import Text
 
 from kimi_cli.soul import format_context_status
 from kimi_cli.tools import extract_key_argument
-from kimi_cli.tools.todo_text import ready_to_execute_todo_text, todo_label
+from kimi_cli.tools.todo_text import todo_label
 from kimi_cli.tools.utils import truncate_line
 from kimi_cli.utils.rich.columns import BulletColumns
 from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
@@ -28,12 +28,9 @@ from kimi_cli.wire.types import (
     TodoDisplayBlock,
     TodoDisplayItem,
     ToolCall,
-    ToolCallPart,
-    ToolResult,
     ToolReturnValue,
 )
 
-MAX_SUBAGENT_TOOL_CALLS_TO_SHOW = 4
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
 MAX_TOOL_OUTPUT_TAIL_LINES = 8
@@ -142,10 +139,6 @@ class _ContentBlock:
 
 
 class _ToolCallBlock:
-    class FinishedSubCall(NamedTuple):
-        call: ToolCall
-        result: ToolReturnValue
-
     def __init__(self, tool_call: ToolCall):
         self._tool_name = tool_call.function.name
         self._lexer = streamingjson.Lexer()
@@ -160,13 +153,6 @@ class _ToolCallBlock:
         self._output_tail_chars = 0
         self._output_tail_truncated = False
         self._output_line_count = 0
-
-        self._ongoing_subagent_tool_calls: dict[str, ToolCall] = {}
-        self._last_subagent_tool_call: ToolCall | None = None
-        self._n_finished_subagent_tool_calls = 0
-        self._finished_subagent_tool_calls = deque[_ToolCallBlock.FinishedSubCall](
-            maxlen=MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
-        )
 
         self._spinning_dots = Spinner("dots", text="")
         self._renderable: RenderableType = self._compose()
@@ -231,76 +217,11 @@ class _ToolCallBlock:
         self._result = result
         self._renderable = self._compose()
 
-    def append_sub_tool_call(self, tool_call: ToolCall):
-        self._ongoing_subagent_tool_calls[tool_call.id] = tool_call
-        self._last_subagent_tool_call = tool_call
-
-    def append_sub_tool_call_part(self, tool_call_part: ToolCallPart):
-        if self._last_subagent_tool_call is None:
-            return
-        if not tool_call_part.arguments_part:
-            return
-        if self._last_subagent_tool_call.function.arguments is None:
-            self._last_subagent_tool_call.function.arguments = tool_call_part.arguments_part
-        else:
-            self._last_subagent_tool_call.function.arguments += tool_call_part.arguments_part
-
-    def finish_sub_tool_call(self, tool_result: ToolResult):
-        self._last_subagent_tool_call = None
-        sub_tool_call = self._ongoing_subagent_tool_calls.pop(tool_result.tool_call_id, None)
-        if sub_tool_call is None:
-            return
-
-        self._finished_subagent_tool_calls.append(
-            _ToolCallBlock.FinishedSubCall(
-                call=sub_tool_call,
-                result=tool_result.return_value,
-            )
-        )
-        self._n_finished_subagent_tool_calls += 1
-        self._renderable = self._compose()
-
     def _compose(self, *, show_indicator: bool = True) -> RenderableType:
         lines: list[RenderableType] = [self._build_headline_text()]
 
         if output_tail := self._render_output_tail():
             lines.append(output_tail)
-
-        if self._n_finished_subagent_tool_calls > MAX_SUBAGENT_TOOL_CALLS_TO_SHOW:
-            n_hidden = self._n_finished_subagent_tool_calls - MAX_SUBAGENT_TOOL_CALLS_TO_SHOW
-            lines.append(
-                BulletColumns(
-                    Text(
-                        f"{n_hidden} more tool call{'s' if n_hidden > 1 else ''} ...",
-                        style="grey50 italic",
-                    ),
-                    bullet_style="grey50",
-                )
-            )
-        for sub_call, sub_result in self._finished_subagent_tool_calls:
-            argument = extract_key_argument(
-                sub_call.function.arguments or "",
-                sub_call.function.name,
-            )
-            sub_url = self._extract_full_url(sub_call.function.arguments, sub_call.function.name)
-            sub_text = Text()
-            sub_text.append("Used ")
-            sub_text.append(sub_call.function.name, style="blue")
-            if argument:
-                sub_text.append(" (", style="grey50")
-                arg_style = Style(color="grey50", link=sub_url) if sub_url else "grey50"
-                sub_text.append(argument, style=arg_style)
-                sub_text.append(")", style="grey50")
-            sub_lines = [cast(RenderableType, sub_text)]
-            sub_lines.extend(
-                self._render_result_display(sub_result, tool_name=sub_call.function.name)
-            )
-            lines.append(
-                BulletColumns(
-                    Group(*sub_lines),
-                    bullet_style="green" if not sub_result.is_error else "red",
-                )
-            )
 
         if self._result is not None:
             lines.extend(self._render_result_display(self._result))
@@ -521,9 +442,6 @@ class _ToolCallBlock:
     def _render_todo_meta(todo: TodoDisplayItem) -> str:
         details: list[str] = []
         match todo.executor:
-            case "task":
-                target = f":{todo.subagent_name}" if todo.subagent_name else ""
-                details.append(f"`Task{target}`")
             case "background_shell":
                 details.append("`Shell(bg)`")
             case "main":
@@ -536,7 +454,7 @@ class _ToolCallBlock:
 
     @staticmethod
     def _short_todo_label(todo: TodoDisplayItem) -> str:
-        return todo_label(todo.title, todo.subagent_name)
+        return todo_label(todo.title)
 
     def _render_todo_markdown(self, block: TodoDisplayBlock) -> str:
         lines: list[str] = []
@@ -554,14 +472,6 @@ class _ToolCallBlock:
                     lines.append(f"- {todo.title}{meta} (blocked)")
                 case _:
                     lines.append(f"- {todo.title}{meta}")
-
-        ready_to_execute = [
-            self._short_todo_label(todo)
-            for todo in block.items
-            if todo.executor == "task" and todo.status == "pending"
-        ]
-        if len(ready_to_execute) == 1:
-            lines.extend(["", ready_to_execute_todo_text(ready_to_execute[0])])
 
         return "\n".join(lines)
 

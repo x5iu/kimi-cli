@@ -15,13 +15,6 @@ TASK_OUTPUT_PREVIEW_BYTES = 32 << 10
 TASK_OUTPUT_READ_HINT_LINES = 300
 
 
-def _ensure_root(runtime: Runtime) -> ToolError | None:
-    if runtime.role != "root":
-        return ToolError(
-            message="Background tasks can only be managed by the root agent.",
-            brief="Background task unavailable",
-        )
-    return None
 
 
 def _task_display(runtime: Runtime, task_id: str) -> BackgroundTaskDisplayBlock:
@@ -149,9 +142,6 @@ class TaskList(CallableTool2[TaskListParams]):
 
     @override
     async def __call__(self, params: TaskListParams) -> ToolReturnValue:
-        if err := _ensure_root(self._runtime):
-            return err
-
         views = list_task_views(
             self._runtime.background_tasks,
             active_only=params.active_only,
@@ -213,9 +203,6 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
 
     @override
     async def __call__(self, params: TaskOutputParams) -> ToolReturnValue:
-        if err := _ensure_root(self._runtime):
-            return err
-
         view = self._runtime.background_tasks.get_task(params.task_id)
         if view is None:
             return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")
@@ -285,14 +272,11 @@ class TaskStop(CallableTool2[TaskStopParams]):
 
     @override
     async def __call__(self, params: TaskStopParams) -> ToolReturnValue:
-        if err := _ensure_root(self._runtime):
-            return err
         if self._runtime.session.state.plan_mode:
             return ToolError(
                 message="TaskStop is not available in plan mode.",
                 brief="Blocked in plan mode",
             )
-
         view = self._runtime.background_tasks.get_task(params.task_id)
         if view is None:
             return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")

@@ -13,7 +13,6 @@ import pytest
 from kaos.local import LocalKaos
 from kaos.path import KaosPath
 from kosong.chat_provider.mock import MockChatProvider
-from kosong.tooling.empty import EmptyToolset
 from pydantic import SecretStr
 
 from kaos import get_current_kaos, reset_current_kaos, set_current_kaos
@@ -25,7 +24,7 @@ from kimi_cli.metadata import WorkDirMeta
 from kimi_cli.notifications import NotificationManager
 from kimi_cli.session import Session
 from kimi_cli.session_state import SessionState
-from kimi_cli.soul.agent import Agent, BuiltinSystemPromptArgs, LaborMarket, Runtime
+from kimi_cli.soul.agent import Agent, BuiltinSystemPromptArgs, Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
@@ -38,11 +37,9 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool, StrReplaceFile
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.multiagent.create import CreateSubagent
-from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import ExecuteTodo, SetTodoList
+from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 from kimi_cli.utils.environment import Environment
@@ -133,12 +130,6 @@ def approval() -> Approval:
 
 
 @pytest.fixture
-def labor_market() -> LaborMarket:
-    """Create a LaborMarket instance."""
-    return LaborMarket()
-
-
-@pytest.fixture
 def environment() -> Environment:
     """Create an Environment instance."""
     if platform.system() == "Windows":
@@ -167,7 +158,6 @@ def runtime(
     denwa_renji: DenwaRenji,
     session: Session,
     approval: Approval,
-    labor_market: LaborMarket,
     environment: Environment,
 ) -> Runtime:
     """Create a Runtime instance."""
@@ -182,7 +172,6 @@ def runtime(
         denwa_renji=denwa_renji,
         session=session,
         approval=approval,
-        labor_market=labor_market,
         environment=environment,
         notifications=notifications,
         background_tasks=BackgroundTaskManager(
@@ -193,16 +182,6 @@ def runtime(
         skills={},
         oauth=OAuthManager(config),
         additional_dirs=[],
-    )
-    rt.labor_market.add_fixed_subagent(
-        "mocker",
-        Agent(
-            name="Mocker",
-            system_prompt="You are a mock agent for testing.",
-            toolset=EmptyToolset(),
-            runtime=rt.copy_for_fixed_subagent(),
-        ),
-        "The mock agent for testing purposes.",
     )
     return rt
 
@@ -228,18 +207,6 @@ def tool_call_context(tool_name: str) -> Generator[None]:
 
 
 @pytest.fixture
-def task_tool(runtime: Runtime) -> Task:
-    """Create a Task tool instance."""
-    return Task(runtime)
-
-
-@pytest.fixture
-def create_subagent_tool(toolset: KimiToolset, runtime: Runtime) -> CreateSubagent:
-    """Create a CreateSubagent tool instance."""
-    return CreateSubagent(toolset, runtime)
-
-
-@pytest.fixture
 def send_dmail_tool(denwa_renji: DenwaRenji) -> SendDMail:
     """Create a SendDMail tool instance."""
     return SendDMail(denwa_renji)
@@ -255,12 +222,6 @@ def think_tool() -> Think:
 def set_todo_list_tool(runtime: Runtime) -> SetTodoList:
     """Create a SetTodoList tool instance."""
     return SetTodoList(runtime)
-
-
-@pytest.fixture
-def execute_todo_tool(toolset: KimiToolset, runtime: Runtime) -> ExecuteTodo:
-    """Create an ExecuteTodo tool instance."""
-    return ExecuteTodo(toolset, runtime)
 
 
 @pytest.fixture

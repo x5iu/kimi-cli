@@ -6,7 +6,6 @@ import platform
 import pytest
 from inline_snapshot import snapshot
 
-from kimi_cli.tools.multiagent.create import CreateSubagent
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
@@ -16,66 +15,10 @@ from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.multiagent.task import Task
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import ExecuteTodo, SetTodoList
+from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
-
-
-def test_task_description(task_tool: Task):
-    """Test the description of Task tool."""
-    assert task_tool.base.description == snapshot(
-        """\
-Spawn a subagent to perform a specific task. Subagent will be spawned with a fresh context without any history of yours.
-
-**Context Isolation**
-
-Context isolation is one of the key benefits of using subagents. By delegating tasks to subagents, you can keep your main context clean and focused on the main goal requested by the user.
-
-Here are some scenarios you may want this tool for context isolation:
-
-- You wrote some code and it did not work as expected. In this case you can spawn a subagent to fix the code, asking the subagent to return how it is fixed. This can potentially benefit because the detailed process of fixing the code may not be relevant to your main goal, and may clutter your context.
-- When you need some latest knowledge of a specific library, framework or technology to proceed with your task, you can spawn a subagent to search on the internet for the needed information and return to you the gathered relevant information, for example code examples, API references, etc. This can avoid ton of irrelevant search results in your own context.
-
-DO NOT directly forward the user prompt to Task tool. Do not blindly spawn one subagent for every todo item. Only use subagents for very specific and narrow tasks with clear inputs and expected outputs, such as fixing a compilation error or searching for a specific solution. It is appropriate to use `Task` for todo items that are narrow, independent, and easy to summarize back to the user.
-
-When working with `SetTodoList`, the root agent should keep the todo list aligned with delegated work: mark delegated items `in_progress` when you start them, and update them to `done` or `blocked` after the subagent returns. If the todo already exists in the stored session todo list, prefer `ExecuteTodo` so the state update is handled for you.
-
-**Parallel Multi-Tasking**
-
-Parallel multi-tasking is another key benefit of this tool. When the user request involves multiple subtasks that are independent of each other, you can use Task tool multiple times in a single response to let subagents work in parallel for you.
-
-Examples:
-
-- User requests to code, refactor or fix multiple modules/files in a project, and they can be tested independently. In this case you can spawn multiple subagents each working on a different module/file.
-- When you need to analyze a huge codebase (> hundreds of thousands of lines), you can spawn multiple subagents each exploring on a different part of the codebase and gather the summarized results.
-- When you need to search the web for multiple queries, you can spawn multiple subagents for better efficiency.
-
-**Available Subagents:**
-
-- `mocker`: The mock agent for testing purposes.
-"""
-    )
-
-
-def test_create_subagent_description(create_subagent_tool: CreateSubagent):
-    """Test the description of CreateSubagent tool."""
-    assert create_subagent_tool.base.description == snapshot(
-        """\
-Create a custom subagent with specific system prompt and name for reuse.
-
-Usage:
-- Define specialized agents with custom roles and boundaries
-- Created agents can be referenced by name in the Task tool
-- Use this when you need a specific agent type not covered by predefined agents
-- The created agent configuration will be saved and can be used immediately
-
-Example workflow:
-1. Use CreateSubagent to define a specialized agent (e.g., 'code_reviewer')
-2. Use the Task tool with agent='code_reviewer' to launch the created agent
-"""
-    )
 
 
 def test_send_dmail_description(send_dmail_tool: SendDMail):
@@ -116,21 +59,12 @@ def test_set_todo_list_description(set_todo_list_tool: SetTodoList):
         """\
 Update the whole todo list.
 
-Todo list is a simple yet powerful tool to help you get things done. You typically want to use this tool when the given task involves multiple subtasks/milestones, or, multiple tasks are given in a single request. This tool can help you break down the work, track the progress, and coordinate delegated work.
+Todo list is a simple yet powerful tool to help you get things done. You typically want to use this tool when the given task involves multiple subtasks/milestones, or, multiple tasks are given in a single request. This tool can help you break down the work and track the progress.
 
 This is the only todo list tool available to you. That said, each time you want to operate on the todo list, you need to update the whole. Make sure to maintain the todo items and their statuses properly. Valid statuses are `pending`, `in_progress`, `done`, and `blocked`.
 
-Todo items can also act as a lightweight execution plan:
-
-- Prefer `executor="task"` for narrow, independent work that a subagent can finish and summarize back.
-- If multiple todo items are independent, you may launch multiple `Task` calls in the same response.
-- Keep todo titles unique when you plan to execute them later via `ExecuteTodo`.
-- Set `subagent_name` when you already know which subagent should do the work.
 - Use `done_when` to record a short completion criterion when it helps keep the plan grounded.
-- When a stored task-backed todo should run now, prefer `ExecuteTodo` over manually chaining `SetTodoList` -> `Task` -> `SetTodoList`.
-- After each `Task` returns, update the whole todo list to reflect progress or blockers.
-
-The root agent owns the todo list. Subagents must not update it directly.
+- Use `executor="background_shell"` for long-running shell work, and `executor="main"` for work done directly.
 
 Abusing this tool to track too small steps will just waste your time and make your context messy. For example, here are some cases you should not use this tool:
 
@@ -139,26 +73,6 @@ Abusing this tool to track too small steps will just waste your time and make yo
 - When the user prompt is very specific and the only thing you need to do is brainlessly following the instructions. E.g. "Replace xxx to yyy in the file zzz", "Create a file xxx with content yyy."
 
 However, do not get stuck in a rut. Be flexible. Sometimes, you may try to use todo list at first, then realize the task is too simple and you can simply stop using it; or, sometimes, you may realize the task is complex after a few steps and then you can start using todo list to break it down.
-"""
-    )
-
-
-def test_execute_todo_description(execute_todo_tool: ExecuteTodo):
-    """Test the description of ExecuteTodo tool."""
-    assert execute_todo_tool.base.description == snapshot(
-        """\
-Execute a stored todo item via `Task`.
-
-Use this when the current session already has a todo list and one todo item should now be delegated to a subagent. This tool reads the persisted todo list from session state, marks the matching item `in_progress`, runs `Task`, then updates the item to `done` or `blocked`.
-
-Guidelines:
-
-- Use `SetTodoList` first if the current session does not yet have the todo list you want to execute.
-- Match the todo by exact title, and keep todo titles unique to avoid ambiguity.
-- Provide a detailed `prompt`; this tool does not remove the need to give the subagent full background.
-- Prefer this tool over manually chaining `SetTodoList` -> `Task` -> `SetTodoList` for one delegated todo item.
-- Do not call `SetTodoList` and `ExecuteTodo` in the same response when `ExecuteTodo` depends on the newly written list, because tool calls may run in parallel.
-- Use this only for work that should run through `Task`. For long-running shell work, use `Shell` with `run_in_background=true` instead.
 """
     )
 

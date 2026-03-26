@@ -5,13 +5,11 @@ agent:
   system_prompt_args:
     ROLE_ADDITIONAL: ""
   tools:
-    - "kimi_cli.tools.multiagent:Task"
     # - "kimi_cli.tools.multiagent:CreateSubagent"
     # - "kimi_cli.tools.dmail:SendDMail"
     # - "kimi_cli.tools.think:Think"
     - "kimi_cli.tools.ask_user:AskUserQuestion"
     - "kimi_cli.tools.todo:SetTodoList"
-    - "kimi_cli.tools.todo:ExecuteTodo"
     - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.background:TaskList"
     - "kimi_cli.tools.background:TaskOutput"
@@ -27,7 +25,3 @@ agent:
     - "kimi_cli.tools.web:FetchURL"
     - "kimi_cli.tools.plan:ExitPlanMode"
     - "kimi_cli.tools.plan.enter:EnterPlanMode"
-  subagents:
-    coder:
-      path: ./sub.yaml
-      description: "Good at general software engineering tasks."

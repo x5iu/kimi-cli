@@ -819,8 +819,7 @@ def test_live_view_activity_indicator_highlights_ready_todo_execute_target() -> 
             function=ToolCall.FunctionBody(
                 name="SetTodoList",
                 arguments=(
-                    '{"todos":[{"title":"Inspect parser","status":"pending",'
-                    '"executor":"task","subagent_name":"coder"},'
+                    '{"todos":[{"title":"Inspect parser","status":"pending"},'
                     '{"title":"Share findings","status":"pending"}]}'
                 ),
             ),
@@ -829,7 +828,7 @@ def test_live_view_activity_indicator_highlights_ready_todo_execute_target() -> 
 
     assert view.activity_indicator == (
         "tool",
-        "Updating Todo List (ready: Inspect parser @coder)",
+        "Updating Todo List (2 todos)",
     )
 
 

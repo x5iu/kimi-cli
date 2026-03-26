@@ -555,18 +555,10 @@ class WireServer:
         """Hide or unhide the AskUserQuestion tool based on client capabilities."""
         from kimi_cli.tools.ask_user import NAME as ASK_USER_TOOL_NAME
 
-        all_toolsets = [toolset]
-        if isinstance(self._soul, KimiSoul):
-            for subagent in self._soul.agent.runtime.labor_market.fixed_subagents.values():
-                if isinstance(subagent.toolset, KimiToolset):
-                    all_toolsets.append(subagent.toolset)
-
         if self._client_supports_question:
-            for ts in all_toolsets:
-                ts.unhide(ASK_USER_TOOL_NAME)
+            toolset.unhide(ASK_USER_TOOL_NAME)
         else:
-            for ts in all_toolsets:
-                ts.hide(ASK_USER_TOOL_NAME)
+            toolset.hide(ASK_USER_TOOL_NAME)
             logger.info(
                 "Hid {tool} tool: client does not support questions",
                 tool=ASK_USER_TOOL_NAME,
@@ -579,20 +571,12 @@ class WireServer:
 
         plan_tool_names = [ENTER_PLAN_MODE_TOOL_NAME, EXIT_PLAN_MODE_TOOL_NAME]
 
-        all_toolsets = [toolset]
-        if isinstance(self._soul, KimiSoul):
-            for subagent in self._soul.agent.runtime.labor_market.fixed_subagents.values():
-                if isinstance(subagent.toolset, KimiToolset):
-                    all_toolsets.append(subagent.toolset)
-
         if self._client_supports_plan_mode:
-            for ts in all_toolsets:
-                for name in plan_tool_names:
-                    ts.unhide(name)
+            for name in plan_tool_names:
+                toolset.unhide(name)
         else:
-            for ts in all_toolsets:
-                for name in plan_tool_names:
-                    ts.hide(name)
+            for name in plan_tool_names:
+                toolset.hide(name)
             logger.info(
                 "Hide plan mode tools: client does not support plan mode",
             )
@@ -672,7 +656,7 @@ class WireServer:
             )
         finally:
             # Clean up any remaining pending requests from this turn.
-            # After run_soul() returns, the soul and all subagents are done,
+            # After run_soul() returns, the soul is done,
             # so any unresolved requests are stale.
             stale_ids = [k for k, v in self._pending_requests.items() if not v.resolved]
             for msg_id in stale_ids:
@@ -959,9 +943,8 @@ class WireServer:
         await self._send_msg(JSONRPCRequestMessage(id=msg_id, params=request))
         # Do NOT await request.wait() here.  The approval future is awaited by
         # the tool that created the request (inside the soul task).  Blocking the
-        # UI loop would prevent ALL subsequent Wire messages — from every
-        # concurrent subagent — from reaching stdout, causing a cascade deadlock
-        # when the approval response is lost (e.g. no WebSocket connected).
+        # UI loop would prevent subsequent Wire messages from reaching stdout,
+        # causing a deadlock when the approval response is lost.
 
     async def _request_external_tool(self, request: ToolCallRequest) -> None:
         msg_id = request.id

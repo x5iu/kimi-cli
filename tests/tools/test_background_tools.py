@@ -132,26 +132,6 @@ async def test_task_output_returns_not_ready_for_running_task(runtime, task_outp
 
 
 @pytest.mark.asyncio
-async def test_background_tools_reject_non_root_runtime(
-    runtime, task_list_tool, task_output_tool, task_stop_tool
-):
-    runtime.role = "fixed_subagent"
-
-    list_result = await task_list_tool(task_list_tool.params(active_only=True, limit=20))
-    output_result = await task_output_tool(
-        task_output_tool.params(task_id="bmissing01", block=False, timeout=0)
-    )
-    stop_result = await task_stop_tool(task_stop_tool.params(task_id="bmissing01"))
-
-    assert list_result.is_error
-    assert output_result.is_error
-    assert stop_result.is_error
-    assert list_result.brief == "Background task unavailable"
-    assert output_result.brief == "Background task unavailable"
-    assert stop_result.brief == "Background task unavailable"
-
-
-@pytest.mark.asyncio
 async def test_task_stop_blocks_in_plan_mode(runtime, task_stop_tool):
     runtime.session.state.plan_mode = True
     result = await task_stop_tool(task_stop_tool.params(task_id="b-noop"))
