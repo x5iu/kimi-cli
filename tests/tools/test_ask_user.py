@@ -176,3 +176,62 @@ async def test_ask_user_no_tool_call(ask_user_tool: AskUserQuestion):
     finally:
         wire.shutdown()
         _current_wire.reset(wire_token)
+
+
+# ---------------------------------------------------------------------------
+# yolo mode tests
+# ---------------------------------------------------------------------------
+
+
+async def test_yolo_no_wire_auto_dismisses(ask_user_tool: AskUserQuestion):
+    """yolo=True + no wire -> auto-dismiss with empty answers."""
+    ask_user_tool.bind_approval(lambda: True)
+
+    # Ensure no wire is set (default ContextVar value is None)
+    wire_token = _current_wire.set(None)
+    try:
+        params = _make_params()
+        result = await ask_user_tool(params)
+
+        assert not result.is_error
+        parsed = json.loads(result.output)
+        assert parsed["answers"] == {}
+        assert "yolo" in result.output.lower() or "non-interactive" in result.output.lower()
+        assert result.message == "Non-interactive mode, auto-dismissed."
+    finally:
+        _current_wire.reset(wire_token)
+
+
+async def test_yolo_with_wire_sends_question(ask_user_tool: AskUserQuestion):
+    """yolo=True + wire present -> NOT auto-dismissed, sends QuestionRequest."""
+    ask_user_tool.bind_approval(lambda: True)
+
+    wire = Wire()
+    wire_token = _current_wire.set(wire)
+    tool_call = ToolCall(
+        id="tc-yolo-wire",
+        function=ToolCall.FunctionBody(name="AskUserQuestion", arguments=None),
+    )
+    tc_token = current_tool_call.set(tool_call)
+
+    try:
+        params = _make_params()
+        tool_task = asyncio.create_task(ask_user_tool(params))
+
+        # The tool should forward the question through the wire
+        ui_side = wire.ui_side(merge=False)
+        msg = await asyncio.wait_for(ui_side.receive(), timeout=2.0)
+        assert isinstance(msg, QuestionRequest)
+        assert msg.tool_call_id == "tc-yolo-wire"
+
+        # Resolve so the task can complete
+        msg.resolve({"Which option?": "Option B"})
+
+        result = await asyncio.wait_for(tool_task, timeout=2.0)
+        assert not result.is_error
+        parsed = json.loads(result.output)
+        assert parsed["answers"] == {"Which option?": "Option B"}
+    finally:
+        wire.shutdown()
+        current_tool_call.reset(tc_token)
+        _current_wire.reset(wire_token)

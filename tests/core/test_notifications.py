@@ -9,8 +9,9 @@ from kosong.message import Message, TextPart
 from kosong.tooling.empty import EmptyToolset
 
 from kimi_cli.background import TaskRuntime, TaskSpec
+from kimi_cli.config import NotificationConfig
 from kimi_cli.llm import LLM
-from kimi_cli.notifications import NotificationEvent
+from kimi_cli.notifications import NotificationEvent, NotificationManager
 from kimi_cli.soul import run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
@@ -169,3 +170,71 @@ async def test_kimisoul_appends_notification_message(runtime: Runtime, tmp_path:
     assert len(notification_texts) == 1
     assert "Task ID: b3333333" in notification_texts[0]
     assert "line 2" in notification_texts[0]
+
+
+# ---------------------------------------------------------------------------
+# has_pending_for_sink tests
+# ---------------------------------------------------------------------------
+
+
+def _make_notification_manager(tmp_path: Path) -> NotificationManager:
+    return NotificationManager(
+        tmp_path / "notifications",
+        NotificationConfig(),
+    )
+
+
+def _make_event(
+    mgr: NotificationManager,
+    *,
+    targets: list[str] | None = None,
+) -> NotificationEvent:
+    return NotificationEvent(
+        id=mgr.new_id(),
+        category="task",
+        type="task.completed",
+        source_kind="test",
+        source_id="src1",
+        title="Test notification",
+        body="body",
+        targets=targets or ["llm", "shell"],
+    )
+
+
+def test_has_pending_no_notifications(tmp_path: Path) -> None:
+    """No notifications at all -> False for any sink."""
+    mgr = _make_notification_manager(tmp_path)
+    assert mgr.has_pending_for_sink("llm") is False
+    assert mgr.has_pending_for_sink("shell") is False
+
+
+def test_has_pending_matching_sink(tmp_path: Path) -> None:
+    """A pending notification targeting 'llm' -> True for 'llm'."""
+    mgr = _make_notification_manager(tmp_path)
+    event = _make_event(mgr, targets=["llm"])
+    mgr.publish(event)
+
+    assert mgr.has_pending_for_sink("llm") is True
+
+
+def test_has_pending_non_matching_sink(tmp_path: Path) -> None:
+    """A pending notification targeting only 'llm' -> False for 'shell'."""
+    mgr = _make_notification_manager(tmp_path)
+    event = _make_event(mgr, targets=["llm"])
+    mgr.publish(event)
+
+    assert mgr.has_pending_for_sink("shell") is False
+
+
+def test_has_pending_after_ack(tmp_path: Path) -> None:
+    """After acknowledging the only notification for a sink -> False."""
+    mgr = _make_notification_manager(tmp_path)
+    event = _make_event(mgr, targets=["llm"])
+    mgr.publish(event)
+
+    # Claim then ack
+    claimed = mgr.claim_for_sink("llm")
+    assert len(claimed) == 1
+    mgr.ack("llm", event.id)
+
+    assert mgr.has_pending_for_sink("llm") is False
