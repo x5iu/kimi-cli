@@ -1343,3 +1343,27 @@ async def test_live_view_cleanup_resolves_current_and_queued_questions() -> None
     assert await request1.wait() == {}
     assert await request2.wait() == {}
     assert view.has_pending_input_request is False
+
+
+def test_live_view_echo_info_appends_to_history_but_not_reminders() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.echo_info("task output here")
+
+    rendered = view.render_ansi(80)
+    assert "Info" in rendered
+    assert "╭" in rendered
+    assert "task output here" in rendered
+
+    # echo_info must NOT add to _reminder_blocks
+    assert view.has_reminders is False
+    assert view.render_reminders_ansi(80) == ""
+
+
+def test_live_view_echo_info_skips_blank_text() -> None:
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    view.echo_info("")
+    view.echo_info("   ")
+
+    assert view.render_ansi(80, include_running_indicators=False).strip() == ""

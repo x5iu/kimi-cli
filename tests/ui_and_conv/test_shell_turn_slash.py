@@ -410,3 +410,191 @@ async def test_run_slash_command_accepts_soul_alias(
     await shell._run_slash_command(command_call)
 
     assert calls == ["/reset"]
+
+
+@pytest.mark.asyncio
+async def test_turn_allowed_command_dispatches_to_shell_registry(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A /task command during a turn should run synchronously and echo output."""
+    soul = KimiSoul(
+        Agent(
+            name="Shell Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+    shell = Shell(soul)
+    monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
+
+    captured_results: list[TurnSubmitResult] = []
+
+    async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
+        result = submit_handler(
+            UserInput(
+                mode=PromptMode.AGENT,
+                command="/task",
+                content=[TextPart(text="/task")],
+            )
+        )
+        captured_results.append(result)
+
+    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+        class _FakeWire:
+            @staticmethod
+            def ui_side(merge: bool = False):
+                return None
+
+        await ui_loop_fn(_FakeWire())
+
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+
+    prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
+    keep_running = await shell._run_interactive_turn(prompt_session, "hello")
+
+    assert keep_running is True
+    assert len(captured_results) == 1
+    assert captured_results[0].accepted is True
+
+
+@pytest.mark.asyncio
+async def test_skill_command_during_turn_queues_and_cancels(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """/skill:xxx during a turn should queue the input and cancel the turn."""
+    soul = KimiSoul(
+        Agent(
+            name="Shell Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+    shell = Shell(soul)
+    monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
+
+    cancel_was_set = False
+    captured_results: list[TurnSubmitResult] = []
+
+    async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
+        result = submit_handler(
+            UserInput(
+                mode=PromptMode.AGENT,
+                command="/skill:kimi-cli-help",
+                content=[TextPart(text="/skill:kimi-cli-help")],
+            )
+        )
+        captured_results.append(result)
+
+    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+        nonlocal cancel_was_set
+
+        class _FakeWire:
+            @staticmethod
+            def ui_side(merge: bool = False):
+                return None
+
+        await ui_loop_fn(_FakeWire())
+        cancel_was_set = cancel_event.is_set()
+        if cancel_event.is_set():
+            from kimi_cli.soul import RunCancelled
+
+            raise RunCancelled()
+
+    # Intercept queued _handle_agent_input to prevent actual execution
+    queued_inputs: list[UserInput] = []
+
+    async def fake_handle(ps, user_input, **kw):
+        queued_inputs.append(user_input)
+        return True
+
+    monkeypatch.setattr(shell, "_handle_agent_input", fake_handle)
+
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+
+    prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
+    keep_running = await shell._run_interactive_turn(prompt_session, "hello")
+
+    assert keep_running is True
+    assert len(captured_results) == 1
+    assert captured_results[0].accepted is True
+    assert cancel_was_set is True
+    assert len(queued_inputs) == 1
+    assert queued_inputs[0].command == "/skill:kimi-cli-help"
+
+
+@pytest.mark.asyncio
+async def test_async_turn_command_is_guarded(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a turn-allowed command returns a coroutine, it should be closed with an error."""
+    soul = KimiSoul(
+        Agent(
+            name="Shell Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+    shell = Shell(soul)
+    monkeypatch.setattr(shell, "_echo_agent_input", lambda _: None)
+
+    # Register a fake async command in shell_mode_registry
+    from kimi_cli.utils.slashcmd import SlashCommand as SC
+
+    async def _async_task(app, args):
+        pass  # pragma: no cover
+
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    original_find = shell_module.shell_mode_registry.find_command
+
+    def patched_find(name):
+        if name == "task":
+            return SC(name="task", description="test", func=_async_task, aliases=[])
+        return original_find(name)
+
+    monkeypatch.setattr(shell_module.shell_mode_registry, "find_command", patched_find)
+
+    captured_results: list[TurnSubmitResult] = []
+    info_texts: list[str] = []
+
+    async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
+        monkeypatch.setattr(
+            live_view, "echo_info", lambda text: info_texts.append(text)
+        )
+        result = submit_handler(
+            UserInput(
+                mode=PromptMode.AGENT,
+                command="/task",
+                content=[TextPart(text="/task")],
+            )
+        )
+        captured_results.append(result)
+
+    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+        class _FakeWire:
+            @staticmethod
+            def ui_side(merge: bool = False):
+                return None
+
+        await ui_loop_fn(_FakeWire())
+
+    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+
+    prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
+    await shell._run_interactive_turn(prompt_session, "hello")
+
+    assert captured_results[0].accepted is True
+    assert any("cannot run during a turn" in t for t in info_texts)

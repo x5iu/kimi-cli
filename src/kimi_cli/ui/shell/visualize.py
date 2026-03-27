@@ -137,6 +137,18 @@ def _render_reminder_block(text: str) -> RenderableType:
     return _render_prompt_block(text, title="Reminder", border_style="cyan")
 
 
+def _render_info_block(text: str) -> RenderableType:
+    return Panel(
+        Text.from_ansi(text, overflow="fold"),
+        box=box.ROUNDED,
+        border_style="grey50",
+        title=Text("Info", style="bold grey50"),
+        title_align="left",
+        padding=(0, 1),
+        expand=False,
+    )
+
+
 def _render_skill_reminder_block(skills: Sequence[str]) -> RenderableType:
     return _render_prompt_block(
         f"Recommended {', '.join(skills)} to the main flow",
@@ -294,6 +306,14 @@ class LiveView:
         reminder = _render_reminder_block(stripped)
         self._reminder_blocks.append(reminder)
         self._append_history_block(reminder)
+
+    def echo_info(self, text: str) -> None:
+        """Echo local-only info (e.g. /task output). Not added to _reminder_blocks."""
+        stripped = text.strip()
+        if not stripped:
+            return
+        self.flush_content()
+        self._append_history_block(_render_info_block(stripped))
 
     def echo_user_choice(self, text: str) -> None:
         stripped = text.strip()

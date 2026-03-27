@@ -27,6 +27,8 @@ from kimi_cli.ui.shell.prompt import (
     UserInput,
 )
 from kimi_cli.ui.shell.replay import replay_recent_history
+from kimi_cli.ui.shell.slash import SKILL_PREFIX as _SKILL_PREFIX
+from kimi_cli.ui.shell.slash import TURN_ALLOWED_COMMANDS as _TURN_ALLOWED_COMMANDS
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.ui.shell.slash import shell_mode_registry
 from kimi_cli.ui.shell.toast import toast
@@ -312,6 +314,39 @@ class Shell:
                 accepted = live_view.try_submit_line(text)
                 return TurnSubmitResult.accept() if accepted else TurnSubmitResult.reject()
             if text in {"exit", "quit"}:
+                queued_input = turn_input
+                cancel_event.set()
+                return TurnSubmitResult.accept()
+            slash_call = parse_slash_command_call(text)
+            if slash_call is not None and slash_call.name in _TURN_ALLOWED_COMMANDS:
+                cmd = shell_mode_registry.find_command(slash_call.name)
+                if cmd is not None:
+                    try:
+                        with console.capture() as capture:
+                            ret = cmd.func(self, slash_call.args)
+                        if isinstance(ret, Awaitable):
+                            ret.close()  # prevent 'coroutine never awaited' warning
+                            logger.error(
+                                "Async command /%s cannot run during a turn",
+                                slash_call.name,
+                            )
+                            live_view.echo_info(
+                                "Error: this command cannot run during a turn"
+                            )
+                            return TurnSubmitResult.accept()
+                        output = capture.get().strip()
+                        if output:
+                            live_view.echo_info(output)
+                    except Exception as e:
+                        logger.exception("Slash command error during turn:")
+                        live_view.echo_info(f"Error: {e}")
+                    return TurnSubmitResult.accept()
+                logger.warning(
+                    "Turn-allowed command /%s not found in shell registry",
+                    slash_call.name,
+                )
+                return TurnSubmitResult.accept()
+            if slash_call is not None and slash_call.name.startswith(_SKILL_PREFIX):
                 queued_input = turn_input
                 cancel_event.set()
                 return TurnSubmitResult.accept()

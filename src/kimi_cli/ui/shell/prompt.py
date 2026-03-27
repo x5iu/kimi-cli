@@ -74,6 +74,8 @@ from kimi_cli.ui.shell.rich_ptk import (
     rich_from_ansi,
     rich_style_to_prompt_toolkit,
 )
+from kimi_cli.ui.shell.slash import SKILL_PREFIX as _skill_prefix
+from kimi_cli.ui.shell.slash import TURN_ALLOWED_COMMANDS as _turn_allowed_commands
 from kimi_cli.ui.shell.toast import current_toast as _current_toast
 from kimi_cli.ui.shell.toast import toast, toast_queues
 from kimi_cli.ui.shell.visualize import (
@@ -376,7 +378,15 @@ class CustomPromptSession:
             ],
             deduplicate=True,
         )
-        self._turn_mode_completer = self._file_mention_completer
+        _turn_slash_commands = [
+            c
+            for c in (*shell_mode_slash_commands, *agent_mode_slash_commands)
+            if c.name in _turn_allowed_commands or c.name.startswith(_skill_prefix)
+        ]
+        self._turn_mode_completer = merge_completers(
+            [SlashCommandCompleter(_turn_slash_commands), self._file_mention_completer],
+            deduplicate=True,
+        )
         self._shell_mode_completer = self._shell_slash_completer
 
         # Build key bindings
@@ -1780,7 +1790,7 @@ class CustomPromptSession:
             _clear_turn_output_reveal()
             self._maybe_start_completion(
                 buffer,
-                allow_slash=False,
+                allow_slash=True,
                 allow_mentions=True,
             )
             app = get_app_or_none()

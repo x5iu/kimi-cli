@@ -32,6 +32,15 @@ Raises:
 registry = SlashCommandRegistry[ShellSlashCmdFunc]()
 shell_mode_registry = SlashCommandRegistry[ShellSlashCmdFunc]()
 
+TURN_ALLOWED_COMMANDS: set[str] = {"task"}
+"""Slash commands allowed during an active turn (sync-only, no pager/side-effects).
+
+Note: ``skill:*`` commands are handled separately via prefix matching and are
+queued for execution after the current turn ends (they are async).
+"""
+
+SKILL_PREFIX = "skill:"
+
 
 def ensure_kimi_soul(app: Shell) -> KimiSoul | None:
     if not isinstance(app.soul, KimiSoul):
