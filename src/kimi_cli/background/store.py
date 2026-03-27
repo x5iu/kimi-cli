@@ -90,6 +90,34 @@ class BackgroundTaskStore:
             task_ids.append(path.name)
         return task_ids
 
+    def count_active_runtimes(self, *, max_count: int | None = None) -> int:
+        """Count tasks with non-terminal runtime status, reading only runtime.json.
+
+        Stops early when *max_count* is reached (useful for limit checks).
+        """
+        from .models import TERMINAL_TASK_STATUSES
+
+        if not self.root.exists():
+            return 0
+        count = 0
+        for path in self.root.iterdir():
+            if not path.is_dir():
+                continue
+            runtime_path = path / self.RUNTIME_FILE
+            if not runtime_path.exists():
+                continue
+            try:
+                runtime = TaskRuntime.model_validate_json(
+                    runtime_path.read_text(encoding="utf-8")
+                )
+            except Exception:
+                continue
+            if runtime.status not in TERMINAL_TASK_STATUSES:
+                count += 1
+                if max_count is not None and count >= max_count:
+                    return count
+        return count
+
     def write_spec(self, spec: TaskSpec) -> None:
         atomic_json_write(spec.model_dump(mode="json"), self.spec_path(spec.id))
 
@@ -192,3 +220,37 @@ class BackgroundTaskStore:
         if len(lines) > max_lines:
             lines = lines[-max_lines:]
         return "\n".join(lines)
+
+    def prune(self, *, max_age_s: float = 7 * 24 * 3600) -> list[str]:
+        """Remove task directories older than *max_age_s* seconds (default 7 days).
+
+        Only terminal tasks are pruned.
+        """
+        import shutil
+        import time
+
+        from .models import TERMINAL_TASK_STATUSES
+
+        if not self.root.exists():
+            return []
+        now = time.time()
+        pruned: list[str] = []
+        for path in list(self.root.iterdir()):
+            if not path.is_dir():
+                continue
+            runtime_path = path / self.RUNTIME_FILE
+            if not runtime_path.exists():
+                continue
+            try:
+                runtime = TaskRuntime.model_validate_json(
+                    runtime_path.read_text(encoding="utf-8")
+                )
+            except Exception:
+                continue
+            if runtime.status not in TERMINAL_TASK_STATUSES:
+                continue
+            finished_at = runtime.finished_at or runtime.updated_at
+            if now - finished_at >= max_age_s:
+                shutil.rmtree(path, ignore_errors=True)
+                pruned.append(path.name)
+        return pruned

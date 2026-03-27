@@ -5,7 +5,7 @@ Note that you are running on Windows, so make sure to use Windows commands, path
 **Output:**
 The stdout and stderr streams are combined and returned as a single string. Extremely long output may be truncated. When a command fails, the exit code is provided in a system tag.
 
-If `run_in_background=true`, the command will be started as a background task and this tool will return a task ID instead of waiting for completion. When doing that, you must provide a short `description`. If a live session notification channel is active, the system can notify you when the task completes; otherwise, rely on `TaskOutput` or a later session to inspect it. Use `TaskStop` only if the task must be cancelled. For human users in the interactive shell, background tasks are managed through `/task` only.
+If `run_in_background=true`, the command will be started as a background task and this tool will return a task ID instead of waiting for completion. When doing that, you must provide a non-empty `description` (the call will fail otherwise). Foreground commands have a maximum timeout of 300 seconds (5 minutes). For longer commands, use `run_in_background=true` which supports timeouts up to 86400 seconds (24 hours). At most 4 background tasks can run concurrently; the call will fail if the limit is reached. If a live session notification channel is active, the system can notify you when the task completes; otherwise, rely on `TaskOutput` or a later session to inspect it. Use `TaskStop` only if the task must be cancelled. For human users in the interactive shell, background tasks are managed through `/task` only.
 
 ${RG_PREFERENCE_GUIDANCE}
 

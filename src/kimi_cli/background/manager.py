@@ -76,9 +76,7 @@ class BackgroundTaskManager:
             raise RuntimeError("Background tasks are only supported on local sessions.")
 
     def _active_task_count(self) -> int:
-        return sum(
-            1 for view in self._store.list_views() if not is_terminal_status(view.runtime.status)
-        )
+        return self._store.count_active_runtimes(max_count=self._config.max_running_tasks)
 
     def _notification_targets(self) -> list[NotificationSink]:
         if self._notification_targets_getter is None:
@@ -96,7 +94,7 @@ class BackgroundTaskManager:
                 "--heartbeat-interval-ms",
                 str(self._config.worker_heartbeat_interval_ms),
                 "--control-poll-interval-ms",
-                str(self._config.wait_poll_interval_ms),
+                str(self._config.worker_control_poll_interval_ms),
                 "--kill-grace-period-ms",
                 str(self._config.kill_grace_period_ms),
             ]
@@ -110,7 +108,7 @@ class BackgroundTaskManager:
             "--heartbeat-interval-ms",
             str(self._config.worker_heartbeat_interval_ms),
             "--control-poll-interval-ms",
-            str(self._config.wait_poll_interval_ms),
+            str(self._config.worker_control_poll_interval_ms),
             "--kill-grace-period-ms",
             str(self._config.kill_grace_period_ms),
         ]
@@ -237,7 +235,7 @@ class BackgroundTaskManager:
     async def wait(self, task_id: str, *, timeout_s: int = 30) -> TaskView:
         end_time = time.monotonic() + timeout_s
         while True:
-            view = self._store.merged_view(task_id)
+            view = await asyncio.to_thread(self._store.merged_view, task_id)
             if is_terminal_status(view.runtime.status):
                 return view
             if time.monotonic() >= end_time:
@@ -348,6 +346,7 @@ class BackgroundTaskManager:
 
     def reconcile(self, *, limit: int | None = None) -> list[str]:
         self.recover()
+        self._store.prune()
         return self.publish_terminal_notifications(limit=limit)
 
     def publish_terminal_notifications(self, *, limit: int | None = None) -> list[str]:
@@ -383,6 +382,11 @@ class BackgroundTaskManager:
                 f"Status: {status}",
                 f"Description: {view.spec.description}",
             ]
+            if view.spec.command:
+                body_lines.append(f"Command: {view.spec.command}")
+            if view.runtime.started_at:
+                end = view.runtime.finished_at or time.time()
+                body_lines.append(f"Duration: {end - view.runtime.started_at:.1f}s")
             if terminal_reason != status:
                 body_lines.append(f"Terminal reason: {terminal_reason}")
             if view.runtime.exit_code is not None:

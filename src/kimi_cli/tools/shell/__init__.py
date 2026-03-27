@@ -216,17 +216,12 @@ class Shell(CallableTool2[Params]):
             "\n".join(
                 [
                     format_task(view, include_command=True),
+                    f"timeout_s: {view.spec.timeout_s}",
                     f"automatic_notification: {str(live_notification).lower()}",
                     notification_line,
-                    (
-                        "next_step: Use TaskOutput with this task_id "
-                        "if you need progress or want to wait."
-                    ),
-                    "next_step: Use TaskStop only if the task must be cancelled.",
-                    (
-                        "human_shell_hint: For users in the interactive shell, "
-                        "the only task-management slash command is /task."
-                    ),
+                    "next_steps:",
+                    "  1. Use TaskOutput(task_id=...) to check progress or block until done.",
+                    "  2. Use TaskStop(task_id=...) only if the task must be cancelled.",
                 ]
             )
         )

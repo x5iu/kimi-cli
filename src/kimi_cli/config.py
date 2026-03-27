@@ -101,8 +101,9 @@ class BackgroundConfig(BaseModel):
     notification_tail_lines: int = Field(default=20, ge=1)
     notification_tail_chars: int = Field(default=3_000, ge=256)
     wait_poll_interval_ms: int = Field(default=500, ge=50)
+    worker_control_poll_interval_ms: int = Field(default=2_000, ge=100)
     worker_heartbeat_interval_ms: int = Field(default=5_000, ge=100)
-    worker_stale_after_ms: int = Field(default=15_000, ge=1000)
+    worker_stale_after_ms: int = Field(default=30_000, ge=1000)
     kill_grace_period_ms: int = Field(default=2_000, ge=100)
     keep_alive_on_exit: bool = Field(
         default=True,

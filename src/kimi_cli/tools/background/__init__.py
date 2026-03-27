@@ -37,6 +37,7 @@ def _format_task_output(
     output_size_bytes: int,
     output_preview_bytes: int,
     output_truncated: bool,
+    offset: int | None = None,
 ) -> str:
     terminal_reason = "timed_out" if view.runtime.timed_out else view.runtime.status
     output_path_str = str(output_path.resolve())
@@ -60,6 +61,10 @@ def _format_task_output(
         lines.append(f"exit_code: {view.runtime.exit_code}")
     if view.runtime.failure_reason:
         lines.append(f"reason: {view.runtime.failure_reason}")
+    if view.runtime.started_at:
+        end = view.runtime.finished_at or time.time()
+        elapsed = end - view.runtime.started_at
+        lines.append(f"elapsed_s: {elapsed:.1f}")
     full_output_hint = (
         (
             "full_output_hint: "
@@ -85,7 +90,10 @@ def _format_task_output(
     )
     rendered_output = output or "[no output available]"
     if output_truncated:
-        rendered_output = f"[Truncated. Full output: {output_path_str}]\n\n{rendered_output}"
+        if offset is not None:
+            rendered_output = f"[Truncated — showing {output_preview_bytes} bytes from offset {offset}. Full output: {output_path_str}]\n\n{rendered_output}"
+        else:
+            rendered_output = f"[Truncated — showing last ~{output_preview_bytes // 1024} KiB. Full output: {output_path_str}]\n\n{rendered_output}"
     return "\n".join(
         lines
         + [
@@ -107,6 +115,15 @@ class TaskOutputParams(BaseModel):
         ge=0,
         le=3600,
         description="Maximum number of seconds to wait when block=true.",
+    )
+    offset: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Byte offset to start reading output from. "
+            "If not set, reads the last ~32 KiB (tail). "
+            "Set to 0 to read from the beginning."
+        ),
     )
 
 
@@ -174,7 +191,7 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         self._runtime = runtime
 
     def _render_output_preview(
-        self, task_id: str, *, status: TaskStatus
+        self, task_id: str, *, status: TaskStatus, offset: int | None = None
     ) -> tuple[str, bool, int, int, bool, Path]:
         output_path = self._runtime.background_tasks.store.output_path(task_id)
         output_available = output_path.exists()
@@ -182,7 +199,10 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
             output_size = output_path.stat().st_size
         except OSError:
             output_size = 0
-        preview_offset = max(0, output_size - TASK_OUTPUT_PREVIEW_BYTES)
+        if offset is not None:
+            preview_offset = min(offset, output_size)
+        else:
+            preview_offset = max(0, output_size - TASK_OUTPUT_PREVIEW_BYTES)
         chunk = self._runtime.background_tasks.store.read_output(
             task_id,
             preview_offset,
@@ -234,6 +254,7 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         ) = self._render_output_preview(
             params.task_id,
             status=view.runtime.status,
+            offset=params.offset,
         )
         consumer = view.consumer.model_copy(
             update={
@@ -254,6 +275,7 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
                 output_size_bytes=output_size,
                 output_preview_bytes=output_preview_bytes,
                 output_truncated=output_truncated,
+                offset=params.offset,
             ),
             message="Task output retrieved.",
             display=[_task_display(self._runtime, params.task_id)],

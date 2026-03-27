@@ -104,6 +104,15 @@ async def run_background_task_worker(
     control_task: asyncio.Task[None] | None = None
     heartbeat_task: asyncio.Task[None] | None = None
     stop_event = asyncio.Event()
+
+    # Register SIGTERM handler to initiate graceful shutdown
+    def _sigterm_handler(signum: int, frame: object) -> None:
+        stop_event.set()
+
+    original_sigterm = signal.getsignal(signal.SIGTERM)
+    if os.name != "nt":
+        signal.signal(signal.SIGTERM, _sigterm_handler)
+
     kill_sent_at: float | None = None
     timed_out = False
     timeout_reason: str | None = None
@@ -112,12 +121,17 @@ async def run_background_task_worker(
     async def _heartbeat_loop() -> None:
         while not stop_event.is_set():
             await asyncio.sleep(heartbeat_interval_ms / 1000)
-            current = store.read_runtime(task_id)
-            if current.finished_at is not None:
+            if stop_event.is_set():
                 return
-            current.heartbeat_at = time.time()
-            current.updated_at = current.heartbeat_at
-            store.write_runtime(task_id, current)
+            try:
+                current = await asyncio.to_thread(store.read_runtime, task_id)
+                if current.finished_at is not None:
+                    return
+                current.heartbeat_at = time.time()
+                current.updated_at = current.heartbeat_at
+                await asyncio.to_thread(store.write_runtime, task_id, current)
+            except Exception:
+                logger.exception("Heartbeat write failed")
 
     async def _terminate_process(force: bool = False) -> None:
         nonlocal kill_sent_at
@@ -142,7 +156,9 @@ async def run_background_task_worker(
         nonlocal kill_sent_at
         while not stop_event.is_set():
             await asyncio.sleep(control_poll_interval_ms / 1000)
-            current_control: TaskControl = store.read_control(task_id)
+            if stop_event.is_set():
+                return
+            current_control = await asyncio.to_thread(store.read_control, task_id)
             if current_control.kill_requested_at is not None:
                 await _terminate_process(force=current_control.force)
                 if (
@@ -215,6 +231,8 @@ async def run_background_task_worker(
         return
     finally:
         stop_event.set()
+        if os.name != "nt":
+            signal.signal(signal.SIGTERM, original_sigterm)
         for task in (heartbeat_task, control_task):
             if task is not None:
                 task.cancel()

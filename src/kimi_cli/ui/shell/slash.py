@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 
 from kimi_cli.auth.platforms import get_platform_name_for_provider, refresh_managed_models
-from kimi_cli.background import format_task_list, list_task_views
+from kimi_cli.background import format_task, format_task_list, list_task_views
 from kimi_cli.cli import Reload
 from kimi_cli.config import load_config, save_config
 from kimi_cli.exception import ConfigError
@@ -476,15 +476,27 @@ async def list_sessions(app: Shell, args: str):
 @registry.command(name="task")
 @shell_mode_registry.command(name="task")
 def task(app: Shell, args: str):
-    """List background tasks"""
+    """List or inspect background tasks (usage: /task [all|<task_id>])"""
     soul = ensure_kimi_soul(app)
     if soul is None:
         return
-    if args.strip():
-        console.print('[yellow]Usage: "/task" lists background tasks for this session.[/yellow]')
-        return
-    active = list_task_views(soul.runtime.background_tasks, active_only=True, limit=20)
-    console.print(format_task_list(active, active_only=True), markup=False)
+    arg = args.strip()
+    if arg == "all":
+        views = list_task_views(soul.runtime.background_tasks, active_only=False, limit=50)
+        console.print(format_task_list(views, active_only=False), markup=False)
+    elif arg:
+        view = soul.runtime.background_tasks.get_task(arg)
+        if view is None:
+            console.print(f"[red]Task not found: {arg}[/red]")
+            return
+        console.print(format_task(view, include_command=True), markup=False)
+        tail = soul.runtime.background_tasks.tail_output(arg)
+        if tail:
+            console.print("\n[bold]Output tail:[/bold]")
+            console.print(tail, markup=False)
+    else:
+        active = list_task_views(soul.runtime.background_tasks, active_only=True, limit=20)
+        console.print(format_task_list(active, active_only=True), markup=False)
 
 
 @registry.command

@@ -51,9 +51,9 @@ async def test_shell_background_starts_task_without_live_notifications(
     assert "task_id:" in result.output
     assert "status: starting" in result.output
     assert "automatic_notification: false" in result.output
-    assert "human_shell_hint:" in result.output
-    assert "the only task-management slash command is /task" in result.output
-    assert "/task list" not in result.output
+    assert "timeout_s:" in result.output
+    assert "next_steps:" in result.output
+    assert "TaskOutput" in result.output
 
 
 @pytest.mark.asyncio

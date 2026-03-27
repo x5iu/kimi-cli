@@ -44,7 +44,12 @@ def _notification_text_lines(view: NotificationView, runtime: Runtime) -> list[s
             if task_view.runtime.failure_reason:
                 lines.append(f"Failure reason: {task_view.runtime.failure_reason}")
             if tail:
-                lines.extend(["Output tail:", tail])
+                lines.extend(["Output tail:", f"<output>", tail, "</output>"])
+            output_path = runtime.background_tasks.store.output_path(task_view.spec.id)
+            lines.append(
+                f"Full output: Use TaskOutput(task_id=\"{task_view.spec.id}\") "
+                f"or ReadFile(path=\"{output_path}\") for the complete log."
+            )
             lines.append("</task-notification>")
     return lines
 
@@ -62,6 +67,11 @@ def render_notification_text(view: NotificationView, runtime: Runtime) -> str:
             )
             if tail:
                 lines.extend(["Output tail:", tail])
+            output_path = runtime.background_tasks.store.output_path(task_view.spec.id)
+            lines.append(
+                f"Full output: Use TaskOutput(task_id=\"{task_view.spec.id}\") "
+                f"or ReadFile(path=\"{output_path}\") for the complete log."
+            )
     return "\n".join(lines)
 
 

@@ -3,7 +3,7 @@ Execute a ${SHELL} command. Use this tool to explore the filesystem, edit files,
 **Output:**
 The stdout and stderr will be combined and returned as a string. The output may be truncated if it is too long. If the command failed, the exit code will be provided in a system tag.
 
-If `run_in_background=true`, the command will be started as a background task and this tool will return a task ID instead of waiting for command completion. When doing that, you must provide a short `description`. If a live session notification channel is active, the system can notify you when the task completes; otherwise, rely on `TaskOutput` or a later session to inspect it. Use `TaskStop` only if the task must be cancelled. For human users in the interactive shell, background tasks are managed through `/task` only.
+If `run_in_background=true`, the command will be started as a background task and this tool will return a task ID instead of waiting for command completion. When doing that, you must provide a non-empty `description` (the call will fail otherwise). Foreground commands have a maximum timeout of 300 seconds (5 minutes). For longer commands, use `run_in_background=true` which supports timeouts up to 86400 seconds (24 hours). At most 4 background tasks can run concurrently; the call will fail if the limit is reached. If a live session notification channel is active, the system can notify you when the task completes; otherwise, rely on `TaskOutput` or a later session to inspect it. Use `TaskStop` only if the task must be cancelled. For human users in the interactive shell, background tasks are managed through `/task` only.
 
 ${RG_PREFERENCE_GUIDANCE}
 
