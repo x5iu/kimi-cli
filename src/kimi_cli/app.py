@@ -119,7 +119,7 @@ class KimiCLI:
         # background tasks and subagents all inherit them.
         for key, value in config.env.items():
             existing = os.environ.get(key)
-            if existing is not None:
+            if existing:
                 logger.warning("env var {} already set, skipping config override", key)
             else:
                 os.environ[key] = value
