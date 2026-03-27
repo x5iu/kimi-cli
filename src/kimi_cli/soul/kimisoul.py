@@ -945,6 +945,20 @@ class KimiSoul:
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider.with_thinking("off")
 
+        effective_history: list[Message] = []
+        if self._runtime.agents_md:
+            effective_history.append(
+                internal_user_message(
+                    system(
+                        "The following AGENTS.md instructions are system-level directives "
+                        "that provide project context, conventions, and user preferences. "
+                        "Consider them when recommending skills.\n\n"
+                        f"{self._runtime.agents_md}"
+                    )
+                )
+            )
+        effective_history.extend(history)
+
         async def _run_once():
             return await kosong.generate(
                 chat_provider=chat_provider,
@@ -952,7 +966,7 @@ class KimiSoul:
                     f"{SKILL_RECOMMENDER_PROMPT}{self._format_available_skills_for_recommender()}\n"
                 ),
                 tools=[],
-                history=history,
+                history=effective_history,
             )
 
         try:

@@ -182,6 +182,7 @@ def runtime(
         skills={},
         oauth=OAuthManager(config),
         additional_dirs=[],
+        agents_md="",
     )
     return rt
 

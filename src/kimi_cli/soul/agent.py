@@ -122,6 +122,7 @@ class Runtime:
     background_tasks: BackgroundTaskManager
     skills: dict[str, Skill]
     additional_dirs: list[KaosPath]
+    agents_md: str
     background_notification_targets: tuple[NotificationSink, ...] = ("llm",)
 
     def __post_init__(self) -> None:
@@ -257,6 +258,7 @@ class Runtime:
             ),
             skills=skills_by_name,
             additional_dirs=additional_dirs,
+            agents_md=agents_md or "",
         )
 
 
