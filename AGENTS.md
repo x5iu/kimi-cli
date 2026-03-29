@@ -99,7 +99,8 @@ shell UI, print/wire execution modes, and MCP tool loading.
 - `src/kimi_cli/agents/`: built-in agent YAML specs and prompts (no subagent specs)
 - `src/kimi_cli/prompts/`: shared prompt templates
 - `src/kimi_cli/soul/`: core runtime/loop, context, compaction, compaction archives, approvals
-- `src/kimi_cli/background/`: background bash task models, store, manager, worker
+- `src/kimi_cli/background/`: background bash task models, store (with sidecar ``LineIndex``
+  for O(1)-seek line-oriented output reading), manager, worker
 - `src/kimi_cli/notifications/`: notification persistence, delivery, and shell/LLM adapters
 - `src/kimi_cli/tools/`: built-in tools, including compacted-context recall and background task
   tools (no built-in subagent/Task tool — use `kimi-code-worker` skill instead)

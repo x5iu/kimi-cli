@@ -41,8 +41,7 @@ def test_default_config_dump():
             "background": {
                 "max_running_tasks": 4,
                 "read_max_bytes": 30000,
-                "notification_tail_lines": 20,
-                "notification_tail_chars": 3000,
+                "notification_tail_bytes": 3000,
                 "wait_poll_interval_ms": 500,
                 "worker_control_poll_interval_ms": 2000,
                 "worker_heartbeat_interval_ms": 5000,

@@ -19,7 +19,6 @@ from kimi_cli.utils.logging import logger
 
 from .ids import generate_task_id
 from .models import (
-    TaskOutputChunk,
     TaskRuntime,
     TaskSpec,
     TaskStatus,
@@ -203,34 +202,25 @@ class BackgroundTaskManager:
         except (FileNotFoundError, ValueError):
             return None
 
-    def read_output(
-        self,
-        task_id: str,
-        *,
-        offset: int = 0,
-        max_bytes: int | None = None,
-    ) -> TaskOutputChunk:
-        view = self._store.merged_view(task_id)
-        return self._store.read_output(
-            task_id,
-            offset,
-            max_bytes or self._config.read_max_bytes,
-            status=view.runtime.status,
-        )
-
     def tail_output(
         self,
         task_id: str,
         *,
         max_bytes: int | None = None,
-        max_lines: int | None = None,
     ) -> str:
-        self._store.merged_view(task_id)
-        return self._store.tail_output(
+        view = self._store.merged_view(task_id)
+        chunk = self._store.read_output_lines(
             task_id,
-            max_bytes=max_bytes or self._config.read_max_bytes,
-            max_lines=max_lines or self._config.notification_tail_lines,
+            None,  # tail mode
+            max_bytes or self._config.read_max_bytes,
+            status=view.runtime.status,
         )
+        if chunk.line_too_large:
+            return (
+                f"[Line too large — use TaskOutput(task_id=\"{task_id}\") "
+                f'or ReadFile(path="{chunk.output_path}") to inspect the output.]'
+            )
+        return chunk.text
 
     async def wait(self, task_id: str, *, timeout_s: int = 30) -> TaskView:
         end_time = time.monotonic() + timeout_s

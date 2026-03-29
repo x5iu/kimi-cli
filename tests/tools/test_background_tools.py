@@ -5,6 +5,7 @@ import time
 import pytest
 
 from kimi_cli.background import TaskRuntime, TaskSpec, TaskStatus
+from kimi_cli.tools.background import TASK_OUTPUT_PREVIEW_BYTES
 from kimi_cli.tools.shell import Params
 
 
@@ -100,8 +101,154 @@ async def test_task_output_returns_completed_output(runtime, task_output_tool):
     assert "status: completed" in result.output
     assert f"output_path: {output_path}" in result.output
     assert "output_truncated: false" in result.output
+    assert "output_has_before: false" in result.output
+    assert "output_has_after: false" in result.output
+    assert "output_preview_start_line: 0" in result.output
+    assert "output_preview_end_line: 2" in result.output
     assert "full_output_tool: ReadFile" in result.output
     assert "build line 1" in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_returns_completed_output_with_line_offset(runtime, task_output_tool):
+    lines = [f"line {i}\n" for i in range(10)]
+    spec = _write_task(
+        runtime,
+        "b5555556",
+        status="completed",
+        output="".join(lines),
+    )
+
+    result = await task_output_tool(
+        task_output_tool.params(task_id=spec.id, block=True, timeout=1, offset=5)
+    )
+
+    assert not result.is_error
+    assert "output_has_before: true" in result.output
+    assert "output_has_after: false" in result.output
+    assert "output_preview_start_line: 5" in result.output
+    assert "output_preview_end_line: 10" in result.output
+    assert "line 5" in result.output
+    assert "line 9" in result.output
+    assert "line 4" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_truncates_many_lines(runtime, task_output_tool):
+    # Create output that exceeds 32 KiB
+    big_line = "x" * 200 + "\n"
+    line_count = (TASK_OUTPUT_PREVIEW_BYTES // len(big_line.encode("utf-8"))) + 50
+    spec = _write_task(
+        runtime,
+        "b5555557",
+        status="completed",
+        output=big_line * line_count,
+    )
+
+    result = await task_output_tool(
+        task_output_tool.params(task_id=spec.id, block=True, timeout=1)
+    )
+
+    assert not result.is_error
+    assert "output_truncated: true" in result.output
+    assert "output_has_before: true" in result.output
+    assert "output_has_after: false" in result.output
+    assert "[Truncated" in result.output
+    # Wording should use inclusive range and line count, not half-open end
+    import re
+    m = re.search(r"\[Truncated — showing (\d+) lines \((\d+)–(\d+)\)", result.output)
+    assert m, f"truncated message wording not found in output: {result.output[:500]}"
+    n_lines = int(m.group(1))
+    first = int(m.group(2))
+    last = int(m.group(3))
+    assert n_lines == last - first + 1, "line count should equal inclusive range size"
+
+
+@pytest.mark.asyncio
+async def test_task_output_line_too_large(runtime, task_output_tool):
+    # Single line exceeding 32 KiB
+    huge_line = "x" * (TASK_OUTPUT_PREVIEW_BYTES + 100) + "\n"
+    spec = _write_task(
+        runtime,
+        "b5555558",
+        status="completed",
+        output=huge_line,
+    )
+
+    result = await task_output_tool(
+        task_output_tool.params(task_id=spec.id, block=True, timeout=1, offset=0)
+    )
+
+    output_path = runtime.background_tasks.store.output_path(spec.id).resolve()
+    assert not result.is_error
+    assert "Line too large" in result.output
+    assert "ReadFile" in result.output
+    assert str(output_path) in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_line_too_large_tail_mode(runtime, task_output_tool):
+    """Overlong single-line triggers line_too_large in tail mode (offset=None)."""
+    huge_line = "y" * (TASK_OUTPUT_PREVIEW_BYTES + 100) + "\n"
+    spec = _write_task(
+        runtime,
+        "b555555a",
+        status="completed",
+        output=huge_line,
+    )
+
+    # Default offset=None → tail mode
+    result = await task_output_tool(
+        task_output_tool.params(task_id=spec.id, block=True, timeout=1)
+    )
+
+    output_path = runtime.background_tasks.store.output_path(spec.id).resolve()
+    assert not result.is_error
+    assert "Line too large" in result.output
+    assert "ReadFile" in result.output
+    assert str(output_path) in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_empty_output(runtime, task_output_tool):
+    """Empty output file returns no lines and no output placeholder."""
+    spec = _write_task(
+        runtime,
+        "b555555b",
+        status="completed",
+        output="",
+    )
+
+    result = await task_output_tool(
+        task_output_tool.params(task_id=spec.id, block=True, timeout=1, offset=0)
+    )
+
+    assert not result.is_error
+    assert "output_has_before: false" in result.output
+    assert "output_has_after: false" in result.output
+    assert "[no output available]" in result.output
+
+
+@pytest.mark.asyncio
+async def test_task_output_offset_past_end(runtime, task_output_tool):
+    """Offset beyond the last line returns an empty preview without error."""
+    spec = _write_task(
+        runtime,
+        "b555555c",
+        status="completed",
+        output="only line\n",
+    )
+
+    result = await task_output_tool(
+        task_output_tool.params(task_id=spec.id, block=True, timeout=1, offset=999)
+    )
+
+    assert not result.is_error
+    assert "output_has_before: true" in result.output
+    assert "output_has_after: false" in result.output
+    assert "output_preview_start_line: 1" in result.output
+    assert "output_preview_end_line: 1" in result.output
+    assert "[no output available]" in result.output
 
 
 @pytest.mark.asyncio

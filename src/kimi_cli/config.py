@@ -98,8 +98,7 @@ class BackgroundConfig(BaseModel):
 
     max_running_tasks: int = Field(default=4, ge=1)
     read_max_bytes: int = Field(default=30_000, ge=1024)
-    notification_tail_lines: int = Field(default=20, ge=1)
-    notification_tail_chars: int = Field(default=3_000, ge=256)
+    notification_tail_bytes: int = Field(default=3_000, ge=256)
     wait_poll_interval_ms: int = Field(default=500, ge=50)
     worker_control_poll_interval_ms: int = Field(default=2_000, ge=100)
     worker_heartbeat_interval_ms: int = Field(default=5_000, ge=100)

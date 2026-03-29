@@ -12,6 +12,8 @@ from kimi_cli.background import TaskRuntime, TaskSpec
 from kimi_cli.config import NotificationConfig
 from kimi_cli.llm import LLM
 from kimi_cli.notifications import NotificationEvent, NotificationManager
+from kimi_cli.notifications.llm import build_notification_message, render_notification_text
+from kimi_cli.notifications.models import NotificationDelivery, NotificationView
 from kimi_cli.soul import run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
@@ -237,3 +239,121 @@ def test_has_pending_after_ack(tmp_path: Path) -> None:
     mgr.ack("llm", event.id)
 
     assert mgr.has_pending_for_sink("llm") is False
+
+
+# ---------------------------------------------------------------------------
+# Notification text rendering – line-bounded output tests
+# ---------------------------------------------------------------------------
+
+
+def _make_task_notification_view(
+    runtime: Runtime, task_id: str, *, output: str
+) -> NotificationView:
+    """Write a completed task and return a NotificationView for it."""
+    spec = TaskSpec(
+        id=task_id,
+        kind="bash",
+        session_id=runtime.session.id,
+        description="background build",
+        tool_call_id="tool-notif",
+        command="make build",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+    runtime.background_tasks.store.create_task(spec)
+    runtime.background_tasks.store.output_path(spec.id).write_text(output, encoding="utf-8")
+    runtime.background_tasks.store.write_runtime(
+        spec.id,
+        TaskRuntime(
+            status="completed",
+            exit_code=0,
+            finished_at=time.time(),
+            updated_at=time.time(),
+        ),
+    )
+    event = NotificationEvent(
+        id=runtime.notifications.new_id(),
+        category="task",
+        type="task.completed",
+        source_kind="background_task",
+        source_id=task_id,
+        title="Background task completed",
+        body=f"Task {task_id} completed.",
+        severity="success",
+    )
+    return NotificationView(event=event, delivery=NotificationDelivery())
+
+
+def test_notification_text_includes_whole_line_tail(runtime: Runtime) -> None:
+    """Normal multi-line output: tail lines are included as whole lines."""
+    nv = _make_task_notification_view(
+        runtime, "bnotif001", output="line one\nline two\nline three\n"
+    )
+    msg = build_notification_message(nv, runtime)
+    text = msg.extract_text("\n")
+    assert "line one" in text
+    assert "line three" in text
+    assert "<output>" in text
+    assert "</output>" in text
+    assert "Line too large" not in text
+
+
+def test_notification_text_overlong_line_emits_hint(runtime: Runtime) -> None:
+    """A single overlong line emits a hint instead of raw content."""
+    huge = "x" * (runtime.config.background.notification_tail_bytes + 100) + "\n"
+    nv = _make_task_notification_view(runtime, "bnotif002", output=huge)
+    msg = build_notification_message(nv, runtime)
+    text = msg.extract_text("\n")
+    assert "Line too large" in text
+    assert "TaskOutput" in text
+    assert "ReadFile" in text
+    # The huge payload must NOT appear in the notification text
+    assert huge.strip() not in text
+
+
+def test_notification_text_empty_output(runtime: Runtime) -> None:
+    """Empty output produces no <output> block and no 'Line too large' hint."""
+    nv = _make_task_notification_view(runtime, "bnotif003", output="")
+    msg = build_notification_message(nv, runtime)
+    text = msg.extract_text("\n")
+    assert "<output>" not in text
+    assert "Line too large" not in text
+    assert "Full output:" in text
+
+
+def test_render_notification_text_includes_tail(runtime: Runtime) -> None:
+    """render_notification_text includes bounded whole-line tail."""
+    nv = _make_task_notification_view(
+        runtime, "bnotif004", output="alpha\nbeta\n"
+    )
+    text = render_notification_text(nv, runtime)
+    assert "alpha" in text
+    assert "beta" in text
+    assert "Full output:" in text
+
+
+def test_render_notification_text_overlong_line(runtime: Runtime) -> None:
+    """render_notification_text emits hint for overlong lines."""
+    huge = "y" * (runtime.config.background.notification_tail_bytes + 100) + "\n"
+    nv = _make_task_notification_view(runtime, "bnotif005", output=huge)
+    text = render_notification_text(nv, runtime)
+    assert "Line too large" in text
+    assert huge.strip() not in text
+
+
+def test_notification_tail_respects_byte_budget(runtime: Runtime) -> None:
+    """Output exceeding the byte budget is truncated to whole lines."""
+    # Each line is ~50 bytes; with default budget of 3000 chars we fit ~60 lines
+    line = "a" * 49 + "\n"
+    line_count = 200  # 200 * 50 = 10,000 bytes > 3,000
+    nv = _make_task_notification_view(
+        runtime, "bnotif006", output=line * line_count
+    )
+    msg = build_notification_message(nv, runtime)
+    text = msg.extract_text("\n")
+    # The full 200-line payload must not be in the text
+    assert text.count("a" * 49) < line_count
+    # But some lines should be present
+    assert "a" * 49 in text

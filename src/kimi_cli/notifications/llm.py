@@ -25,10 +25,11 @@ def _notification_text_lines(view: NotificationView, runtime: Runtime) -> list[s
     if event.category == "task" and event.source_kind == "background_task":
         task_view = runtime.background_tasks.get_task(event.source_id)
         if task_view is not None:
-            tail = runtime.background_tasks.store.tail_output(
+            chunk = runtime.background_tasks.store.read_output_lines(
                 task_view.spec.id,
-                max_bytes=runtime.config.background.notification_tail_chars,
-                max_lines=runtime.config.background.notification_tail_lines,
+                None,  # tail mode
+                runtime.config.background.notification_tail_bytes,
+                status=task_view.runtime.status,
             )
             lines.extend(
                 [
@@ -43,12 +44,16 @@ def _notification_text_lines(view: NotificationView, runtime: Runtime) -> list[s
                 lines.append(f"Exit code: {task_view.runtime.exit_code}")
             if task_view.runtime.failure_reason:
                 lines.append(f"Failure reason: {task_view.runtime.failure_reason}")
-            if tail:
-                lines.extend(["Output tail:", f"<output>", tail, "</output>"])
-            output_path = runtime.background_tasks.store.output_path(task_view.spec.id)
+            if chunk.line_too_large:
+                lines.append(
+                    f"Output: [Line too large — use TaskOutput(task_id=\"{task_view.spec.id}\") "
+                    f'or ReadFile(path="{chunk.output_path}") to inspect the output.]'
+                )
+            elif chunk.text:
+                lines.extend(["Output tail:", "<output>", chunk.text, "</output>"])
             lines.append(
                 f"Full output: Use TaskOutput(task_id=\"{task_view.spec.id}\") "
-                f"or ReadFile(path=\"{output_path}\") for the complete log."
+                f'or ReadFile(path="{chunk.output_path}") for the complete log.'
             )
             lines.append("</task-notification>")
     return lines
@@ -60,17 +65,21 @@ def render_notification_text(view: NotificationView, runtime: Runtime) -> str:
     if event.category == "task" and event.source_kind == "background_task":
         task_view = runtime.background_tasks.get_task(event.source_id)
         if task_view is not None:
-            tail = runtime.background_tasks.store.tail_output(
+            chunk = runtime.background_tasks.store.read_output_lines(
                 task_view.spec.id,
-                max_bytes=runtime.config.background.notification_tail_chars,
-                max_lines=runtime.config.background.notification_tail_lines,
+                None,  # tail mode
+                runtime.config.background.notification_tail_bytes,
+                status=task_view.runtime.status,
             )
-            if tail:
-                lines.extend(["Output tail:", tail])
-            output_path = runtime.background_tasks.store.output_path(task_view.spec.id)
+            if chunk.line_too_large:
+                lines.append(
+                    "Output: [Line too large — use TaskOutput or ReadFile to inspect.]"
+                )
+            elif chunk.text:
+                lines.extend(["Output tail:", chunk.text])
             lines.append(
                 f"Full output: Use TaskOutput(task_id=\"{task_view.spec.id}\") "
-                f"or ReadFile(path=\"{output_path}\") for the complete log."
+                f'or ReadFile(path="{chunk.output_path}") for the complete log.'
             )
     return "\n".join(lines)
 

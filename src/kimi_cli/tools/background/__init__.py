@@ -5,7 +5,7 @@ from typing import override
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
-from kimi_cli.background import TaskStatus, TaskView, format_task, format_task_list, list_task_views
+from kimi_cli.background import TaskOutputLineChunk, TaskStatus, TaskView, format_task, format_task_list, list_task_views
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
@@ -31,16 +31,10 @@ def _format_task_output(
     view: TaskView,
     *,
     retrieval_status: str,
-    output: str,
-    output_path: Path,
+    chunk: TaskOutputLineChunk,
     full_output_available: bool,
-    output_size_bytes: int,
-    output_preview_bytes: int,
-    output_truncated: bool,
-    offset: int | None = None,
 ) -> str:
     terminal_reason = "timed_out" if view.runtime.timed_out else view.runtime.status
-    output_path_str = str(output_path.resolve())
     lines = [
         f"retrieval_status: {retrieval_status}",
         f"task_id: {view.spec.id}",
@@ -68,32 +62,52 @@ def _format_task_output(
     full_output_hint = (
         (
             "full_output_hint: "
-            f'Use ReadFile(path="{output_path_str}", line_offset=1, '
+            f'Use ReadFile(path="{chunk.output_path}", line_offset=1, '
             f"n_lines={TASK_OUTPUT_READ_HINT_LINES}) to inspect the full log. "
             "Increase line_offset to continue paging through the file."
         )
         if full_output_available
         else "full_output_hint: No output file is currently available for this task."
     )
+    output_truncated = chunk.has_before or chunk.has_after
     lines.extend(
         [
             "",
-            f"output_path: {output_path_str}",
-            f"output_size_bytes: {output_size_bytes}",
-            f"output_preview_bytes: {output_preview_bytes}",
+            f"output_path: {chunk.output_path}",
+            f"output_preview_start_line: {chunk.start_line}",
+            f"output_preview_end_line: {chunk.end_line}",
+            f"output_has_before: {str(chunk.has_before).lower()}",
+            f"output_has_after: {str(chunk.has_after).lower()}",
             f"output_truncated: {str(output_truncated).lower()}",
+        ]
+    )
+    if chunk.next_offset is not None:
+        lines.append(f"output_next_offset: {chunk.next_offset}")
+    lines.extend(
+        [
             "",
             f"full_output_available: {str(full_output_available).lower()}",
             "full_output_tool: ReadFile",
             full_output_hint,
         ]
     )
-    rendered_output = output or "[no output available]"
-    if output_truncated:
-        if offset is not None:
-            rendered_output = f"[Truncated — showing {output_preview_bytes} bytes from offset {offset}. Full output: {output_path_str}]\n\n{rendered_output}"
-        else:
-            rendered_output = f"[Truncated — showing last ~{output_preview_bytes // 1024} KiB. Full output: {output_path_str}]\n\n{rendered_output}"
+    if chunk.line_too_large:
+        rendered_output = (
+            f"[Line too large — line {chunk.start_line} exceeds the "
+            f"{TASK_OUTPUT_PREVIEW_BYTES // 1024} KiB preview limit. "
+            f'Use ReadFile(path="{chunk.output_path}") to inspect the output file directly.]'
+        )
+    elif not chunk.text:
+        rendered_output = "[no output available]"
+    elif output_truncated:
+        n_lines = chunk.end_line - chunk.start_line
+        last_line = chunk.end_line - 1
+        rendered_output = (
+            f"[Truncated — showing {n_lines} lines ({chunk.start_line}–{last_line})"
+            f". Full output: {chunk.output_path}]\n\n{chunk.text}"
+        )
+    else:
+        rendered_output = chunk.text
     return "\n".join(
         lines
         + [
@@ -120,8 +134,8 @@ class TaskOutputParams(BaseModel):
         default=None,
         ge=0,
         description=(
-            "Byte offset to start reading output from. "
-            "If not set, reads the last ~32 KiB (tail). "
+            "Line offset (0-based) to start reading output from. "
+            "If not set, reads the last lines that fit within ~32 KiB (tail). "
             "Set to 0 to read from the beginning."
         ),
     )
@@ -192,34 +206,16 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
 
     def _render_output_preview(
         self, task_id: str, *, status: TaskStatus, offset: int | None = None
-    ) -> tuple[str, bool, int, int, bool, Path]:
+    ) -> tuple[TaskOutputLineChunk, bool]:
         output_path = self._runtime.background_tasks.store.output_path(task_id)
         output_available = output_path.exists()
-        try:
-            output_size = output_path.stat().st_size
-        except OSError:
-            output_size = 0
-        if offset is not None:
-            preview_offset = min(offset, output_size)
-        else:
-            preview_offset = max(0, output_size - TASK_OUTPUT_PREVIEW_BYTES)
-        chunk = self._runtime.background_tasks.store.read_output(
+        chunk = self._runtime.background_tasks.store.read_output_lines(
             task_id,
-            preview_offset,
+            offset,
             TASK_OUTPUT_PREVIEW_BYTES,
             status=status,
         )
-        preview_bytes = chunk.next_offset - chunk.offset
-        preview_text = chunk.text.rstrip("\n")
-        preview_truncated = preview_offset > 0
-        return (
-            preview_text,
-            output_available,
-            output_size,
-            preview_bytes,
-            preview_truncated,
-            output_path,
-        )
+        return chunk, output_available
 
     @override
     async def __call__(self, params: TaskOutputParams) -> ToolReturnValue:
@@ -244,38 +240,19 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
                 else "not_ready"
             )
 
-        (
-            output,
-            full_output_available,
-            output_size,
-            output_preview_bytes,
-            output_truncated,
-            output_path,
-        ) = self._render_output_preview(
+        chunk, full_output_available = self._render_output_preview(
             params.task_id,
             status=view.runtime.status,
             offset=params.offset,
         )
-        consumer = view.consumer.model_copy(
-            update={
-                "last_seen_output_size": output_size,
-                "last_viewed_at": time.time(),
-            }
-        )
-        self._runtime.background_tasks.store.write_consumer(params.task_id, consumer)
 
         return ToolReturnValue(
             is_error=False,
             output=_format_task_output(
                 view,
                 retrieval_status=retrieval_status,
-                output=output,
-                output_path=output_path,
+                chunk=chunk,
                 full_output_available=full_output_available,
-                output_size_bytes=output_size,
-                output_preview_bytes=output_preview_bytes,
-                output_truncated=output_truncated,
-                offset=params.offset,
             ),
             message="Task output retrieved.",
             display=[_task_display(self._runtime, params.task_id)],

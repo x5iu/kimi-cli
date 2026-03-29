@@ -1,27 +1,26 @@
 from .ids import generate_task_id
 from .manager import BackgroundTaskManager
 from .models import (
-    TaskConsumerState,
     TaskControl,
     TaskKind,
-    TaskOutputChunk,
+    TaskOutputLineChunk,
     TaskRuntime,
     TaskSpec,
     TaskStatus,
     TaskView,
     is_terminal_status,
 )
-from .store import BackgroundTaskStore
+from .store import BackgroundTaskStore, LineIndex
 from .summary import build_active_task_snapshot, format_task, format_task_list, list_task_views
 from .worker import run_background_task_worker
 
 __all__ = [
     "BackgroundTaskManager",
     "BackgroundTaskStore",
-    "TaskConsumerState",
+    "LineIndex",
     "TaskControl",
     "TaskKind",
-    "TaskOutputChunk",
+    "TaskOutputLineChunk",
     "TaskRuntime",
     "TaskSpec",
     "TaskStatus",

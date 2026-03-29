@@ -61,28 +61,34 @@ class TaskControl(BaseModel):
     force: bool = False
 
 
-class TaskConsumerState(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    last_seen_output_size: int = 0
-    last_viewed_at: float | None = None
-
-
 class TaskView(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     spec: TaskSpec
     runtime: TaskRuntime
     control: TaskControl
-    consumer: TaskConsumerState
 
 
-class TaskOutputChunk(BaseModel):
+class TaskOutputLineChunk(BaseModel):
+    """A chunk of output lines from a background task.
+
+    Pagination fields:
+    - ``start_line`` / ``end_line``: 0-based half-open range ``[start, end)``.
+    - ``has_before``: ``True`` when lines exist before ``start_line``.
+    - ``has_after``: ``True`` when lines exist after ``end_line``.
+    - ``next_offset``: next line number to pass as *offset* for forward
+      pagination; ``None`` when there is nothing more to read.
+    """
+
     model_config = ConfigDict(extra="ignore")
 
     task_id: str
-    offset: int
-    next_offset: int
+    start_line: int
+    end_line: int
+    has_before: bool
+    has_after: bool
+    next_offset: int | None
     text: str
-    eof: bool
     status: TaskStatus
+    output_path: str
+    line_too_large: bool
