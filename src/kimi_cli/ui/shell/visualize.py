@@ -452,7 +452,10 @@ class LiveView:
             return "Use ↑/↓, PgUp/PgDn, Home/End to scroll. Press q or Esc to return."
         if self.can_expand_current_panel:
             expand_hint = " Press Ctrl-E or type /more to expand."
-        elif self.has_pending_input_request:
+        elif self._current_approval_request_panel is not None:
+            # Approval panels always have content worth viewing even when not
+            # formally expandable; question panels without body should not
+            # advertise Ctrl-E because it would be a no-op.
             expand_hint = " Ctrl-E to view output."
         else:
             expand_hint = ""

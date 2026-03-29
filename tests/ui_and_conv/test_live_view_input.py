@@ -1367,3 +1367,84 @@ def test_live_view_echo_info_skips_blank_text() -> None:
     view.echo_info("   ")
 
     assert view.render_ansi(80, include_running_indicators=False).strip() == ""
+
+
+def test_live_view_toolcall_question_no_body_hides_ctrl_e_hint() -> None:
+    """ToolCall questions without body must NOT show Ctrl-E hint in input_hint.
+
+    Aligns with side-channel behaviour: Ctrl-E is only advertised when there
+    is body text to expand.
+    """
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-no-ctrl-e",
+        tool_call_id="tool-no-ctrl-e",
+        questions=[
+            QuestionItem(
+                question="Pick a style?",
+                options=[
+                    QuestionOption(label="Compact"),
+                    QuestionOption(label="Verbose"),
+                ],
+                # no body → has_expandable_content is False
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert view.has_pending_input_request is True
+    assert view.input_mode == "question"
+    # The stale "Ctrl-E to view output" must be absent
+    assert "Ctrl-E" not in view.input_hint
+    assert "/more" not in view.input_hint
+
+
+def test_live_view_sidechannel_question_with_body_shows_ctrl_e_hint() -> None:
+    """Side-channel questions WITH body must show Ctrl-E hint in input_hint."""
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-with-ctrl-e",
+        tool_call_id="turn-end-abcd1234",
+        questions=[
+            QuestionItem(
+                question="Which approach?",
+                options=[
+                    QuestionOption(label="X"),
+                    QuestionOption(label="Y"),
+                ],
+                body="Detailed explanation of the approaches.",
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    assert view.has_pending_input_request is True
+    assert "Ctrl-E" in view.input_hint
+    assert "/more" in view.input_hint
+
+
+def test_live_view_toolcall_question_no_body_panel_render_no_ctrl_e() -> None:
+    """The rendered panel for ToolCall questions without body must not mention Ctrl-E."""
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+    request = QuestionRequest(
+        id="question-render-no-ctrl-e",
+        tool_call_id="tool-render-no-ctrl-e",
+        questions=[
+            QuestionItem(
+                question="Pick a database?",
+                options=[
+                    QuestionOption(label="Postgres"),
+                    QuestionOption(label="SQLite"),
+                ],
+            )
+        ],
+    )
+
+    view.request_question(request)
+
+    rendered = view.render_ansi(100, include_running_indicators=False)
+    assert "Pick a database?" in rendered
+    assert "Ctrl-E" not in rendered
+    assert "/more" not in rendered

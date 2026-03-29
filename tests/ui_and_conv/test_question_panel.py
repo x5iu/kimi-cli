@@ -703,6 +703,56 @@ def test_toggle_select_noop_in_single_select():
     assert panel.get_answers() == {"Pick one?": "A"}
 
 
+def test_toolcall_question_no_body_no_ctrl_e_hint() -> None:
+    """ToolCall-generated questions (no body) must NOT show a Ctrl-E hint.
+
+    This aligns ToolCall questions with side-channel behaviour: Ctrl-E hints
+    should only appear when there is actual body content to expand.
+    """
+    request = QuestionRequest(
+        id="qr-no-body",
+        tool_call_id="tc-tool-call",  # NOT "turn-end-*" → no Exit, no body
+        questions=[
+            QuestionItem(
+                question="Pick a style?",
+                options=[QuestionOption(label="A"), QuestionOption(label="B")],
+                # body intentionally omitted → defaults to ""
+            )
+        ],
+    )
+    panel = QuestionRequestPanel(request)
+
+    rendered = _render_to_str(panel)
+
+    # The misleading "Press Ctrl-E to view output" must be absent
+    assert "Ctrl-E" not in rendered
+    assert "/more" not in rendered
+    # has_expandable_content must be False (no body)
+    assert panel.has_expandable_content is False
+
+
+def test_sidechannel_question_with_body_shows_ctrl_e_hint() -> None:
+    """Side-channel (turn-end) questions WITH body MUST show Ctrl-E hint."""
+    request = QuestionRequest(
+        id="qr-with-body",
+        tool_call_id="turn-end-abc12345",
+        questions=[
+            QuestionItem(
+                question="Which approach?",
+                options=[QuestionOption(label="X"), QuestionOption(label="Y")],
+                body="Detailed explanation\nLine 2\nLine 3\nLine 4",
+            )
+        ],
+    )
+    panel = QuestionRequestPanel(request, allow_exit=True)
+
+    rendered = _render_to_str(panel)
+
+    assert "Ctrl-E" in rendered
+    assert "/more" in rendered
+    assert panel.has_expandable_content is True
+
+
 def test_question_body_preview_renders_inline() -> None:
     request = QuestionRequest(
         id="qr-body-preview",
