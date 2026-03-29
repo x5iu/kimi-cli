@@ -98,9 +98,9 @@ async def test_fetch_url_invalid_url(fetch_url_tool: FetchURL) -> None:
         Params(url="https://this-domain-definitely-does-not-exist-12345.com/")
     )
 
-    # Should fail with network error
+    # Should fail with DNS resolution error (caught by SSRF validation)
     assert result.is_error
-    assert "Failed to fetch URL due to network error:" in result.message
+    assert "Could not resolve hostname" in result.message
 
 
 async def test_fetch_url_404_url(fetch_url_tool: FetchURL) -> None:
@@ -123,7 +123,7 @@ async def test_fetch_url_malformed_url(fetch_url_tool: FetchURL) -> None:
     # Should fail
     assert result.is_error
     assert result.message == snapshot(
-        "Failed to fetch URL due to network error: not-a-valid-url. This may indicate the URL is invalid or the server is unreachable."
+        "URL scheme '' is not allowed. Only http and https are supported."
     )
 
 
@@ -134,7 +134,7 @@ async def test_fetch_url_empty_url(fetch_url_tool: FetchURL) -> None:
     # Should fail
     assert result.is_error
     assert result.message == snapshot(
-        "Failed to fetch URL due to network error: . This may indicate the URL is invalid or the server is unreachable."
+        "URL scheme '' is not allowed. Only http and https are supported."
     )
 
 
@@ -153,10 +153,13 @@ async def test_fetch_url_mocked_http_responses(
     mock_http_server: MockServerFactory,
 ) -> None:
     """Test fetching multiple mocked HTTP responses."""
+    from unittest.mock import patch
 
     async def mocked_fetch(resp: str, *, content_type: str = "text/html") -> ToolReturnValue:
         server_url = await mock_http_server(resp, content_type=content_type)
-        return await fetch_url_tool(Params(url=f"{server_url}/"))
+        # Bypass SSRF validation so tests can reach the local mock server on 127.0.0.1
+        with patch("kimi_cli.tools.web.fetch._validate_url", return_value=None):
+            return await fetch_url_tool(Params(url=f"{server_url}/"))
 
     # plain markdown. Real example: https://lucumr.pocoo.org/2025/10/17/code.md
     plain_markdown = """\

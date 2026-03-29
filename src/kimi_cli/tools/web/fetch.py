@@ -35,11 +35,6 @@ class FetchURL(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
-        validation_error = _validate_url(params.url)
-        if validation_error:
-            builder = ToolResultBuilder(max_line_length=None)
-            return builder.error(validation_error, brief="URL blocked")
-
         if self._service_config:
             ret = await self._fetch_with_service(params)
             if not ret.is_error:
@@ -55,6 +50,9 @@ class FetchURL(CallableTool2[Params]):
     @staticmethod
     async def fetch_with_http_get(params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
+        validation_error = _validate_url(params.url)
+        if validation_error:
+            return builder.error(validation_error, brief="URL blocked")
         try:
             async with (
                 new_client_session() as session,
