@@ -272,9 +272,9 @@ def glob_tool(runtime: Runtime) -> Glob:
 
 
 @pytest.fixture
-def grep_tool() -> Grep:
+def grep_tool(runtime: Runtime) -> Grep:
     """Create a Grep tool instance."""
-    return Grep()
+    return Grep(runtime)
 
 
 @pytest.fixture

@@ -155,6 +155,11 @@ def test_task_output_params_schema(task_output_tool: TaskOutput):
                     "minimum": 0,
                     "type": "integer",
                 },
+                "offset": {
+                    "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Line offset (0-based) to start reading output from. If not set, reads the last lines that fit within ~32 KiB (tail). Set to 0 to read from the beginning.",
+                },
             },
             "required": ["task_id"],
             "type": "object",
