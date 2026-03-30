@@ -124,6 +124,10 @@ class Glob(CallableTool2[Params]):
             async for match in dir_path.glob(params.pattern):
                 matches.append(match)
 
+            # Post-filter: ensure matched paths don't escape the base directory
+            resolved_base = dir_path.canonical()
+            matches = [m for m in matches if is_within_directory(m.canonical(), resolved_base)]
+
             # Filter out directories if not requested
             if not params.include_dirs:
                 matches = [p for p in matches if await p.is_file()]
