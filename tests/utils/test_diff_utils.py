@@ -6,7 +6,7 @@ from kimi_cli.utils.diff import build_diff_blocks, format_unified_diff
 from kimi_cli.wire.types import DiffDisplayBlock
 
 
-def test_build_diff_blocks_simple_change() -> None:
+async def test_build_diff_blocks_simple_change() -> None:
     old_text = """
 Line one
 Line two
@@ -23,7 +23,7 @@ Line five modified
 Line six added
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/simple.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/simple.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -49,7 +49,7 @@ Line six added\
     )
 
 
-def test_build_diff_blocks_insert_only() -> None:
+async def test_build_diff_blocks_insert_only() -> None:
     old_text = """
 Line one
 Line two
@@ -61,7 +61,7 @@ Line three
 Line four
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/insert.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/insert.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -82,7 +82,7 @@ Line four\
     )
 
 
-def test_build_diff_blocks_delete_only() -> None:
+async def test_build_diff_blocks_delete_only() -> None:
     old_text = """
 Line one
 Line two
@@ -94,7 +94,7 @@ Line one
 Line four
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/delete.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/delete.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -115,7 +115,7 @@ Line four\
     )
 
 
-def test_build_diff_blocks_multiline_replace() -> None:
+async def test_build_diff_blocks_multiline_replace() -> None:
     old_text = """
 Alpha
 Bravo
@@ -131,7 +131,7 @@ Delta
 Echo
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/replace.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/replace.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -156,7 +156,7 @@ Echo\
     )
 
 
-def test_build_diff_blocks_complex_change() -> None:
+async def test_build_diff_blocks_complex_change() -> None:
     old_text = """
 Line one
 Line two
@@ -184,7 +184,7 @@ Line ten
 Line eleven
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/complex.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/complex.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -221,7 +221,7 @@ Line eleven\
     )
 
 
-def test_build_diff_blocks_split_by_context_window() -> None:
+async def test_build_diff_blocks_split_by_context_window() -> None:
     old_text = """
 Line 1
 Line 2
@@ -259,7 +259,7 @@ Line 15
 Line 16
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/context.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/context.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -305,14 +305,14 @@ Line 16\
     )
 
 
-def test_build_diff_blocks_old_empty() -> None:
+async def test_build_diff_blocks_old_empty() -> None:
     old_text = ""
     new_text = """
 Line 1
 Line 2
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/old-empty.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/old-empty.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -329,14 +329,14 @@ Line 2\
     )
 
 
-def test_build_diff_blocks_new_empty() -> None:
+async def test_build_diff_blocks_new_empty() -> None:
     old_text = """
 Line 1
 Line 2
 """.strip()
     new_text = ""
 
-    blocks = build_diff_blocks("/tmp/new-empty.txt", old_text, new_text)
+    blocks = await build_diff_blocks("/tmp/new-empty.txt", old_text, new_text)
 
     assert blocks == snapshot(
         [
@@ -353,19 +353,19 @@ Line 2\
     )
 
 
-def test_build_diff_blocks_both_empty() -> None:
-    blocks = build_diff_blocks("/tmp/both-empty.txt", "", "")
+async def test_build_diff_blocks_both_empty() -> None:
+    blocks = await build_diff_blocks("/tmp/both-empty.txt", "", "")
 
     assert blocks == snapshot([])
 
 
-def test_build_diff_blocks_equal_text() -> None:
+async def test_build_diff_blocks_equal_text() -> None:
     text = """
 Line 1
 Line 2
 """.strip()
 
-    blocks = build_diff_blocks("/tmp/equal.txt", text, text)
+    blocks = await build_diff_blocks("/tmp/equal.txt", text, text)
 
     assert blocks == snapshot([])
 

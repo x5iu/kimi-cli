@@ -522,8 +522,8 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
                     raise _EditError(f"Edit operation {index} made no changes.")
                 content = updated_content
 
-            diff_blocks: list[DisplayBlock] = list(
-                build_diff_blocks(str(p), original_content, content)
+            diff_blocks: list[DisplayBlock] = await build_diff_blocks(
+                str(p), original_content, content
             )
 
             is_plan_file_edit = False
@@ -648,8 +648,8 @@ class StrReplaceFile(CallableTool2[Params]):
                     brief="No replacements made",
                 )
 
-            diff_blocks: list[DisplayBlock] = list(
-                build_diff_blocks(str(p), original_content, content)
+            diff_blocks: list[DisplayBlock] = await build_diff_blocks(
+                str(p), original_content, content
             )
 
             action = (
