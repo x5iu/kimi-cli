@@ -18,7 +18,7 @@ from .models import (
     TaskView,
 )
 
-_VALID_TASK_ID = re.compile(r"^[a-z0-9]{2,20}$")
+_VALID_TASK_ID = re.compile(r"^[a-z0-9][a-z0-9\-]{1,24}$")
 _SCAN_CHUNK = 1 << 16  # 64 KiB – chunk size for binary scanning
 
 
