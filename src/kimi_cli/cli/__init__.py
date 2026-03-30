@@ -32,6 +32,12 @@ LLM friendly version: https://moonshotai.github.io/kimi-cli/llms.txt""",
 )
 
 UIMode = Literal["shell", "print", "wire"]
+
+class ExitCode:
+    SUCCESS = 0
+    FAILURE = 1
+    RETRYABLE = 75  # EX_TEMPFAIL from sysexits.h
+
 InputFormat = Literal["text", "stream-json"]
 OutputFormat = Literal["text", "stream-json"]
 
@@ -529,12 +535,13 @@ def kimi(
                 case "shell":
                     succeeded = await instance.run_shell(prompt)
                 case "print":
-                    succeeded = await instance.run_print(
+                    exit_code = await instance.run_print(
                         input_format or "text",
                         output_format or "text",
                         prompt,
                         final_only=final_message_only,
                     )
+                    succeeded = exit_code == ExitCode.SUCCESS
                 case "wire":
                     if prompt is not None:
                         logger.warning("Wire server ignores prompt argument")
