@@ -12,6 +12,7 @@ from kaos.path import KaosPath
 from kosong.message import Message
 
 from kimi_cli.soul.message import internal_user_message, system
+from kimi_cli.notifications.llm import is_notification_message
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.path import sanitize_cli_path
 from kimi_cli.utils.turns import (
@@ -141,7 +142,7 @@ def _group_into_turns(history: Sequence[Message]) -> list[list[Message]]:
     current: list[Message] = []
 
     for msg in history:
-        if _is_checkpoint_message(msg):
+        if _is_checkpoint_message(msg) or is_notification_message(msg):
             continue
         if is_real_user_turn_start_message(msg) and current:
             turns.append(current)
@@ -168,7 +169,7 @@ def _format_turn_md(messages: list[Message], turn_number: int) -> str:
     assistant_header_written = False
 
     for msg in messages:
-        if _is_checkpoint_message(msg):
+        if _is_checkpoint_message(msg) or is_notification_message(msg):
             continue
 
         if msg.role == "user":
@@ -419,7 +420,7 @@ def stringify_context_history(history: Sequence[Message]) -> str:
     """
     parts: list[str] = []
     for msg in history:
-        if _is_checkpoint_message(msg):
+        if _is_checkpoint_message(msg) or is_notification_message(msg):
             continue
 
         role_label = msg.role.upper()

@@ -17,6 +17,7 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.slashcmd import parse_slash_command_call
 from kimi_cli.utils.turns import is_real_user_turn_start_message
+from kimi_cli.notifications.llm import is_notification_message
 from kimi_cli.wire import Wire
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
@@ -201,6 +202,8 @@ def _is_clear_command_input(user_input: str | list[ContentPart]) -> bool:
 
 def _is_user_message(message: Message) -> bool:
     # FIXME: should consider non-text tool call results which are sent as user messages
+    if is_notification_message(message):
+        return False
     return is_real_user_turn_start_message(message)
 
 
