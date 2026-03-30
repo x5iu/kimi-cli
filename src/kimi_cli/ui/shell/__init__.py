@@ -353,6 +353,36 @@ class Shell:
                 )
                 return TurnSubmitResult.accept()
             if slash_call is not None and slash_call.name.startswith(_SKILL_PREFIX):
+                # During a turn, inject skill content via steer so the
+                # model can perceive the skill within the current turn.
+                if isinstance(self.soul, KimiSoul):
+                    skill_name = slash_call.name[len(_SKILL_PREFIX):]
+                    skill = self.soul.runtime.skills.get(skill_name)
+                    if skill is not None:
+                        from pathlib import Path
+
+                        try:
+                            skill_text = Path(
+                                str(skill.skill_md_file)
+                            ).read_text(encoding="utf-8").strip()
+                            extra = slash_call.args.strip()
+                            if extra:
+                                skill_text = (
+                                    f"{skill_text}\n\nUser request:\n{extra}"
+                                )
+                            self.soul.steer(skill_text)
+                            live_view.echo_reminder(
+                                self._display_user_input(turn_input)
+                            )
+                            return TurnSubmitResult.accept(
+                                persist_history=True
+                            )
+                        except OSError:
+                            live_view.echo_info(
+                                f"Error: failed to load skill {skill_name}"
+                            )
+                            return TurnSubmitResult.accept()
+                # Fallback: cancel turn and queue for post-turn execution
                 queued_input = turn_input
                 cancel_event.set()
                 return TurnSubmitResult.accept()
