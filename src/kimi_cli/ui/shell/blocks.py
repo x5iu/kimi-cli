@@ -11,6 +11,13 @@ from rich.spinner import Spinner
 from rich.style import Style
 from rich.text import Text
 
+try:
+    from markdown_it import MarkdownIt as _MarkdownIt
+
+    _HAS_MARKDOWN_IT = True
+except ImportError:  # pragma: no cover
+    _HAS_MARKDOWN_IT = False
+
 from kimi_cli.soul import format_context_status
 from kimi_cli.tools import extract_key_argument
 from kimi_cli.tools.todo_text import todo_label
@@ -65,6 +72,57 @@ def _set_todo_list_activity_argument(argument: str | None) -> str | None:
     return f"ready: {argument.split(marker, 1)[1]}"
 
 
+_SELF_CLOSING_BLOCKS = frozenset({
+    "fence",
+    "code_block",
+    "hr",
+    "html_block",
+    "table",
+})
+
+_md_parser_instance: Any = None
+
+
+def _get_md_parser() -> Any:
+    """Lazy-initialise and return a markdown-it-py parser instance."""
+    global _md_parser_instance
+    if _md_parser_instance is None:
+        _md_parser_instance = _MarkdownIt()
+    return _md_parser_instance
+
+
+def _find_committed_boundary(text: str) -> int | None:
+    """Find the character offset up to which top-level blocks can be committed.
+
+    Returns ``None`` when there are fewer than two complete top-level blocks,
+    meaning nothing can be safely frozen yet.
+    """
+    if not _HAS_MARKDOWN_IT:
+        return None
+
+    md = _get_md_parser()
+    tokens = md.parse(text)
+
+    depth = 0
+    block_ends: list[int] = []
+    for tok in tokens:
+        if tok.nesting == 1:
+            depth += 1
+        elif tok.nesting == -1:
+            depth -= 1
+        if depth == 0 and (tok.type.endswith("_close") or tok.type in _SELF_CLOSING_BLOCKS):
+            if tok.map is not None:
+                block_ends.append(tok.map[1])
+
+    # Need at least 2 closed blocks to commit the earlier ones
+    if len(block_ends) < 2:
+        return None
+
+    commit_line = block_ends[-2]
+    lines = text.split("\n")
+    return sum(len(line) + 1 for line in lines[:commit_line])
+
+
 class _ContentBlock:
     def __init__(self, is_think: bool):
         self.is_think = is_think
@@ -72,6 +130,9 @@ class _ContentBlock:
         self._chunks: list[str] = []
         self._raw_text_cache: str | None = ""
         self._raw_text_length = 0
+        # Incremental markdown streaming state
+        self._committed_text: str = ""
+        self._committed_renderable: RenderableType | None = None
 
     @property
     def raw_text(self) -> str:
@@ -83,18 +144,62 @@ class _ContentBlock:
     def status_text(self) -> str:
         return "Thinking..." if self.is_think else "Composing..."
 
+    def _mk_style(self) -> str:
+        return "grey50 italic" if self.is_think else ""
+
+    def _mk_bullet_style(self) -> str | None:
+        return "grey50" if self.is_think else None
+
+    def _try_advance_commit(self) -> None:
+        """Advance the committed boundary if new top-level blocks are closed."""
+        full = self.raw_text
+        boundary = _find_committed_boundary(full)
+        if boundary is not None and boundary > len(self._committed_text):
+            self._committed_text = full[:boundary]
+            self._committed_renderable = Markdown(
+                self._committed_text,
+                style=self._mk_style(),
+            )
+
+    @property
+    def _pending_text(self) -> str:
+        """Return the portion of text that has not been committed yet."""
+        full = self.raw_text
+        if self._committed_text:
+            return full[len(self._committed_text):]
+        return full
+
+    def _compose_incremental(self) -> RenderableType:
+        """Build a renderable combining frozen committed blocks and the live tail."""
+        parts: list[RenderableType] = []
+        if self._committed_renderable is not None:
+            parts.append(self._committed_renderable)
+        pending = self._pending_text
+        if pending:
+            parts.append(Markdown(pending, style=self._mk_style()))
+        if not parts:
+            return Markdown("", style=self._mk_style())
+        return Group(*parts) if len(parts) > 1 else parts[0]
+
     def compose(self, *, show_indicator: bool = True) -> RenderableType:
         if show_indicator:
             return self._spinner
+        # Use incremental rendering when committed content exists
+        if self._committed_renderable is not None:
+            return BulletColumns(
+                self._compose_incremental(),
+                bullet_style=self._mk_bullet_style(),
+            )
         return self.compose_final()
 
     def compose_final(self) -> RenderableType:
+        # On final compose, render the full text (no incremental needed)
         return BulletColumns(
             Markdown(
                 self.raw_text,
-                style="grey50 italic" if self.is_think else "",
+                style=self._mk_style(),
             ),
-            bullet_style="grey50" if self.is_think else None,
+            bullet_style=self._mk_bullet_style(),
         )
 
     def compose_tail(
@@ -112,9 +217,9 @@ class _ContentBlock:
         renderable = BulletColumns(
             Markdown(
                 text,
-                style="grey50 italic" if self.is_think else "",
+                style=self._mk_style(),
             ),
-            bullet_style="grey50" if self.is_think else None,
+            bullet_style=self._mk_bullet_style(),
         )
         return renderable, truncated
 
@@ -139,6 +244,7 @@ class _ContentBlock:
         self._chunks.append(content)
         self._raw_text_cache = None
         self._raw_text_length += len(content)
+        self._try_advance_commit()
 
 
 class _ToolCallBlock:
