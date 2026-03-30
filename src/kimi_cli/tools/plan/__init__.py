@@ -15,7 +15,13 @@ from pydantic import BaseModel
 from kimi_cli.soul import get_wire_or_none, wire_send
 from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
-from kimi_cli.wire.types import PlanDisplay, QuestionItem, QuestionNotSupported, QuestionOption, QuestionRequest
+from kimi_cli.wire.types import (
+    PlanDisplay,
+    QuestionItem,
+    QuestionNotSupported,
+    QuestionOption,
+    QuestionRequest,
+)
 
 logger = logging.getLogger(__name__)
 

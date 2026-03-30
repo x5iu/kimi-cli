@@ -16,7 +16,6 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from kimi_cli.ui.shell.blocks import ContentBlock, StatusBlock, ToolCallBlock
-from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.ui.shell.console import RIGHT_PADDING, console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.panels import (
@@ -27,6 +26,7 @@ from kimi_cli.ui.shell.panels import (
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.wire import WireUISide
 from kimi_cli.wire.types import (
     ApprovalRequest,

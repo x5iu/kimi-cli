@@ -16,6 +16,7 @@ from kimi_cli.wire.types import (
     ImageURLPart,
     MCPLoadingBegin,
     MCPLoadingEnd,
+    PlanDisplay,
     QuestionItem,
     QuestionOption,
     QuestionRequest,
@@ -557,3 +558,38 @@ def test_read_wire_lines_request_id(tmp_path: Path):
     approval_msg = parsed[2]
     assert approval_msg["method"] == "request"
     assert approval_msg["id"] == "a-def-456"
+
+
+def test_plan_display_serde_roundtrip():
+    """PlanDisplay should survive serialization → deserialization."""
+    msg = PlanDisplay(content="## Step 1\nDo something.", file_path="/tmp/plan.md")
+    serialized = serialize_wire_message(msg)
+    assert serialized == {
+        "type": "PlanDisplay",
+        "payload": {
+            "content": "## Step 1\nDo something.",
+            "file_path": "/tmp/plan.md",
+        },
+    }
+    _test_serde(msg)
+
+
+def test_plan_display_is_event():
+    """PlanDisplay should be classified as an event, not a request."""
+    msg = PlanDisplay(content="Plan content", file_path="plan.md")
+    assert is_wire_message(msg)
+    assert is_event(msg)
+    assert not is_request(msg)
+
+
+def test_plan_display_wire_record_roundtrip():
+    """PlanDisplay should survive a WireMessageRecord roundtrip (wire.jsonl format)."""
+    msg = PlanDisplay(content="# Plan\n\n- step one", file_path="/workspace/plan.md")
+    envelope = WireMessageEnvelope.from_wire_message(msg)
+    record = WireMessageRecord(timestamp=999.0, message=envelope)
+
+    parsed = WireMessageRecord.model_validate_json(record.model_dump_json())
+    restored = parsed.to_wire_message()
+    assert isinstance(restored, PlanDisplay)
+    assert restored.content == "# Plan\n\n- step one"
+    assert restored.file_path == "/workspace/plan.md"
