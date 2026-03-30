@@ -129,6 +129,13 @@ class NotificationNotice(BaseModel):
     payload: dict[str, JsonType] = Field(default_factory=dict)
 
 
+class PlanDisplay(BaseModel):
+    """Carries plan content so the UI can render it with special formatting."""
+
+    content: str
+    file_path: str
+
+
 class StatusUpdate(BaseModel):
     """
     An update on the current status of the soul.
@@ -383,6 +390,7 @@ type Event = (
     | MCPLoadingEnd
     | SkillReminderNotice
     | NotificationNotice
+    | PlanDisplay
     | StatusUpdate
     | ContentPart
     | ToolCall
@@ -469,6 +477,7 @@ __all__ = [
     "MCPLoadingBegin",
     "MCPLoadingEnd",
     "SkillReminderNotice",
+    "PlanDisplay",
     "StatusUpdate",
     "ContentPart",
     "ToolCall",

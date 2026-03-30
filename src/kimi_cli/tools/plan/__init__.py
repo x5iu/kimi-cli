@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from kimi_cli.soul import get_wire_or_none, wire_send
 from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
-from kimi_cli.wire.types import QuestionItem, QuestionNotSupported, QuestionOption, QuestionRequest
+from kimi_cli.wire.types import PlanDisplay, QuestionItem, QuestionNotSupported, QuestionOption, QuestionRequest
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,8 @@ class ExitPlanMode(CallableTool2[Params]):
                 message="ExitPlanMode must be called from a tool call context.",
                 brief="Invalid context",
             )
+
+        wire_send(PlanDisplay(content=plan_content, file_path=str(plan_path)))
 
         request = QuestionRequest(
             id=str(uuid4()),

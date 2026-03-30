@@ -16,6 +16,7 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from kimi_cli.ui.shell.blocks import ContentBlock, StatusBlock, ToolCallBlock
+from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.ui.shell.console import RIGHT_PADDING, console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.panels import (
@@ -37,6 +38,7 @@ from kimi_cli.wire.types import (
     MCPLoadingBegin,
     MCPLoadingEnd,
     NotificationNotice,
+    PlanDisplay,
     QuestionRequest,
     SkillReminderNotice,
     StatusUpdate,
@@ -143,6 +145,18 @@ def _render_info_block(text: str) -> RenderableType:
         box=box.ROUNDED,
         border_style="grey50",
         title=Text("Info", style="bold grey50"),
+        title_align="left",
+        padding=(0, 1),
+        expand=False,
+    )
+
+
+def _render_plan_display_block(content: str, file_path: str) -> RenderableType:
+    return Panel(
+        Markdown(content),
+        box=box.ROUNDED,
+        border_style="green",
+        title=Text(f"Plan ({file_path})", style="bold green"),
         title_align="left",
         padding=(0, 1),
         expand=False,
@@ -949,6 +963,9 @@ class LiveView:
                 self.append_skill_reminder(skills)
             case NotificationNotice():
                 pass
+            case PlanDisplay(content=content, file_path=file_path):
+                self.flush_content()
+                self._append_history_block(_render_plan_display_block(content, file_path))
             case StatusUpdate():
                 if self._status_block.update(msg):
                     self._need_recompose = True
