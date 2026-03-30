@@ -85,6 +85,8 @@ _md_parser_instance: Any = None
 
 def _get_md_parser() -> Any:
     """Lazy-initialise and return a markdown-it-py parser instance."""
+    if not _HAS_MARKDOWN_IT:
+        return None
     global _md_parser_instance
     if _md_parser_instance is None:
         _md_parser_instance = _MarkdownIt()
@@ -97,10 +99,9 @@ def _find_committed_boundary(text: str) -> int | None:
     Returns ``None`` when there are fewer than two complete top-level blocks,
     meaning nothing can be safely frozen yet.
     """
-    if not _HAS_MARKDOWN_IT:
-        return None
-
     md = _get_md_parser()
+    if md is None:
+        return None
     tokens = md.parse(text)
 
     depth = 0
@@ -133,6 +134,7 @@ class _ContentBlock:
         # Incremental markdown streaming state
         self._committed_text: str = ""
         self._committed_renderable: RenderableType | None = None
+        self._last_boundary_check_len: int = 0
 
     @property
     def raw_text(self) -> str:
@@ -153,6 +155,9 @@ class _ContentBlock:
     def _try_advance_commit(self) -> None:
         """Advance the committed boundary if new top-level blocks are closed."""
         full = self.raw_text
+        if len(full) - self._last_boundary_check_len < 128:
+            return
+        self._last_boundary_check_len = len(full)
         boundary = _find_committed_boundary(full)
         if boundary is not None and boundary > len(self._committed_text):
             self._committed_text = full[:boundary]
