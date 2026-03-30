@@ -421,6 +421,19 @@ async def clear(app: Shell, args: str):
 
 
 @registry.command
+async def undo(app: Shell, args: str):
+    """Undo the last turn"""
+    soul = ensure_kimi_soul(app)
+    if soul is None:
+        return
+    if soul.context.last_turn_checkpoint_id is None:
+        console.print("[yellow]Nothing to undo.[/yellow]")
+        return
+    await app.run_soul_command("/undo")
+    raise Reload()
+
+
+@registry.command
 async def new(app: Shell, args: str):
     """Start a new session"""
     soul = ensure_kimi_soul(app)

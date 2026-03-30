@@ -663,8 +663,27 @@ class KimiSoul:
     def wire_file(self) -> WireFile:
         return self._runtime.session.wire_file
 
-    async def _checkpoint(self):
-        await self._context.checkpoint(self._checkpoint_with_user_message)
+    async def _checkpoint(self, *, turn_start: bool = False):
+        await self._context.checkpoint(self._checkpoint_with_user_message, turn_start=turn_start)
+
+    async def undo_last_turn(self) -> bool:
+        """Undo the last turn by reverting to its turn-level checkpoint.
+
+        Returns True if a turn was undone, False if there was nothing to undo.
+        """
+        last_turn_cp = self._context.last_turn_checkpoint_id
+        if last_turn_cp is None:
+            return False
+
+        logger.info("Undoing last turn, reverting to checkpoint {cp}", cp=last_turn_cp)
+        await self._context.revert_to(last_turn_cp)
+
+        # Sync dependent state
+        self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
+        self._denwa_renji.invalidate_stale_dmail()
+        self._sync_context_recall_tool_visibility()
+
+        return True
 
     def _begin_turn(self) -> int:
         self._next_turn_id += 1
@@ -844,7 +863,7 @@ class KimiSoul:
         if missing_caps := check_message(user_message, self._runtime.llm.capabilities):
             raise LLMNotSupported(self._runtime.llm, list(missing_caps))
 
-        await self._checkpoint()  # this creates the checkpoint 0 on first run
+        await self._checkpoint(turn_start=True)
         await self._context.append_message(user_message)
         logger.debug("Appended user message to context")
 

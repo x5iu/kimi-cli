@@ -20,6 +20,8 @@ class Context:
         self._token_count: int = 0
         self._next_checkpoint_id: int = 0
         """The ID of the next checkpoint, starting from 0, incremented after each checkpoint."""
+        self._last_turn_checkpoint_id: int | None = None
+        """The checkpoint ID of the most recent turn-level checkpoint (created by _turn())."""
 
     async def restore(self) -> bool:
         logger.debug("Restoring context from file: {file_backend}", file_backend=self._file_backend)
@@ -43,6 +45,8 @@ class Context:
                     continue
                 if line_json["role"] == "_checkpoint":
                     self._next_checkpoint_id = line_json["id"] + 1
+                    if line_json.get("turn"):
+                        self._last_turn_checkpoint_id = line_json["id"]
                     continue
                 message = Message.model_validate(line_json)
                 self._history.append(message)
@@ -62,16 +66,28 @@ class Context:
         return self._next_checkpoint_id
 
     @property
+    def last_turn_checkpoint_id(self) -> int | None:
+        return self._last_turn_checkpoint_id
+
+    @property
     def file_backend(self) -> Path:
         return self._file_backend
 
-    async def checkpoint(self, add_user_message: bool):
+    async def checkpoint(self, add_user_message: bool, *, turn_start: bool = False):
         checkpoint_id = self._next_checkpoint_id
         self._next_checkpoint_id += 1
-        logger.debug("Checkpointing, ID: {id}", id=checkpoint_id)
+        logger.debug(
+            "Checkpointing, ID: {id}, turn_start: {turn_start}",
+            id=checkpoint_id,
+            turn_start=turn_start,
+        )
 
+        record: dict[str, object] = {"role": "_checkpoint", "id": checkpoint_id}
+        if turn_start:
+            record["turn"] = True
+            self._last_turn_checkpoint_id = checkpoint_id
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
-            await f.write(json.dumps({"role": "_checkpoint", "id": checkpoint_id}) + "\n")
+            await f.write(json.dumps(record) + "\n")
         if add_user_message:
             await self.append_message(
                 internal_user_message([system(f"CHECKPOINT {checkpoint_id}")])
@@ -110,6 +126,7 @@ class Context:
         self._history.clear()
         self._token_count = 0
         self._next_checkpoint_id = 0
+        self._last_turn_checkpoint_id = None
         async with (
             aiofiles.open(rotated_file_path, encoding="utf-8") as old_file,
             aiofiles.open(self._file_backend, "w", encoding="utf-8") as new_file,
@@ -126,6 +143,8 @@ class Context:
                     self._token_count = line_json["token_count"]
                 elif line_json["role"] == "_checkpoint":
                     self._next_checkpoint_id = line_json["id"] + 1
+                    if line_json.get("turn"):
+                        self._last_turn_checkpoint_id = line_json["id"]
                 else:
                     message = Message.model_validate(line_json)
                     self._history.append(message)
@@ -157,6 +176,7 @@ class Context:
         self._history.clear()
         self._token_count = 0
         self._next_checkpoint_id = 0
+        self._last_turn_checkpoint_id = None
         return rotated_file_path
 
     async def append_message(self, message: Message | Sequence[Message]):

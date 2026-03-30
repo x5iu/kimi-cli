@@ -88,6 +88,24 @@ async def clear(soul: KimiSoul, args: str):
 
 
 @registry.command
+async def undo(soul: KimiSoul, args: str):
+    """Undo the last turn (remove it from context)"""
+    if not await soul.undo_last_turn():
+        wire_send(TextPart(text="Nothing to undo."))
+        return
+
+    wire_send(TextPart(text="Last turn has been undone."))
+    snap = soul.status
+    wire_send(
+        StatusUpdate(
+            context_usage=snap.context_usage,
+            context_tokens=snap.context_tokens,
+            max_context_tokens=snap.max_context_tokens,
+        )
+    )
+
+
+@registry.command
 async def yolo(soul: KimiSoul, args: str):
     """Toggle YOLO mode (auto-approve all actions)"""
     if soul.runtime.approval.is_yolo():
