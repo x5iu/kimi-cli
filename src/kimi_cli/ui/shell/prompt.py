@@ -1159,9 +1159,7 @@ class CustomPromptSession:
     def _prepare_prompt_application(self) -> tuple[Application[str], TextArea]:
         app, text_area = self._get_prompt_application()
         self._apply_mode_to_buffer(text_area.buffer)
-        if text_area.buffer.complete_state is not None:
-            text_area.buffer.cancel_completion()
-        text_area.buffer.document = Document(text="", cursor_position=0)
+        text_area.buffer.reset()
         self._hard_redraw(app)
         return app, text_area
 
@@ -2390,7 +2388,7 @@ class CustomPromptSession:
                     self._append_history_entry(command)
                     self._tip_rotation_index += 1
                 feedback_message = ""
-                event.current_buffer.document = Document(text="", cursor_position=0)
+                event.current_buffer.reset()
             else:
                 feedback_message = submit_result.feedback or live_view.input_hint
             _refresh_turn_view(event.app)
