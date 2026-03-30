@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from kosong.message import ContentPart, Message
 from kosong.tooling import ToolError, ToolOk
 
+from kimi_cli.notifications.llm import is_notification_message
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.visualize import render_user_prompt_block, visualize
 from kimi_cli.utils.aioqueue import QueueShutDown
@@ -17,11 +18,9 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.slashcmd import parse_slash_command_call
 from kimi_cli.utils.turns import is_real_user_turn_start_message
-from kimi_cli.notifications.llm import is_notification_message
 from kimi_cli.wire import Wire
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
-    Event,
     FollowUpInput,
     QuestionRequest,
     StatusUpdate,
@@ -94,13 +93,21 @@ async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_Rep
 
     turns: deque[_ReplayTurn] = deque(maxlen=MAX_REPLAY_TURNS)
     pending_questions: dict[str, QuestionRequest] = {}
+    _skip_turn_events = False
     try:
         async for record in wire_file.iter_records():
             wire_msg = record.to_wire_message()
 
             if isinstance(wire_msg, TurnBegin):
+                _skip_turn_events = False
                 if _is_clear_command_input(wire_msg.user_input):
                     turns.clear()
+                    _skip_turn_events = True
+                    continue
+                if _is_undo_command_input(wire_msg.user_input):
+                    if turns:
+                        turns.pop()
+                    _skip_turn_events = True
                     continue
                 turns.append(
                     _ReplayTurn(
@@ -111,7 +118,7 @@ async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_Rep
                 pending_questions.clear()
                 continue
 
-            if not turns:
+            if _skip_turn_events or not turns:
                 continue
 
             current_turn = turns[-1]
@@ -198,6 +205,17 @@ def _is_clear_command_input(user_input: str | list[ContentPart]) -> bool:
     if call is None:
         return False
     return call.name in {"clear", "reset"}
+
+
+def _is_undo_command_input(user_input: str | list[ContentPart]) -> bool:
+    if isinstance(user_input, list):
+        text = Message(role="user", content=user_input).extract_text(" ").strip()
+    else:
+        text = str(user_input).strip()
+    call = parse_slash_command_call(text)
+    if call is None:
+        return False
+    return call.name == "undo"
 
 
 def _is_user_message(message: Message) -> bool:
