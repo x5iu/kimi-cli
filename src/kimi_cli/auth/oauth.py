@@ -684,7 +684,14 @@ class OAuthManager:
                 return service.oauth
         return None
 
-    async def ensure_fresh(self, runtime: Runtime) -> None:
+    async def ensure_fresh(self, runtime: Runtime | None = None) -> None:
+        """Load persisted tokens, cache them, and refresh if close to expiry.
+
+        Args:
+            runtime: When provided the live LLM client's API key is updated
+                in-place.  Pass ``None`` for lightweight callers (e.g. title
+                generation) that only need the internal cache to be current.
+        """
         ref = self._kimi_code_ref()
         if ref is None:
             return
@@ -734,7 +741,7 @@ class OAuthManager:
         self,
         ref: OAuthRef,
         token: OAuthToken,
-        runtime: Runtime,
+        runtime: Runtime | None,
     ) -> None:
         # Always prefer persisted tokens before refresh to avoid stale cache
         # when multiple sessions might have already rotated the refresh token.
@@ -785,7 +792,9 @@ class OAuthManager:
             self._cache_access_token(ref, refreshed)
             self._apply_access_token(runtime, refreshed.access_token)
 
-    def _apply_access_token(self, runtime: Runtime, access_token: str) -> None:
+    def _apply_access_token(self, runtime: Runtime | None, access_token: str) -> None:
+        if runtime is None:
+            return
         provider_key = managed_provider_key(KIMI_CODE_PLATFORM_ID)
         if runtime.llm is None or runtime.llm.model_config is None:
             return
