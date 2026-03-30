@@ -8,6 +8,7 @@ import aiofiles
 import aiofiles.os
 from kosong.message import Message
 
+from kimi_cli.soul.compaction import estimate_text_tokens
 from kimi_cli.soul.message import internal_user_message, system
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import next_available_rotation
@@ -18,6 +19,7 @@ class Context:
         self._file_backend = file_backend
         self._history: list[Message] = []
         self._token_count: int = 0
+        self._pending_token_estimate: int = 0
         self._next_checkpoint_id: int = 0
         """The ID of the next checkpoint, starting from 0, incremented after each checkpoint."""
         self._last_turn_checkpoint_id: int | None = None
@@ -35,6 +37,7 @@ class Context:
             logger.debug("Empty context file, skipping restoration")
             return False
 
+        messages_after_last_usage: list[Message] = []
         async with aiofiles.open(self._file_backend, encoding="utf-8") as f:
             async for line in f:
                 if not line.strip():
@@ -42,6 +45,7 @@ class Context:
                 line_json = json.loads(line)
                 if line_json["role"] == "_usage":
                     self._token_count = line_json["token_count"]
+                    messages_after_last_usage.clear()
                     continue
                 if line_json["role"] == "_checkpoint":
                     self._next_checkpoint_id = line_json["id"] + 1
@@ -50,7 +54,9 @@ class Context:
                     continue
                 message = Message.model_validate(line_json)
                 self._history.append(message)
+                messages_after_last_usage.append(message)
 
+        self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
         return True
 
     @property
@@ -60,6 +66,10 @@ class Context:
     @property
     def token_count(self) -> int:
         return self._token_count
+
+    @property
+    def token_count_with_pending(self) -> int:
+        return self._token_count + self._pending_token_estimate
 
     @property
     def n_checkpoints(self) -> int:
@@ -127,6 +137,7 @@ class Context:
         self._token_count = 0
         self._next_checkpoint_id = 0
         self._last_turn_checkpoint_id = None
+        messages_after_last_usage: list[Message] = []
         async with (
             aiofiles.open(rotated_file_path, encoding="utf-8") as old_file,
             aiofiles.open(self._file_backend, "w", encoding="utf-8") as new_file,
@@ -141,6 +152,7 @@ class Context:
                 await new_file.write(line)
                 if line_json["role"] == "_usage":
                     self._token_count = line_json["token_count"]
+                    messages_after_last_usage.clear()
                 elif line_json["role"] == "_checkpoint":
                     self._next_checkpoint_id = line_json["id"] + 1
                     if line_json.get("turn"):
@@ -148,6 +160,9 @@ class Context:
                 else:
                     message = Message.model_validate(line_json)
                     self._history.append(message)
+                    messages_after_last_usage.append(message)
+
+        self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
 
     async def clear(self) -> Path:
         """
@@ -175,6 +190,7 @@ class Context:
 
         self._history.clear()
         self._token_count = 0
+        self._pending_token_estimate = 0
         self._next_checkpoint_id = 0
         self._last_turn_checkpoint_id = None
         return rotated_file_path
@@ -183,6 +199,7 @@ class Context:
         logger.debug("Appending message(s) to context: {message}", message=message)
         messages = [message] if isinstance(message, Message) else message
         self._history.extend(messages)
+        self._pending_token_estimate += estimate_text_tokens(messages)
 
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
             for message in messages:
@@ -191,6 +208,7 @@ class Context:
     async def update_token_count(self, token_count: int):
         logger.debug("Updating token count in context: {token_count}", token_count=token_count)
         self._token_count = token_count
+        self._pending_token_estimate = 0
 
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
             await f.write(json.dumps({"role": "_usage", "token_count": token_count}) + "\n")

@@ -1590,7 +1590,7 @@ class KimiSoul:
                         'auto_compact_enabled', True,
                     )
                     and should_auto_compact(
-                        self._context.token_count,
+                        self._context.token_count_with_pending,
                         self._runtime.llm.max_context_size,
                         trigger_ratio=self._loop_control.compaction_trigger_ratio,
                         reserved_context_size=self._loop_control.reserved_context_size,
