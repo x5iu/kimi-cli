@@ -43,6 +43,7 @@ class BackgroundTaskManager:
         self._owner_role = owner_role
         self._store = BackgroundTaskStore(session.context_file.parent / "tasks")
         self._notification_targets_getter: Callable[[], tuple[NotificationSink, ...]] | None = None
+        self._observed_terminal_ids: set[str] = set()
 
     @property
     def store(self) -> BackgroundTaskStore:
@@ -334,6 +335,26 @@ class BackgroundTaskManager:
             self._best_effort_kill(fresh_runtime)
             self._store.write_runtime(view.spec.id, runtime)
 
+    def mark_terminal_output_observed(self, task_id: str) -> None:
+        """Record that the LLM has already consumed terminal output for *task_id*.
+
+        * Any pending ``"llm"`` notification for this task is acked immediately.
+        * Future :meth:`publish_terminal_notifications` calls will omit the
+          ``"llm"`` target for this task.
+
+        Shell notifications are **not** affected.
+        """
+        self._observed_terminal_ids.add(task_id)
+        # Ack any already-published LLM notification for this task.
+        for view in self._notifications.store.list_views():
+            if (
+                view.event.source_kind == "background_task"
+                and view.event.source_id == task_id
+            ):
+                sink_state = view.delivery.sinks.get("llm")
+                if sink_state is not None and sink_state.status != "acked":
+                    self._notifications.ack("llm", view.event.id)
+
     def reconcile(self, *, limit: int | None = None) -> list[str]:
         self.recover()
         self._store.prune()
@@ -406,7 +427,12 @@ class BackgroundTaskManager:
                 },
                 dedupe_key=f"background_task:{view.spec.id}:{terminal_reason}",
             )
-            event.targets = self._notification_targets()
+            targets = self._notification_targets()
+            if view.spec.id in self._observed_terminal_ids:
+                targets = [t for t in targets if t != "llm"]
+                if not targets:
+                    continue
+            event.targets = targets
             notification = self._notifications.publish(event)
             if notification.event.id == event.id:
                 published.append(notification.event.id)

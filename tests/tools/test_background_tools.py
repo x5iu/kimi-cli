@@ -279,6 +279,31 @@ async def test_task_output_returns_not_ready_for_running_task(runtime, task_outp
 
 
 @pytest.mark.asyncio
+async def test_task_output_suppresses_llm_notification_for_terminal_task(runtime, task_output_tool):
+    """TaskOutput on a terminal task should ack the pending LLM notification."""
+    spec = _write_task(runtime, "b7777777", status="completed", output="done\n")
+
+    # Publish the notification first (simulates reconcile running before TaskOutput).
+    published = runtime.background_tasks.publish_terminal_notifications(limit=4)
+    assert len(published) == 1
+
+    await task_output_tool(task_output_tool.params(task_id=spec.id, block=True, timeout=1))
+
+    nview = runtime.notifications.store.merged_view(published[0])
+    assert nview.delivery.sinks["llm"].status == "acked"
+
+
+@pytest.mark.asyncio
+async def test_task_output_does_not_suppress_for_running_task(runtime, task_output_tool):
+    """TaskOutput on a still-running task must NOT mark it as observed."""
+    spec = _write_task(runtime, "b8888888", status="running", output="wip\n")
+
+    await task_output_tool(task_output_tool.params(task_id=spec.id, block=False, timeout=0))
+
+    assert spec.id not in runtime.background_tasks._observed_terminal_ids
+
+
+@pytest.mark.asyncio
 async def test_task_stop_blocks_in_plan_mode(runtime, task_stop_tool):
     runtime.session.state.plan_mode = True
     result = await task_stop_tool(task_stop_tool.params(task_id="b-noop"))

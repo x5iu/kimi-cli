@@ -127,6 +127,128 @@ def test_publish_terminal_notifications_creates_notification(runtime):
     assert notification.event.payload["task_id"] == spec.id
 
 
+def test_mark_terminal_output_observed_acks_pending_llm_notification(runtime):
+    """When TaskOutput observes a terminal task whose notification was already
+    published, the LLM sink is acked but the shell sink stays pending."""
+    # Enable shell notifications so both sinks exist.
+    runtime.background_notification_targets = ("llm", "shell")
+    manager = runtime.background_tasks
+    store = manager.store
+    spec = TaskSpec(
+        id="b3333333",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="observed task",
+        tool_call_id="tool-obs1",
+        command="echo hi",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+    store.create_task(spec)
+    store.write_runtime(
+        spec.id,
+        TaskRuntime(
+            status="completed",
+            exit_code=0,
+            finished_at=time.time(),
+            updated_at=time.time(),
+        ),
+    )
+
+    # Simulate reconcile publishing the notification first.
+    published = manager.publish_terminal_notifications(limit=4)
+    assert len(published) == 1
+    nid = published[0]
+    nview = runtime.notifications.store.merged_view(nid)
+    assert nview.delivery.sinks["llm"].status == "pending"
+    assert nview.delivery.sinks["shell"].status == "pending"
+
+    # Now the LLM calls TaskOutput, marking the task as observed.
+    manager.mark_terminal_output_observed(spec.id)
+
+    nview = runtime.notifications.store.merged_view(nid)
+    assert nview.delivery.sinks["llm"].status == "acked"
+    # Shell sink is untouched.
+    assert nview.delivery.sinks["shell"].status == "pending"
+
+
+def test_publish_skips_llm_target_for_observed_terminal_task(runtime):
+    """If TaskOutput runs before reconcile, the resulting notification should
+    not include the 'llm' target but still include 'shell'."""
+    # Enable shell notifications so there's a non-llm target left.
+    runtime.background_notification_targets = ("llm", "shell")
+    manager = runtime.background_tasks
+    store = manager.store
+    spec = TaskSpec(
+        id="b4444446",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="pre-observed task",
+        tool_call_id="tool-obs2",
+        command="echo pre",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+    store.create_task(spec)
+    store.write_runtime(
+        spec.id,
+        TaskRuntime(
+            status="completed",
+            exit_code=0,
+            finished_at=time.time(),
+            updated_at=time.time(),
+        ),
+    )
+
+    # Mark observed BEFORE any notification is published.
+    manager.mark_terminal_output_observed(spec.id)
+
+    published = manager.publish_terminal_notifications(limit=4)
+    assert len(published) == 1
+    nview = runtime.notifications.store.merged_view(published[0])
+    assert "llm" not in nview.event.targets
+    assert "shell" in nview.event.targets
+
+
+def test_publish_skips_entirely_when_only_llm_target_observed(runtime):
+    """When the only target is 'llm' and the task was observed, no
+    notification should be published at all."""
+    manager = runtime.background_tasks
+    store = manager.store
+    spec = TaskSpec(
+        id="b4444447",
+        kind="bash",
+        session_id=runtime.session.id,
+        description="llm-only observed",
+        tool_call_id="tool-obs3",
+        command="echo skip",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+    )
+    store.create_task(spec)
+    store.write_runtime(
+        spec.id,
+        TaskRuntime(
+            status="completed",
+            exit_code=0,
+            finished_at=time.time(),
+            updated_at=time.time(),
+        ),
+    )
+
+    # Default targets = ("llm",). Mark observed first.
+    manager.mark_terminal_output_observed(spec.id)
+
+    published = manager.publish_terminal_notifications(limit=4)
+    assert len(published) == 0
+
+
 def _write_completed_task(runtime, task_id: str, *, output: str) -> TaskSpec:
     store = runtime.background_tasks.store
     spec = TaskSpec(

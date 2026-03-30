@@ -240,6 +240,11 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
                 else "not_ready"
             )
 
+        # Suppress the LLM completion reminder when TaskOutput already
+        # delivers the terminal result to the model.
+        if retrieval_status == "success":
+            self._runtime.background_tasks.mark_terminal_output_observed(params.task_id)
+
         chunk, full_output_available = self._render_output_preview(
             params.task_id,
             status=view.runtime.status,
