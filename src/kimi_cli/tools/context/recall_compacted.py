@@ -10,6 +10,7 @@ from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.soul.agent import Runtime
+from kimi_cli.utils.logging import logger
 from kimi_cli.soul.compaction_archive import (
     CompactionArchiveRecord,
     archive_role_label,
@@ -102,7 +103,10 @@ class RecallCompactedContext(CallableTool2[Params]):
             )
 
         query = params.query.strip()
-        hits = await self._search_archives(selected_records, context_file, query)
+        messages_cache: dict[str, list[Message]] = {}
+        hits = await self._search_archives(
+            selected_records, context_file, query, messages_cache
+        )
         if not hits:
             builder.write(
                 f"No matching excerpts were found for query `{query}` in the selected archives.\n\n"
@@ -111,13 +115,20 @@ class RecallCompactedContext(CallableTool2[Params]):
             return builder.ok(message="No compacted-context matches found", brief="No matches")
 
         limited_hits = hits[: params.max_results]
-        # Pre-load archive messages to avoid redundant IO in _render_hit
-        messages_cache: dict[str, list[Message]] = {}
+        # Ensure archive messages are available (usually pre-cached during search)
         for hit in limited_hits:
             if hit.record.id not in messages_cache:
                 archive_path = resolve_compaction_archive_path(context_file, hit.record)
-                messages_cache[hit.record.id] = load_archive_messages(archive_path)
+                try:
+                    messages_cache[hit.record.id] = load_archive_messages(archive_path)
+                except FileNotFoundError:
+                    logger.warning(
+                        "Archive file missing for {archive_id}, skipping",
+                        archive_id=hit.record.id,
+                    )
         for index, hit in enumerate(limited_hits, start=1):
+            if hit.record.id not in messages_cache:
+                continue
             self._render_hit(builder, index, hit, messages_cache[hit.record.id])
 
         matched_archives = {hit.record.id for hit in limited_hits}
@@ -134,9 +145,13 @@ class RecallCompactedContext(CallableTool2[Params]):
         records: Sequence[CompactionArchiveRecord],
         context_file: Path,
         query: str,
+        messages_cache: dict[str, list[Message]],
     ) -> list[SearchHit]:
         tasks = [
-            asyncio.to_thread(self._search_single_archive, record, context_file, query)
+            asyncio.to_thread(
+                self._search_single_archive, record, context_file, query,
+                messages_cache,
+            )
             for record in records
         ]
         results = await asyncio.gather(*tasks)
@@ -149,12 +164,14 @@ class RecallCompactedContext(CallableTool2[Params]):
         record: CompactionArchiveRecord,
         context_file: Path,
         query: str,
+        messages_cache: dict[str, list[Message]],
     ) -> list[SearchHit]:
         archive_path = resolve_compaction_archive_path(context_file, record)
         if not archive_path.exists():
             return []
 
         messages = load_archive_messages(archive_path)
+        messages_cache[record.id] = messages
         if not messages:
             return []
 
@@ -185,7 +202,12 @@ class RecallCompactedContext(CallableTool2[Params]):
 
     @staticmethod
     def _query_tokens(query: str) -> list[str]:
-        tokens = [token for token in _TOKEN_RE.findall(query) if len(token) >= 2]
+        raw = _TOKEN_RE.findall(query)
+        # Filter single-char ASCII tokens; keep single CJK characters
+        tokens = [
+            t for t in raw
+            if len(t) > 1 or '\u4e00' <= t <= '\u9fff'
+        ]
         if query and query not in tokens:
             tokens.append(query)
         return list(dict.fromkeys(tokens))
@@ -198,6 +220,11 @@ class RecallCompactedContext(CallableTool2[Params]):
         score = 0
         if query in lowered:
             score += max(3, len(tokens) + 1)
+            # Bonus for word-boundary match (query appears as a whole word)
+            if re.search(
+                r'(?:^|\W)' + re.escape(query) + r'(?:\W|$)', lowered
+            ):
+                score += 2
         score += sum(1 for token in tokens if token in lowered)
         return score
 

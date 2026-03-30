@@ -60,18 +60,15 @@ def test_prepare_builds_compact_message_and_preserves_tail():
             role="user",
             content=[
                 TextPart(text="## Message 1\nRole: system\nContent:\n"),
-                TextPart(text="System note"),
-                TextPart(text="## Message 2\nRole: user\nContent:\n"),
-                TextPart(text="Old question"),
-                TextPart(text="## Message 3\nRole: assistant\nContent:\n"),
-                TextPart(text="Old answer"),
-                TextPart(text="\n" + prompts.COMPACT),
+                TextPart(text="System note"), TextPart(text="\n" + prompts.COMPACT),
             ],
         )
     )
     assert result.to_preserve == snapshot(
-        [
-            Message(role="user", content=[TextPart(text="Latest question")]),
+        [Message(
+    role="user",
+    content=[TextPart(text="Old question"), ThinkPart(think="Hidden thoughts")],
+), Message(role="assistant", content=[TextPart(text="Old answer")]), Message(role="user", content=[TextPart(text="Latest question")]),
             Message(role="assistant", content=[TextPart(text="Latest answer")]),
         ]
     )
@@ -92,7 +89,8 @@ def test_estimated_token_count_with_usage_uses_output_tokens_for_summary():
 
     result = CompactionResult(messages=[summary_msg, preserved_msg], usage=usage)
 
-    assert result.estimated_token_count == 150 + 20
+    # 150 (exact output tokens) + 80//4 (text estimate) + 4 (per-message overhead)
+    assert result.estimated_token_count == 150 + 20 + 4
 
 
 def test_estimated_token_count_without_usage_estimates_all_from_text():
@@ -103,7 +101,8 @@ def test_estimated_token_count_without_usage_estimates_all_from_text():
     ]
     result = CompactionResult(messages=messages, usage=None)
 
-    assert result.estimated_token_count == 300 // 4
+    # (100//4 + 4) + (200//4 + 4) = 29 + 54 = 83
+    assert result.estimated_token_count == 300 // 4 + 2 * 4
 
 
 def test_estimated_token_count_ignores_non_text_parts():
@@ -119,7 +118,8 @@ def test_estimated_token_count_ignores_non_text_parts():
     ]
     result = CompactionResult(messages=messages, usage=None)
 
-    assert result.estimated_token_count == 40 // 4
+    # 40//4 + 4 (per-message overhead); ThinkPart is not counted
+    assert result.estimated_token_count == 40 // 4 + 4
 
 
 def test_estimated_token_count_empty_messages():
@@ -130,6 +130,8 @@ def test_estimated_token_count_empty_messages():
 
 def test_prepare_appends_custom_instruction():
     messages = [
+        Message(role="user", content=[TextPart(text="Earliest question")]),
+        Message(role="assistant", content=[TextPart(text="Earliest answer")]),
         Message(role="user", content=[TextPart(text="Old question")]),
         Message(role="assistant", content=[TextPart(text="Old answer")]),
         Message(role="user", content=[TextPart(text="Latest question")]),
@@ -153,6 +155,8 @@ def test_prepare_appends_custom_instruction():
 def test_prepare_without_custom_instruction_unchanged():
     """When no custom_instruction is given, the compact message should end with the COMPACT prompt."""
     messages = [
+        Message(role="user", content=[TextPart(text="Earliest question")]),
+        Message(role="assistant", content=[TextPart(text="Earliest answer")]),
         Message(role="user", content=[TextPart(text="Old question")]),
         Message(role="assistant", content=[TextPart(text="Old answer")]),
         Message(role="user", content=[TextPart(text="Latest question")]),
@@ -166,6 +170,155 @@ def test_prepare_without_custom_instruction_unchanged():
     last_part = parts[-1]
     assert isinstance(last_part, TextPart)
     assert last_part.text == "\n" + prompts.COMPACT
+
+
+def test_prepare_empty_messages():
+    """prepare([]) returns (None, [])."""
+    result = SimpleCompaction(max_preserved_messages=2).prepare([])
+
+    assert result.compact_message is None
+    assert list(result.to_preserve) == []
+
+
+def test_prepare_max_preserved_zero():
+    """prepare with max_preserved_messages=0 returns (None, messages)."""
+    messages = [
+        Message(role="user", content=[TextPart(text="Hello")]),
+        Message(role="assistant", content=[TextPart(text="Hi")]),
+    ]
+
+    result = SimpleCompaction(max_preserved_messages=0).prepare(messages)
+
+    assert result.compact_message is None
+    assert list(result.to_preserve) == messages
+
+
+def test_prepare_preserves_complete_turn_with_tool_messages():
+    """When the preserved region includes an assistant(tool_calls) followed by
+    tool messages, the complete turn (assistant+tool) is kept together in the
+    preserved tail. Verify tool messages are included in preserved."""
+    from kosong.message import ToolCall
+
+    tc = ToolCall(
+        id="call_abc",
+        type="function",
+        function={"name": "grep", "arguments": '{"q":"x"}'},
+    )
+    messages = [
+        Message(role="user", content=[TextPart(text="Earliest")]),
+        Message(role="assistant", content=[TextPart(text="Earliest reply")]),
+        Message(role="user", content=[TextPart(text="Middle question")]),
+        Message(role="assistant", content=[TextPart(text="Middle reply")]),
+        Message(
+            role="assistant",
+            content=[TextPart(text="Let me search")],
+            tool_calls=[tc],
+        ),
+        Message(
+            role="tool",
+            content=[TextPart(text="grep result")],
+            tool_call_id="call_abc",
+        ),
+        Message(role="user", content=[TextPart(text="Latest question")]),
+        Message(role="assistant", content=[TextPart(text="Latest answer")]),
+    ]
+
+    result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
+
+    assert result.compact_message is not None
+    preserved_roles = [
+        (m.role, m.tool_call_id) for m in result.to_preserve
+    ]
+    # The assistant(tool_calls) and its tool result are both preserved
+    # as part of the complete turn alongside the 2 user turns.
+    assert preserved_roles == [
+        ("user", None),       # Middle question
+        ("assistant", None),  # Middle reply
+        ("assistant", None),  # assistant with tool_calls
+        ("tool", "call_abc"), # tool result
+        ("user", None),       # Latest question
+        ("assistant", None),  # Latest answer
+    ]
+    # Verify the tool message content is in preserved, not compacted
+    tool_msgs = [m for m in result.to_preserve if m.role == "tool"]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0].tool_call_id == "call_abc"
+
+
+def test_prepare_includes_tool_calls_in_compact_message():
+    """Verify that when an assistant message has tool_calls, the compact_message
+    includes the serialized tool calls."""
+    from kosong.message import ToolCall
+
+    tc = ToolCall(
+        id="call_xyz",
+        type="function",
+        function={"name": "read_file", "arguments": '{"path":"a.py"}'},
+    )
+    messages = [
+        Message(role="user", content=[TextPart(text="Old question")]),
+        Message(
+            role="assistant",
+            content=[TextPart(text="Reading file")],
+            tool_calls=[tc],
+        ),
+        Message(
+            role="tool",
+            content=[TextPart(text="file contents")],
+            tool_call_id="call_xyz",
+        ),
+        Message(role="user", content=[TextPart(text="Next question")]),
+        Message(role="assistant", content=[TextPart(text="Next answer")]),
+        Message(role="user", content=[TextPart(text="Latest")]),
+        Message(role="assistant", content=[TextPart(text="Latest reply")]),
+    ]
+
+    result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
+
+    assert result.compact_message is not None
+    text_parts = [
+        p.text for p in result.compact_message.content if isinstance(p, TextPart)
+    ]
+    full_text = "".join(text_parts)
+    assert "Tool Call: read_file(" in full_text
+
+
+def test_prepare_includes_tool_call_id_for_tool_messages():
+    """Verify tool role messages with tool_call_id show
+    'tool (call_id: xxx)' in compact_message."""
+    from kosong.message import ToolCall
+
+    tc = ToolCall(
+        id="call_123",
+        type="function",
+        function={"name": "bash", "arguments": '{"cmd":"ls"}'},
+    )
+    messages = [
+        Message(role="user", content=[TextPart(text="Old question")]),
+        Message(
+            role="assistant",
+            content=[TextPart(text="Running command")],
+            tool_calls=[tc],
+        ),
+        Message(
+            role="tool",
+            content=[TextPart(text="file_a\nfile_b")],
+            tool_call_id="call_123",
+        ),
+        Message(role="user", content=[TextPart(text="Next")]),
+        Message(role="assistant", content=[TextPart(text="Next reply")]),
+        Message(role="user", content=[TextPart(text="Latest")]),
+        Message(role="assistant", content=[TextPart(text="Latest reply")]),
+    ]
+
+    result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
+
+    assert result.compact_message is not None
+    text_parts = [
+        p.text for p in result.compact_message.content if isinstance(p, TextPart)
+    ]
+    full_text = "".join(text_parts)
+    assert "tool (call_id: call_123)" in full_text
 
 
 # --- should_auto_compact tests ---

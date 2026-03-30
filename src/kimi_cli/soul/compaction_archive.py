@@ -70,8 +70,9 @@ def register_compaction_archive(
     summary: str,
 ) -> ArchiveRegistrationResult:
     records = load_compaction_archives(context_file)
+    max_id = max((int(r.id[1:]) for r in records), default=0)
     record = CompactionArchiveRecord(
-        id=f"c{len(records) + 1:03d}",
+        id=f"c{max_id + 1:03d}",
         archive_file=archive_file.name,
         created_at=datetime.now().astimezone().isoformat(),
         message_count=message_count,

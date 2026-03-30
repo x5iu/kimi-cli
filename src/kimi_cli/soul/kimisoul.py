@@ -278,8 +278,25 @@ class KimiSoul:
         self._approval = agent.runtime.approval
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
-        self._compaction: Compaction = SimpleCompaction()
+        self._compaction: Compaction = SimpleCompaction(
+            max_preserved_messages=getattr(
+                self._loop_control, 'max_preserved_messages', 2
+            )
+        )
         # TODO: maybe configurable and composable
+        self._last_compaction_turn: int | None = None
+        self._suppress_auto_compaction: bool = False
+
+        if self._runtime.llm is not None:
+            mcs = self._runtime.llm.max_context_size
+            rcs = self._loop_control.reserved_context_size
+            if rcs >= mcs * 0.5:
+                logger.warning(
+                    "reserved_context_size ({rcs}) is >= 50% of "
+                    "max_context_size ({mcs}); compaction may "
+                    "trigger too aggressively",
+                    rcs=rcs, mcs=mcs,
+                )
 
         for tool in agent.toolset.tools:
             if tool.name == SendDMail_NAME:
@@ -1547,14 +1564,35 @@ class KimiSoul:
                 if await self._consume_ready_skill_reminder(skill_reminder):
                     logger.debug("Skill reminder was ready before step {step_no}", step_no=step_no)
                 # compact the context if needed
-                if should_auto_compact(
-                    self._context.token_count,
-                    self._runtime.llm.max_context_size,
-                    trigger_ratio=self._loop_control.compaction_trigger_ratio,
-                    reserved_context_size=self._loop_control.reserved_context_size,
+                if (
+                    not self._suppress_auto_compaction
+                    and getattr(
+                        self._loop_control,
+                        'auto_compact_enabled', True,
+                    )
+                    and should_auto_compact(
+                        self._context.token_count,
+                        self._runtime.llm.max_context_size,
+                        trigger_ratio=self._loop_control.compaction_trigger_ratio,
+                        reserved_context_size=self._loop_control.reserved_context_size,
+                    )
                 ):
-                    logger.info("Context too long, compacting...")
-                    await self.compact_context()
+                    if (
+                        self._last_compaction_turn is not None
+                        and self._active_turn_id is not None
+                        and self._active_turn_id - self._last_compaction_turn < 2
+                    ):
+                        logger.debug("Skipping auto-compaction (cooldown)")
+                    else:
+                        logger.info("Context too long, compacting...")
+                        try:
+                            await self.compact_context()
+                            self._last_compaction_turn = self._active_turn_id
+                        except Exception:
+                            logger.opt(exception=True).warning(
+                                "Auto-compaction failed, "
+                                "continuing without compaction"
+                            )
 
                 logger.debug("Beginning step {step_no}", step_no=step_no)
                 await self._checkpoint()
@@ -1735,7 +1773,15 @@ class KimiSoul:
             "Appending tool messages to context: {tool_messages}", tool_messages=tool_messages
         )
         await self._context.append_message(tool_messages)
-        # token count of tool results are not available yet
+        # Estimate tool result tokens so the compaction trigger
+        # has a more accurate count
+        if tool_messages:
+            tool_token_estimate = estimate_text_tokens(tool_messages)
+            current = self._context.token_count
+            if current > 0:
+                await self._context.update_token_count(
+                    current + tool_token_estimate
+                )
 
     async def compact_context(self, custom_instruction: str = "") -> None:
         """
@@ -1770,62 +1816,94 @@ class KimiSoul:
             )
 
         wire_send(CompactionBegin())
-        original_message_count = len(self._context.history)
-        compaction_result = await _compact_with_retry()
-        rotated_path = await self._context.clear()
+        try:
+            original_message_count = len(self._context.history)
+            compaction_result = await _compact_with_retry()
+            rotated_path = await self._context.clear()
 
-        final_messages = list(compaction_result.messages)
-        if compaction_result.usage is not None:
-            registration = register_compaction_archive(
-                self._context.file_backend,
-                rotated_path,
-                message_count=original_message_count,
-                summary=build_compaction_summary(compaction_result.messages),
-            )
-            final_messages.append(
-                internal_user_message(
-                    [
-                        system(
-                            "Compacted context archives are available via the "
-                            "RecallCompactedContext tool for this conversation trajectory. "
-                            f"Archive `{registration.record.id}` contains the "
-                            "pre-compaction history. "
-                            f"There are now {registration.total_archives} compacted "
-                            "archive(s) available. Use targeted keywords if the "
-                            "compaction summary is not sufficient, and prefer this "
-                            "tool over reading raw archive files directly."
-                        )
-                    ]
+            final_messages = list(compaction_result.messages)
+            if compaction_result.usage is not None:
+                registration = register_compaction_archive(
+                    self._context.file_backend,
+                    rotated_path,
+                    message_count=original_message_count,
+                    summary=build_compaction_summary(compaction_result.messages),
                 )
+                final_messages.append(
+                    internal_user_message(
+                        [
+                            system(
+                                "Compacted context archives are available via "
+                                "the RecallCompactedContext tool for this "
+                                "conversation trajectory. "
+                                f"Archive `{registration.record.id}` contains "
+                                "the pre-compaction history. "
+                                f"There are now "
+                                f"{registration.total_archives} compacted "
+                                "archive(s) available. Use targeted keywords "
+                                "if the compaction summary is not sufficient, "
+                                "and prefer this tool over reading raw archive "
+                                "files directly."
+                            )
+                        ]
+                    )
+                )
+
+            self._sync_context_recall_tool_visibility()
+
+            try:
+                await self._checkpoint()
+                self._denwa_renji.invalidate_stale_dmail()
+                await self._context.append_message(final_messages)
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "Failed to append compacted messages; "
+                    "restoring pre-compaction context"
+                )
+                try:
+                    rotated_path.replace(self._context.file_backend)
+                except Exception:
+                    logger.opt(exception=True).warning(
+                        "Failed to restore rotated context file"
+                    )
+                raise
+
+            estimated_token_count = CompactionResult(
+                messages=final_messages, usage=compaction_result.usage
+            ).estimated_token_count
+
+            active_task_snapshot = build_active_task_snapshot(
+                self._runtime.background_tasks
             )
+            if active_task_snapshot is not None:
+                active_task_message = Message(
+                    role="user",
+                    content=[
+                        system(
+                            "The following background tasks are still "
+                            "active after compaction. Use TaskList if "
+                            "you need to re-enumerate them later."
+                        ),
+                        TextPart(text=active_task_snapshot),
+                    ],
+                )
+                await self._context.append_message(active_task_message)
+                estimated_token_count += estimate_text_tokens(
+                    [active_task_message]
+                )
 
-        self._sync_context_recall_tool_visibility()
+            # Estimate token count so context_usage is not reported as 0%
+            await self._context.update_token_count(estimated_token_count)
 
-        await self._checkpoint()
-        await self._context.append_message(final_messages)
-        estimated_token_count = CompactionResult(
-            messages=final_messages, usage=compaction_result.usage
-        ).estimated_token_count
-
-        active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
-        if active_task_snapshot is not None:
-            active_task_message = Message(
-                role="user",
-                content=[
-                    system(
-                        "The following background tasks are still active after compaction. "
-                        "Use TaskList if you need to re-enumerate them later."
-                    ),
-                    TextPart(text=active_task_snapshot),
-                ],
-            )
-            await self._context.append_message(active_task_message)
-            estimated_token_count += estimate_text_tokens([active_task_message])
-
-        # Estimate token count so context_usage is not reported as 0%
-        await self._context.update_token_count(estimated_token_count)
-
-        wire_send(CompactionEnd())
+            # Send StatusUpdate so the UI reflects the reduced context
+            snap = self.status
+            wire_send(StatusUpdate(
+                context_usage=snap.context_usage,
+                context_tokens=snap.context_tokens,
+                max_context_tokens=snap.max_context_tokens,
+            ))
+        finally:
+            wire_send(CompactionEnd())
 
     @staticmethod
     def _is_retryable_error(exception: BaseException) -> bool:
@@ -1966,38 +2044,46 @@ class FlowRunner:
         moves = 0
         total_steps = 0
         reminder_enabled = enable_skill_reminder
-        while True:
-            node = self._flow.nodes[current_id]
-            edges = self._flow.outgoing.get(current_id, [])
+        soul._suppress_auto_compaction = True
+        try:
+            while True:
+                node = self._flow.nodes[current_id]
+                edges = self._flow.outgoing.get(current_id, [])
 
-            if node.kind == "end":
-                logger.info("Agent flow reached END node {node_id}", node_id=current_id)
-                return
-
-            if node.kind == "begin":
-                if not edges:
-                    logger.error(
-                        'Agent flow BEGIN node "{node_id}" has no outgoing edges; stopping.',
-                        node_id=node.id,
+                if node.kind == "end":
+                    logger.info(
+                        "Agent flow reached END node {node_id}",
+                        node_id=current_id,
                     )
                     return
-                current_id = edges[0].dst
-                continue
 
-            if moves >= self._max_moves:
-                raise MaxStepsReached(total_steps)
-            next_id, steps_used = await self._execute_flow_node(
-                soul,
-                node,
-                edges,
-                enable_skill_reminder=reminder_enabled,
-            )
-            reminder_enabled = False
-            total_steps += steps_used
-            if next_id is None:
-                return
-            moves += 1
-            current_id = next_id
+                if node.kind == "begin":
+                    if not edges:
+                        logger.error(
+                            'Agent flow BEGIN node "{node_id}" '
+                            "has no outgoing edges; stopping.",
+                            node_id=node.id,
+                        )
+                        return
+                    current_id = edges[0].dst
+                    continue
+
+                if moves >= self._max_moves:
+                    raise MaxStepsReached(total_steps)
+                next_id, steps_used = await self._execute_flow_node(
+                    soul,
+                    node,
+                    edges,
+                    enable_skill_reminder=reminder_enabled,
+                )
+                reminder_enabled = False
+                total_steps += steps_used
+                if next_id is None:
+                    return
+                moves += 1
+                current_id = next_id
+        finally:
+            soul._suppress_auto_compaction = False
 
     async def _execute_flow_node(
         self,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from kimi_cli.utils.logging import logger
+
 
 class DMail(BaseModel):
     message: str = Field(description="The message to send.")
@@ -31,6 +33,20 @@ class DenwaRenji:
     def set_n_checkpoints(self, n_checkpoints: int):
         """Set the number of checkpoints. Intended to be called by the soul."""
         self._n_checkpoints = n_checkpoints
+
+    def invalidate_stale_dmail(self):
+        """Drop any pending D-Mail whose checkpoint_id is no longer valid."""
+        if (
+            self._pending_dmail is not None
+            and self._pending_dmail.checkpoint_id >= self._n_checkpoints
+        ):
+            logger.debug(
+                "Dropping stale D-Mail targeting checkpoint {cp} "
+                "(only {n} checkpoints exist)",
+                cp=self._pending_dmail.checkpoint_id,
+                n=self._n_checkpoints,
+            )
+            self._pending_dmail = None
 
     def fetch_pending_dmail(self) -> DMail | None:
         """Fetch a pending D-Mail. Intended to be called by the soul."""
