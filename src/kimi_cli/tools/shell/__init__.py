@@ -71,6 +71,14 @@ class Params(BaseModel):
             "A short description for the background task. Required when run_in_background=true."
         ),
     )
+    interactive: bool = Field(
+        default=False,
+        description=(
+            "Whether the background task needs stdin interaction via TaskWrite. "
+            "When true, use TaskWrite to send input to the task's stdin. "
+            "Requires run_in_background=true."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_background_fields(self) -> Self:
@@ -81,6 +89,8 @@ class Params(BaseModel):
                 f"timeout must be <= {MAX_FOREGROUND_TIMEOUT}s for foreground commands; "
                 f"use run_in_background=true for longer timeouts (up to {MAX_BACKGROUND_TIMEOUT}s)"
             )
+        if self.interactive and not self.run_in_background:
+            raise ValueError("interactive=true requires run_in_background=true")
         return self
 
 
@@ -194,6 +204,7 @@ class Shell(CallableTool2[Params]):
                 shell_name="Windows PowerShell" if self._is_powershell else "bash",
                 shell_path=str(self._shell_path),
                 cwd=str(self._runtime.session.work_dir),
+                interactive=params.interactive,
             )
         except Exception as exc:
             builder = ToolResultBuilder()
@@ -212,6 +223,15 @@ class Shell(CallableTool2[Params]):
                 "use TaskOutput or reopen the session later to inspect the task."
             )
         )
+        next_steps = [
+            "next_steps:",
+            "  1. Use TaskOutput(task_id=...) to check progress or block until done.",
+            "  2. Use TaskStop(task_id=...) only if the task must be cancelled.",
+        ]
+        if view.spec.interactive:
+            next_steps.append(
+                "  3. Use TaskWrite(task_id=..., input=...) to send input to the task's stdin."
+            )
         builder.write(
             "\n".join(
                 [
@@ -219,9 +239,7 @@ class Shell(CallableTool2[Params]):
                     f"timeout_s: {view.spec.timeout_s}",
                     f"automatic_notification: {str(live_notification).lower()}",
                     notification_line,
-                    "next_steps:",
-                    "  1. Use TaskOutput(task_id=...) to check progress or block until done.",
-                    "  2. Use TaskStop(task_id=...) only if the task must be cancelled.",
+                    *next_steps,
                 ]
             )
         )

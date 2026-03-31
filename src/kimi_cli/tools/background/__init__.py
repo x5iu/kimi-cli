@@ -1,11 +1,14 @@
+import os
 import time
+import uuid
 from pathlib import Path
 from typing import override
 
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
-from kimi_cli.background import TaskOutputLineChunk, TaskStatus, TaskView, format_task, format_task_list, list_task_views
+from kimi_cli.background import TaskOutputLineChunk, TaskStatus, TaskView, format_task, format_task_list, is_terminal_status, list_task_views
+from kimi_cli.background.worker import STDIN_QUEUE_DIR
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
@@ -301,5 +304,97 @@ class TaskStop(CallableTool2[TaskStopParams]):
             is_error=False,
             output=format_task(view, include_command=True),
             message="Task stop requested.",
+            display=[_task_display(self._runtime, params.task_id)],
+        )
+
+
+class TaskWriteParams(BaseModel):
+    task_id: str = Field(description="The background task ID to write to.")
+    input: str = Field(description="The text to write to the task's stdin.", max_length=1_048_576)
+    append_newline: bool = Field(
+        default=True,
+        description="Whether to append a newline after the input.",
+    )
+
+
+class TaskWrite(CallableTool2[TaskWriteParams]):
+    name: str = "TaskWrite"
+    description: str = load_desc(Path(__file__).parent / "write.md")
+    params: type[TaskWriteParams] = TaskWriteParams
+
+    def __init__(self, runtime: Runtime):
+        super().__init__()
+        self._runtime = runtime
+
+    @override
+    async def __call__(self, params: TaskWriteParams) -> ToolReturnValue:
+        if self._runtime.session.state.plan_mode:
+            return ToolError(
+                message="TaskWrite is not available in plan mode.",
+                brief="Blocked in plan mode",
+            )
+
+        view = self._runtime.background_tasks.get_task(params.task_id)
+        if view is None:
+            return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")
+
+        if not view.spec.interactive:
+            return ToolError(
+                message=f"Task {params.task_id} is not interactive. "
+                "Only tasks started with interactive=true accept stdin input.",
+                brief="Not interactive",
+            )
+
+        if is_terminal_status(view.runtime.status):
+            return ToolError(
+                message=f"Task {params.task_id} has already finished (status: {view.runtime.status}).",
+                brief="Task finished",
+            )
+
+        if not view.runtime.stdin_ready:
+            return ToolError(
+                message=f"Task {params.task_id} stdin is not ready yet (task may still be starting).",
+                brief="Stdin not ready",
+            )
+
+        task_dir = self._runtime.background_tasks.store.task_dir(params.task_id)
+        queue_dir = task_dir / STDIN_QUEUE_DIR
+        if not queue_dir.exists():
+            return ToolError(
+                message="stdin queue directory does not exist.",
+                brief="Queue missing",
+            )
+
+        data = params.input
+        if params.append_newline:
+            data += "\n"
+        data_bytes = data.encode("utf-8")
+
+        msg_name = f"{time.time_ns()}_{uuid.uuid4().hex[:8]}.msg"
+        tmp_path = queue_dir / f".{msg_name}.tmp"
+        final_path = queue_dir / msg_name
+        try:
+            tmp_path.write_bytes(data_bytes)
+            os.replace(tmp_path, final_path)
+        except OSError as exc:
+            tmp_path.unlink(missing_ok=True)
+            return ToolError(
+                message=f"Failed to write to stdin queue: {exc}",
+                brief="Write failed",
+            )
+
+        return ToolReturnValue(
+            is_error=False,
+            output="\n".join([
+                f"task_id: {params.task_id}",
+                f"status: {view.runtime.status}",
+                f"bytes_queued: {len(data_bytes)}",
+                "result: input queued for delivery (~200ms)",
+                "",
+                "next_steps:",
+                f'  1. Use TaskOutput(task_id="{params.task_id}", block=false) to check for new output.',
+                f'  2. Use TaskOutput(task_id="{params.task_id}", block=true, timeout=N) to wait for output.',
+            ]),
+            message="Input written to task stdin.",
             display=[_task_display(self._runtime, params.task_id)],
         )

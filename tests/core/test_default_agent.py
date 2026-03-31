@@ -22,6 +22,7 @@ async def test_default_agent(runtime: Runtime):
         "TaskList",
         "TaskOutput",
         "TaskStop",
+        "TaskWrite",
         "ReadFile",
         "ReadMediaFile",
         "Glob",

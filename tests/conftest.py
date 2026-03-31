@@ -28,7 +28,7 @@ from kimi_cli.soul.agent import Agent, BuiltinSystemPromptArgs, Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
-from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop
+from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop, TaskWrite
 from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
@@ -246,6 +246,11 @@ def task_output_tool(runtime: Runtime) -> TaskOutput:
 @pytest.fixture
 def task_stop_tool(runtime: Runtime, approval: Approval) -> TaskStop:
     return TaskStop(runtime, approval)
+
+
+@pytest.fixture
+def task_write_tool(runtime: Runtime) -> TaskWrite:
+    return TaskWrite(runtime)
 
 
 @pytest.fixture

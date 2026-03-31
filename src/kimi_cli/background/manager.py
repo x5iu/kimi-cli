@@ -138,6 +138,7 @@ class BackgroundTaskManager:
         shell_name: str,
         shell_path: str,
         cwd: str,
+        interactive: bool = False,
     ) -> TaskView:
         self._ensure_root()
         self._ensure_local_backend()
@@ -158,6 +159,7 @@ class BackgroundTaskManager:
             shell_path=shell_path,
             cwd=cwd,
             timeout_s=timeout_s,
+            interactive=interactive,
         )
         self._store.create_task(spec)
 

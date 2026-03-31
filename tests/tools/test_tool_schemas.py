@@ -128,6 +128,11 @@ def test_shell_params_schema(shell_tool: Shell):
                     "description": "A short description for the background task. Required when run_in_background=true.",
                     "type": "string",
                 },
+                "interactive": {
+                    "default": False,
+                    "description": "Whether the background task needs stdin interaction via TaskWrite. When true, use TaskWrite to send input to the task's stdin. Requires run_in_background=true.",
+                    "type": "boolean",
+                },
             },
             "required": ["command"],
             "type": "object",

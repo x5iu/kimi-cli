@@ -5,7 +5,7 @@ import time
 import pytest
 
 from kimi_cli.background import TaskRuntime, TaskSpec, TaskStatus
-from kimi_cli.tools.background import TASK_OUTPUT_PREVIEW_BYTES
+from kimi_cli.tools.background import TASK_OUTPUT_PREVIEW_BYTES, TaskWrite, TaskWriteParams
 from kimi_cli.tools.shell import Params
 
 
@@ -309,3 +309,132 @@ async def test_task_stop_blocks_in_plan_mode(runtime, task_stop_tool):
     result = await task_stop_tool(task_stop_tool.params(task_id="b-noop"))
     assert result.is_error
     assert result.brief == "Blocked in plan mode"
+
+
+# ---------------------------------------------------------------------------
+# TaskWrite tests
+# ---------------------------------------------------------------------------
+
+
+def _write_interactive_task(
+    runtime,
+    task_id: str,
+    *,
+    status: TaskStatus = "running",
+    stdin_ready: bool = True,
+    interactive: bool = True,
+):
+    store = runtime.background_tasks.store
+    spec = TaskSpec(
+        id=task_id,
+        kind="bash",
+        session_id=runtime.session.id,
+        description="interactive task",
+        tool_call_id="tool-99",
+        command="cat",
+        shell_name="bash",
+        shell_path="/bin/bash",
+        cwd=str(runtime.session.work_dir),
+        timeout_s=60,
+        interactive=interactive,
+    )
+    store.create_task(spec)
+    rt = TaskRuntime(status=status, stdin_ready=stdin_ready, updated_at=time.time())
+    if status in {"completed", "failed", "killed", "lost"}:
+        rt.finished_at = time.time()
+        rt.exit_code = 0 if status == "completed" else 1
+    store.write_runtime(task_id, rt)
+    queue_dir = store.task_dir(task_id) / "stdin_queue"
+    queue_dir.mkdir(exist_ok=True)
+    return spec
+
+
+@pytest.mark.asyncio
+async def test_task_write_queues_message(runtime, task_write_tool):
+    spec = _write_interactive_task(runtime, "bw000001")
+    result = await task_write_tool(TaskWriteParams(task_id=spec.id, input="hello"))
+
+    assert not result.is_error
+    assert "bytes_queued:" in result.output
+    queue_dir = runtime.background_tasks.store.task_dir(spec.id) / "stdin_queue"
+    msgs = list(queue_dir.glob("*.msg"))
+    assert len(msgs) == 1
+    assert msgs[0].read_text() == "hello\n"
+
+
+@pytest.mark.asyncio
+async def test_task_write_no_newline(runtime, task_write_tool):
+    spec = _write_interactive_task(runtime, "bw000002")
+    result = await task_write_tool(
+        TaskWriteParams(task_id=spec.id, input="hello", append_newline=False)
+    )
+
+    assert not result.is_error
+    queue_dir = runtime.background_tasks.store.task_dir(spec.id) / "stdin_queue"
+    msgs = list(queue_dir.glob("*.msg"))
+    assert len(msgs) == 1
+    assert msgs[0].read_text() == "hello"
+
+
+@pytest.mark.asyncio
+async def test_task_write_rejects_non_interactive(runtime, task_write_tool):
+    spec = _write_interactive_task(runtime, "bw000003", interactive=False)
+    result = await task_write_tool(TaskWriteParams(task_id=spec.id, input="hello"))
+
+    assert result.is_error
+    assert "not interactive" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_task_write_rejects_terminal_task(runtime, task_write_tool):
+    spec = _write_interactive_task(runtime, "bw000004", status="completed")
+    result = await task_write_tool(TaskWriteParams(task_id=spec.id, input="hello"))
+
+    assert result.is_error
+    assert "finished" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_task_write_rejects_stdin_not_ready(runtime, task_write_tool):
+    spec = _write_interactive_task(runtime, "bw000005", stdin_ready=False)
+    result = await task_write_tool(TaskWriteParams(task_id=spec.id, input="hello"))
+
+    assert result.is_error
+    assert "not ready" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_task_write_not_found(runtime, task_write_tool):
+    result = await task_write_tool(TaskWriteParams(task_id="bw-nonexist", input="hello"))
+
+    assert result.is_error
+    assert "not found" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_task_write_blocks_in_plan_mode(runtime, task_write_tool):
+    runtime.session.state.plan_mode = True
+    result = await task_write_tool(TaskWriteParams(task_id="bw-noop", input="hello"))
+    assert result.is_error
+    assert result.brief == "Blocked in plan mode"
+
+
+def test_shell_interactive_requires_background():
+    with pytest.raises(ValueError, match="interactive.*requires.*run_in_background"):
+        Params(command="cat", timeout=10, run_in_background=False, interactive=True)
+
+
+@pytest.mark.asyncio
+async def test_shell_interactive_starts_task(shell_tool, runtime, monkeypatch):
+    monkeypatch.setattr(runtime.background_tasks, "_launch_worker", lambda task_dir: 9898)
+    result = await shell_tool(
+        Params(
+            command="cat",
+            timeout=3600,
+            run_in_background=True,
+            interactive=True,
+            description="interactive cat",
+        )
+    )
+    assert not result.is_error
+    assert "TaskWrite" in result.output

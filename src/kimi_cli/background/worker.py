@@ -14,6 +14,72 @@ from kimi_cli.utils.subprocess_env import get_clean_env
 from .models import TaskControl, TaskRuntime
 from .store import BackgroundTaskStore
 
+STDIN_QUEUE_DIR = "stdin_queue"
+STDIN_LOG_FILE = "stdin.log"
+MAX_STDIN_LOG_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+async def _stdin_relay_loop(
+    task_dir: Path,
+    process: asyncio.subprocess.Process,
+    stop_event: asyncio.Event,
+    poll_interval_ms: int = 200,
+) -> None:
+    """Poll ``stdin_queue/`` for message files and relay them to *process.stdin*.
+
+    Each ``.msg`` file is read, written to the child's stdin pipe, appended to
+    ``stdin.log`` for auditing, then deleted.  Files are processed in filename
+    order (callers use a nanosecond-timestamp prefix for ordering).
+    """
+    queue_dir = task_dir / STDIN_QUEUE_DIR
+    log_path = task_dir / STDIN_LOG_FILE
+    while not stop_event.is_set():
+        await asyncio.sleep(poll_interval_ms / 1000)
+        if stop_event.is_set() or process.returncode is not None:
+            return
+        if process.stdin is None:
+            return
+        try:
+            pending = sorted(
+                p for p in queue_dir.iterdir() if p.is_file() and p.suffix == ".msg"
+            )
+        except FileNotFoundError:
+            logger.warning("stdin relay: queue directory removed, stopping")
+            return
+        except OSError:
+            logger.exception("stdin relay: failed to list queue directory")
+            continue
+        for msg_file in pending:
+            if stop_event.is_set() or process.returncode is not None:
+                break
+            try:
+                data = msg_file.read_bytes()
+            except OSError:
+                logger.warning("stdin relay: failed to read %s, skipping", msg_file.name)
+                continue
+            if process.returncode is not None:
+                msg_file.unlink(missing_ok=True)
+                return
+            try:
+                process.stdin.write(data)
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                logger.warning("stdin relay: pipe write failed, stopping")
+                return
+            # Audit log (best-effort, capped at MAX_STDIN_LOG_BYTES)
+            try:
+                if not log_path.exists() or log_path.stat().st_size < MAX_STDIN_LOG_BYTES:
+                    with log_path.open("ab") as f:
+                        f.write(data)
+            except OSError:
+                pass
+            try:
+                msg_file.unlink()
+            except OSError:
+                logger.warning(
+                    "stdin relay: failed to unlink %s, may re-send", msg_file.name
+                )
+
 
 def terminate_process_tree_windows(pid: int, *, force: bool) -> None:
     args = ["taskkill", "/PID", str(pid), "/T"]
@@ -100,9 +166,18 @@ async def run_background_task_worker(
         store.write_runtime(task_id, runtime)
         return
 
+    if spec.interactive and os.name == "nt":
+        runtime.status = "failed"
+        runtime.finished_at = time.time()
+        runtime.updated_at = runtime.finished_at
+        runtime.failure_reason = "Interactive background tasks are not supported on Windows"
+        store.write_runtime(task_id, runtime)
+        return
+
     process: asyncio.subprocess.Process | None = None
     control_task: asyncio.Task[None] | None = None
     heartbeat_task: asyncio.Task[None] | None = None
+    stdin_relay_task: asyncio.Task[None] | None = None
     stop_event = asyncio.Event()
 
     # Register SIGTERM handler to initiate graceful shutdown
@@ -137,6 +212,19 @@ async def run_background_task_worker(
         nonlocal kill_sent_at
         if process is None or process.returncode is not None:
             return
+
+        # Graceful EOF shutdown for interactive tasks: close stdin first so
+        # the child process (e.g. claude) sees EOF and can exit cleanly.
+        if spec.interactive and not force and process.stdin is not None:
+            try:
+                process.stdin.close()
+                await asyncio.wait_for(process.wait(), timeout=1.0)
+                return  # exited cleanly after EOF
+            except TimeoutError:
+                pass  # proceed to SIGTERM
+            except Exception:
+                pass
+
         kill_sent_at = kill_sent_at or time.time()
 
         try:
@@ -173,7 +261,7 @@ async def run_background_task_worker(
         output_path = store.output_path(task_id)
         with output_path.open("ab") as output_file:
             spawn_kwargs: dict[str, Any] = {
-                "stdin": subprocess.DEVNULL,
+                "stdin": asyncio.subprocess.PIPE if spec.interactive else subprocess.DEVNULL,
                 "stdout": output_file,
                 "stderr": output_file,
                 "cwd": spec.cwd,
@@ -195,6 +283,10 @@ async def run_background_task_worker(
             runtime.status = "running"
             runtime.child_pid = process.pid
             runtime.child_pgid = process.pid if os.name != "nt" else None
+            if spec.interactive:
+                stdin_queue_dir = task_dir / STDIN_QUEUE_DIR
+                stdin_queue_dir.mkdir(exist_ok=True)
+                runtime.stdin_ready = True
             runtime.updated_at = time.time()
             runtime.heartbeat_at = runtime.updated_at
             store.write_runtime(task_id, runtime)
@@ -202,6 +294,10 @@ async def run_background_task_worker(
 
             heartbeat_task = asyncio.create_task(_heartbeat_loop())
             control_task = asyncio.create_task(_control_loop())
+            if spec.interactive:
+                stdin_relay_task = asyncio.create_task(
+                    _stdin_relay_loop(task_dir, process, stop_event)
+                )
             if spec.timeout_s is None:
                 returncode = await process.wait()
             else:
@@ -233,7 +329,7 @@ async def run_background_task_worker(
         stop_event.set()
         if os.name != "nt":
             signal.signal(signal.SIGTERM, original_sigterm)
-        for task in (heartbeat_task, control_task):
+        for task in (heartbeat_task, control_task, stdin_relay_task):
             if task is not None:
                 task.cancel()
                 try:

@@ -33,6 +33,7 @@ class TaskSpec(BaseModel):
     shell_path: str | None = None
     cwd: str | None = None
     timeout_s: int | None = None
+    interactive: bool = False
     kind_payload: dict[str, str] | None = None
 
 
@@ -50,6 +51,7 @@ class TaskRuntime(BaseModel):
     exit_code: int | None = None
     interrupted: bool = False
     timed_out: bool = False
+    stdin_ready: bool = False
     failure_reason: str | None = None
 
 
