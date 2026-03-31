@@ -703,6 +703,7 @@ class WireServer:
                 ),
             )
 
+        # TODO: if Wire clients need mid-turn skill activation, pass is_skill=True here
         self._soul.steer(msg.params.user_input)
         return JSONRPCSuccessResponse(
             id=msg.id,

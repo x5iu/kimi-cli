@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from kimi_cli.notifications import NotificationWatcher
+from kimi_cli.skill import normalize_skill_name
 from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
 from kimi_cli.soul.input_validation import validate_live_user_input
 from kimi_cli.soul.kimisoul import KimiSoul
@@ -261,19 +262,16 @@ class Shell:
         # after the idle prompt erases — keeping the gap minimal.
         pre_rendered_echo = ""
         if echo and user_input.mode == PromptMode.AGENT:
-            pre_rendered_echo = self._pre_render_user_echo(
-                self._display_user_input(user_input)
-            )
+            pre_rendered_echo = self._pre_render_user_echo(self._display_user_input(user_input))
 
-        if (
-            slash_cmd_call is not None
-            and slash_cmd_call.name in self._slash_command_lookup
-        ):
+        if slash_cmd_call is not None and slash_cmd_call.name in self._slash_command_lookup:
             soul_input: str | list[ContentPart] = slash_cmd_call.raw_input
         else:
             soul_input: str | list[ContentPart] = user_input.content
         keep_running = await self._run_interactive_turn(
-            prompt_session, soul_input, pre_rendered_echo=pre_rendered_echo,
+            prompt_session,
+            soul_input,
+            pre_rendered_echo=pre_rendered_echo,
         )
         console.print()
         return keep_running
@@ -336,9 +334,7 @@ class Shell:
                                 "Async command /%s cannot run during a turn",
                                 slash_call.name,
                             )
-                            live_view.echo_info(
-                                "Error: this command cannot run during a turn"
-                            )
+                            live_view.echo_info("Error: this command cannot run during a turn")
                             return TurnSubmitResult.accept()
                         output = capture.get().strip()
                         if output:
@@ -356,31 +352,23 @@ class Shell:
                 # During a turn, inject skill content via steer so the
                 # model can perceive the skill within the current turn.
                 if isinstance(self.soul, KimiSoul):
-                    skill_name = slash_call.name[len(_SKILL_PREFIX):]
+                    skill_name = normalize_skill_name(slash_call.name[len(_SKILL_PREFIX) :])
                     skill = self.soul.runtime.skills.get(skill_name)
                     if skill is not None:
                         from pathlib import Path
 
                         try:
-                            skill_text = Path(
-                                str(skill.skill_md_file)
-                            ).read_text(encoding="utf-8").strip()
+                            skill_text = (
+                                Path(str(skill.skill_md_file)).read_text(encoding="utf-8").strip()
+                            )
                             extra = slash_call.args.strip()
                             if extra:
-                                skill_text = (
-                                    f"{skill_text}\n\nUser request:\n{extra}"
-                                )
-                            self.soul.steer(skill_text)
-                            live_view.echo_reminder(
-                                self._display_user_input(turn_input)
-                            )
-                            return TurnSubmitResult.accept(
-                                persist_history=True
-                            )
+                                skill_text = f"{skill_text}\n\nUser request:\n{extra}"
+                            self.soul.steer(skill_text, is_skill=True)
+                            live_view.echo_reminder(self._display_user_input(turn_input))
+                            return TurnSubmitResult.accept(persist_history=True)
                         except OSError:
-                            live_view.echo_info(
-                                f"Error: failed to load skill {skill_name}"
-                            )
+                            live_view.echo_info(f"Error: failed to load skill {skill_name}")
                             return TurnSubmitResult.accept()
                 # Fallback: cancel turn and queue for post-turn execution
                 queued_input = turn_input

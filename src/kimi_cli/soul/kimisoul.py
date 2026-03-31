@@ -254,6 +254,7 @@ class SkillReminderState:
 class _QueuedSteer:
     turn_id: int
     content: str | list[ContentPart]
+    is_skill: bool = False
 
 
 class KimiSoul:
@@ -279,9 +280,7 @@ class KimiSoul:
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
         self._compaction: Compaction = SimpleCompaction(
-            max_preserved_messages=getattr(
-                self._loop_control, 'max_preserved_messages', 2
-            )
+            max_preserved_messages=getattr(self._loop_control, "max_preserved_messages", 2)
         )
         # TODO: maybe configurable and composable
         self._last_compaction_turn: int | None = None
@@ -295,7 +294,8 @@ class KimiSoul:
                     "reserved_context_size ({rcs}) is >= 50% of "
                     "max_context_size ({mcs}); compaction may "
                     "trigger too aggressively",
-                    rcs=rcs, mcs=mcs,
+                    rcs=rcs,
+                    mcs=mcs,
                 )
 
         for tool in agent.toolset.tools:
@@ -313,9 +313,7 @@ class KimiSoul:
         self._plan_file_slug: str | None = self._runtime.session.state.plan_file_slug
         self._pending_plan_activation_attachment: bool = False
         if (
-            self._plan_mode
-            or self._plan_session_id is not None
-            or self._plan_file_slug is not None
+            self._plan_mode or self._plan_session_id is not None or self._plan_file_slug is not None
         ) and self._ensure_plan_identity():
             self._runtime.session.save_state()
         self._attachment_providers: list[AttachmentProvider] = [
@@ -694,13 +692,15 @@ class KimiSoul:
         if self._active_turn_id == turn_id:
             self._active_turn_id = None
 
-    def steer(self, content: str | list[ContentPart]) -> None:
+    def steer(self, content: str | list[ContentPart], *, is_skill: bool = False) -> None:
         """Queue a steer message for injection into the current turn."""
         turn_id = self._active_turn_id
         if turn_id is None:
             logger.debug("Ignoring steer because there is no active turn")
             return
-        self._steer_queue.put_nowait(_QueuedSteer(turn_id=turn_id, content=content))
+        self._steer_queue.put_nowait(
+            _QueuedSteer(turn_id=turn_id, content=content, is_skill=is_skill)
+        )
 
     async def _consume_pending_steers(self) -> bool:
         """Drain the steer queue and inject as synthetic tool results.
@@ -719,7 +719,7 @@ class KimiSoul:
                     active_turn_id=active_turn_id,
                 )
                 continue
-            await self._inject_steer(steer.content)
+            await self._inject_steer(steer.content, is_skill=steer.is_skill)
             consumed = True
         return consumed
 
@@ -737,15 +737,33 @@ class KimiSoul:
             "user's original turn-opening request."
         )
 
+    @staticmethod
+    def _skill_steer_instruction_text() -> str:
+        return (
+            "The user activated a skill during the current turn. "
+            "The skill content below contains instructions, reference material, and/or "
+            "workflow patterns that you MUST read carefully and follow as primary directives "
+            "for the remainder of this turn. "
+            "Treat this skill content as the new primary instruction for this turn, "
+            "superseding the original turn request. "
+            "Proceed directly to follow the skill's instructions."
+        )
+
     @classmethod
-    def _build_steer_message(cls, content: str | list[ContentPart]) -> Message:
+    def _build_steer_message_impl(
+        cls,
+        content: str | list[ContentPart],
+        instruction: str,
+        label: str,
+        tag: str = "system-reminder",
+    ) -> Message:
         content_parts: list[ContentPart] = [
             TextPart(
                 text=(
-                    "<system-reminder>\n"
-                    f"{cls._steer_instruction_text()}\n\n"
-                    "Reminder content follows in the rest of this message.\n"
-                    "</system-reminder>"
+                    f"<{tag}>\n"
+                    f"{instruction}\n\n"
+                    f"{label} follows in the rest of this message.\n"
+                    f"</{tag}>"
                 )
             )
         ]
@@ -757,33 +775,59 @@ class KimiSoul:
             content_parts.extend(content)
         return internal_user_message(content_parts)
 
+    @classmethod
+    def _build_steer_message(cls, content: str | list[ContentPart]) -> Message:
+        return cls._build_steer_message_impl(
+            content,
+            instruction=cls._steer_instruction_text(),
+            label="Reminder content",
+        )
+
+    @classmethod
+    def _build_skill_steer_message(cls, content: str | list[ContentPart]) -> Message:
+        return cls._build_steer_message_impl(
+            content,
+            instruction=cls._skill_steer_instruction_text(),
+            label="Skill content",
+            tag="skill-activation",
+        )
+
     @staticmethod
     def _stringify_steer_content(content: str | list[ContentPart]) -> str:
         if isinstance(content, str):
             return content.strip()
         return content_parts_stringify(content).strip()
 
-    async def _inject_steer(self, content: str | list[ContentPart]) -> None:
+    async def _inject_steer(
+        self, content: str | list[ContentPart], *, is_skill: bool = False
+    ) -> None:
         """Inject a single steer as a real-time reminder appended to user messages."""
-        reminder_message = self._build_steer_message(content)
+        if is_skill:
+            reminder_message = self._build_skill_steer_message(content)
+        else:
+            reminder_message = self._build_steer_message(content)
         if self._runtime.llm is None:
             raise LLMNotSet()
         if missing_caps := check_message(reminder_message, self._runtime.llm.capabilities):
             fallback_text = self._stringify_steer_content(content)
             if not fallback_text:
-                fallback_text = (
-                    "The reminder included non-text content that is not supported by the current "
-                    "model."
-                )
-            reminder_message = internal_user_message(
-                TextPart(
-                    text=(
-                        "<system-reminder>\n"
-                        f"{self._steer_instruction_text()}\n\n"
-                        f"Reminder:\n{fallback_text}\n"
-                        "</system-reminder>"
+                if is_skill:
+                    fallback_text = (
+                        "The skill content included non-text content that is not supported "
+                        "by the current model."
                     )
-                )
+                else:
+                    fallback_text = (
+                        "The reminder included non-text content that is not supported "
+                        "by the current model."
+                    )
+            instruction = (
+                self._skill_steer_instruction_text() if is_skill else self._steer_instruction_text()
+            )
+            label = "Skill content" if is_skill else "Reminder"
+            tag = "skill-activation" if is_skill else "system-reminder"
+            reminder_message = internal_user_message(
+                TextPart(text=(f"<{tag}>\n{instruction}\n\n{label}:\n{fallback_text}\n</{tag}>"))
             )
             if missing_caps := check_message(reminder_message, self._runtime.llm.capabilities):
                 raise LLMNotSupported(self._runtime.llm, list(missing_caps))
@@ -1587,7 +1631,8 @@ class KimiSoul:
                     not self._suppress_auto_compaction
                     and getattr(
                         self._loop_control,
-                        'auto_compact_enabled', True,
+                        "auto_compact_enabled",
+                        True,
                     )
                     and should_auto_compact(
                         self._context.token_count_with_pending,
@@ -1609,8 +1654,7 @@ class KimiSoul:
                             self._last_compaction_turn = self._active_turn_id
                         except Exception:
                             logger.opt(exception=True).warning(
-                                "Auto-compaction failed, "
-                                "continuing without compaction"
+                                "Auto-compaction failed, continuing without compaction"
                             )
 
                 logger.debug("Beginning step {step_no}", step_no=step_no)
@@ -1798,9 +1842,7 @@ class KimiSoul:
             tool_token_estimate = estimate_text_tokens(tool_messages)
             current = self._context.token_count
             if current > 0:
-                await self._context.update_token_count(
-                    current + tool_token_estimate
-                )
+                await self._context.update_token_count(current + tool_token_estimate)
 
     async def compact_context(self, custom_instruction: str = "") -> None:
         """
@@ -1876,24 +1918,19 @@ class KimiSoul:
                 await self._context.append_message(final_messages)
             except Exception:
                 logger.opt(exception=True).warning(
-                    "Failed to append compacted messages; "
-                    "restoring pre-compaction context"
+                    "Failed to append compacted messages; restoring pre-compaction context"
                 )
                 try:
                     rotated_path.replace(self._context.file_backend)
                 except Exception:
-                    logger.opt(exception=True).warning(
-                        "Failed to restore rotated context file"
-                    )
+                    logger.opt(exception=True).warning("Failed to restore rotated context file")
                 raise
 
             estimated_token_count = CompactionResult(
                 messages=final_messages, usage=compaction_result.usage
             ).estimated_token_count
 
-            active_task_snapshot = build_active_task_snapshot(
-                self._runtime.background_tasks
-            )
+            active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
             if active_task_snapshot is not None:
                 active_task_message = Message(
                     role="user",
@@ -1907,20 +1944,20 @@ class KimiSoul:
                     ],
                 )
                 await self._context.append_message(active_task_message)
-                estimated_token_count += estimate_text_tokens(
-                    [active_task_message]
-                )
+                estimated_token_count += estimate_text_tokens([active_task_message])
 
             # Estimate token count so context_usage is not reported as 0%
             await self._context.update_token_count(estimated_token_count)
 
             # Send StatusUpdate so the UI reflects the reduced context
             snap = self.status
-            wire_send(StatusUpdate(
-                context_usage=snap.context_usage,
-                context_tokens=snap.context_tokens,
-                max_context_tokens=snap.max_context_tokens,
-            ))
+            wire_send(
+                StatusUpdate(
+                    context_usage=snap.context_usage,
+                    context_tokens=snap.context_tokens,
+                    max_context_tokens=snap.max_context_tokens,
+                )
+            )
         finally:
             wire_send(CompactionEnd())
 
@@ -2079,8 +2116,7 @@ class FlowRunner:
                 if node.kind == "begin":
                     if not edges:
                         logger.error(
-                            'Agent flow BEGIN node "{node_id}" '
-                            "has no outgoing edges; stopping.",
+                            'Agent flow BEGIN node "{node_id}" has no outgoing edges; stopping.',
                             node_id=node.id,
                         )
                         return
@@ -2156,7 +2192,7 @@ class FlowRunner:
             )
             retries += 1
             if retries >= max_retries:
-                raise MaxStepsReached(f'Flow decision node failed after {max_retries} retries')
+                raise MaxStepsReached(f"Flow decision node failed after {max_retries} retries")
             prompt = (
                 f"{base_prompt}\n\n"
                 "Your last response did not include a valid choice. "
