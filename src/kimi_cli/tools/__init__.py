@@ -6,7 +6,6 @@ from kaos.path import KaosPath
 from kosong.utils.typing import JsonType
 
 from kimi_cli.tools.todo_text import todo_label
-from kimi_cli.utils.string import shorten_middle
 
 
 class SkipThisTool(Exception):
@@ -62,7 +61,6 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
     if not curr_args:
         return None
     key_argument: str = ""
-    should_truncate = True
     match tool_name:
         case "SendDMail":
             return None
@@ -81,7 +79,6 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("command"):
                 return None
             key_argument = str(curr_args["command"])
-            should_truncate = False
         case "TaskOutput":
             if not isinstance(curr_args, dict) or not curr_args.get("task_id"):
                 return None
@@ -143,8 +140,6 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
                 key_argument = "".join(content)
             else:
                 key_argument = json_content
-    if should_truncate:
-        key_argument = shorten_middle(key_argument, width=50)
     return key_argument
 
 
