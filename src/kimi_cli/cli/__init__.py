@@ -306,6 +306,10 @@ def kimi(
     ] = None,
 ):
     """Kimi, your next CLI agent."""
+    from kimi_cli.utils.proxy import normalize_proxy_env
+
+    normalize_proxy_env()
+
     from kimi_cli.utils.proctitle import init_process_name
 
     init_process_name("Kimi Code")
