@@ -231,19 +231,31 @@ class _GenerateJsonSchemaNoTitles(GenerateJsonSchema):
         json_schema.pop("title", None)
 
 
-def _try_parse_json_strings(arguments: JsonType) -> JsonType:
+def _try_parse_json_strings(
+    arguments: JsonType, *, model: type[BaseModel] | None = None
+) -> JsonType:
     """Attempt to parse string values that look like JSON objects or arrays.
 
     LLMs sometimes double-encode nested parameters, producing
     ``{"edit": "{\\"kind\\": ...}"}`` instead of ``{"edit": {"kind": ...}}``.
     This helper detects such cases and transparently decodes them so that
     Pydantic validation succeeds.
+
+    When *model* is provided, fields whose annotation is ``str`` are skipped
+    so that intentional JSON-as-string values (e.g. ``TaskWrite.input``) are
+    not accidentally parsed into dicts.
     """
     if not isinstance(arguments, dict):
         return arguments
     result = dict(arguments)
     for key, value in result.items():
         if isinstance(value, str):
+            # If the model explicitly declares this field as str, the value is
+            # intentionally a string — do not attempt to parse it.
+            if model is not None:
+                field_info = model.model_fields.get(key)
+                if field_info is not None and field_info.annotation is str:
+                    continue
             stripped = value.strip()
             if (stripped.startswith("{") and stripped.endswith("}")) or (
                 stripped.startswith("[") and stripped.endswith("]")
@@ -317,7 +329,9 @@ class CallableTool2[Params: BaseModel](ABC):
         from kosong.tooling.error import ToolValidateError
 
         try:
-            params = self.params.model_validate(_try_parse_json_strings(arguments))
+            params = self.params.model_validate(
+                _try_parse_json_strings(arguments, model=self.params)
+            )
         except pydantic.ValidationError as e:
             return ToolValidateError(str(e))
 
