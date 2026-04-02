@@ -15,7 +15,7 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import KimiToolset
-from kimi_cli.tools.file.replace import EditTool, StrReplaceFile
+from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.plan import ExitPlanMode
 from kimi_cli.tools.plan.enter import _DEFAULT_DESCRIPTION, _YOLO_DESCRIPTION, EnterPlanMode
@@ -727,39 +727,6 @@ class TestPlanModeToolGuard:
         assert isinstance(todo_result, ToolResult)
         assert isinstance(todo_result.return_value, ToolError)
         assert todo_result.return_value.brief == "Blocked in plan mode"
-
-    async def test_hides_and_blocks_str_replace_file_while_plan_mode_active(
-        self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr("kimi_cli.tools.plan.naming.PLANS_DIR", tmp_path)
-        toolset = KimiToolset()
-        toolset.add(StrReplaceFile(runtime, runtime.approval))
-        soul = _make_soul(runtime, tmp_path, toolset)
-
-        assert "StrReplaceFile" in {tool.name for tool in toolset.tools}
-        soul._set_plan_mode(True, source="tool")
-        assert "StrReplaceFile" not in {tool.name for tool in toolset.tools}
-
-        blocked = toolset.handle(
-            ToolCall(
-                id="blocked-replace",
-                function=ToolCall.FunctionBody(
-                    name="StrReplaceFile",
-                    arguments=json.dumps(
-                        {
-                            "path": str(tmp_path / "other.md"),
-                            "edit": {"old": "a", "new": "b"},
-                        }
-                    ),
-                ),
-            )
-        )
-        assert isinstance(blocked, ToolResult)
-        assert isinstance(blocked.return_value, ToolError)
-        assert blocked.return_value.brief == "Blocked in plan mode"
-
-        soul._set_plan_mode(False, source="tool")
-        assert "StrReplaceFile" in {tool.name for tool in toolset.tools}
 
     async def test_allows_writing_only_plan_file(
         self, runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

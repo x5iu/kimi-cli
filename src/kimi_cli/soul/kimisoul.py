@@ -295,14 +295,6 @@ class KimiSoul:
 
         return [self._agent.toolset]
 
-    def _sync_plan_mode_visibility(self, toolsets: list[KimiToolset] | None = None) -> None:
-        """Hide plan-incompatible tools from the LLM while plan mode is active."""
-        for toolset in toolsets or self._plan_mode_bound_toolsets():
-            if self._plan_mode:
-                toolset.hide("StrReplaceFile")
-            else:
-                toolset.unhide("StrReplaceFile")
-
     def _bind_plan_mode_tools(self) -> None:
         """Bind plan mode state to tools that support it."""
         if not isinstance(self._agent.toolset, KimiToolset):
@@ -317,8 +309,6 @@ class KimiSoul:
         toolsets = self._plan_mode_bound_toolsets()
         for toolset in toolsets:
             toolset.bind_execution_guard(self._guard_plan_mode_tool_call)
-        self._sync_plan_mode_visibility(toolsets)
-
         # Write tools get plan mode bindings for plan-file-only edits.
         from kimi_cli.tools.file.replace import EditTool
         from kimi_cli.tools.file.write import WriteFile
@@ -460,15 +450,6 @@ class KimiSoul:
                 except OSError:
                     pass
 
-        if tool_name == "StrReplaceFile":
-            return ToolError(
-                message=(
-                    "StrReplaceFile is not available in plan mode. "
-                    "Use Edit or WriteFile on the plan file instead."
-                ),
-                brief="Blocked in plan mode",
-            )
-
         return ToolError(
             message=(
                 "This tool is not available in plan mode. Use read-only tools to research, "
@@ -487,7 +468,6 @@ class KimiSoul:
             self._pending_plan_activation_attachment = source == "manual"
         else:
             self._pending_plan_activation_attachment = False
-        self._sync_plan_mode_visibility()
         # Persist plan mode to session state so it survives process restarts
         self._runtime.session.state.plan_mode = self._plan_mode
         self._runtime.session.save_state()

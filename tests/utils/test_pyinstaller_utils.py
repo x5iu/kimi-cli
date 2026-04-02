@@ -118,10 +118,6 @@ def test_pyinstaller_datas():
             "kimi_cli/tools/file",
         ),
         (
-            "src/kimi_cli/tools/file/replace.md",
-            "kimi_cli/tools/file",
-        ),
-        (
             "src/kimi_cli/tools/file/write.md",
             "kimi_cli/tools/file",
         ),
@@ -209,7 +205,6 @@ def test_pyinstaller_datas():
     ("src/kimi_cli/tools/file/grep.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/read.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/read_media.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/file/replace.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/write.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/plan/description.md", "kimi_cli/tools/plan"),
     ("src/kimi_cli/tools/plan/enter_description.md", "kimi_cli/tools/plan"),

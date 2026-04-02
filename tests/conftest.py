@@ -35,7 +35,7 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
-from kimi_cli.tools.file.replace import EditTool, StrReplaceFile
+from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
@@ -297,13 +297,6 @@ def edit_tool(runtime: Runtime, approval: Approval) -> Generator[EditTool]:
     """Create an Edit tool instance."""
     with tool_call_context("Edit"):
         yield EditTool(runtime, approval)
-
-
-@pytest.fixture
-def str_replace_file_tool(runtime: Runtime, approval: Approval) -> Generator[StrReplaceFile]:
-    """Create a StrReplaceFile tool instance."""
-    with tool_call_context("StrReplaceFile"):
-        yield StrReplaceFile(runtime, approval)
 
 
 @pytest.fixture

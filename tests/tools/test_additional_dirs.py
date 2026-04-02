@@ -16,9 +16,6 @@ from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.glob import Params as GlobParams
 from kimi_cli.tools.file.read import Params as ReadParams
 from kimi_cli.tools.file.read import ReadFile
-from kimi_cli.tools.file.replace import Edit as ReplaceEdit
-from kimi_cli.tools.file.replace import Params as ReplaceParams
-from kimi_cli.tools.file.replace import StrReplaceFile
 from kimi_cli.tools.file.write import Params as WriteParams
 from kimi_cli.tools.file.write import WriteFile
 from tests.conftest import tool_call_context
@@ -137,28 +134,6 @@ async def test_write_file_in_additional_dir_uses_edit_action(
 
         result = await write_tool(WriteParams(path=str(target), content="content"))
         assert not result.is_error
-
-
-# ── StrReplaceFile tests ────────────────────────────────────────────────────
-
-
-async def test_replace_in_additional_dir(
-    runtime_with_additional_dir: Runtime, approval: Approval, additional_dir: KaosPath
-):
-    """StrReplaceFile should edit files in additional directories."""
-    with tool_call_context("StrReplaceFile"):
-        replace_tool = StrReplaceFile(runtime_with_additional_dir, approval)
-        target = additional_dir / "code.py"
-        await target.write_text("old_value = 1\n")
-
-        result = await replace_tool(
-            ReplaceParams(
-                path=str(target),
-                edit=ReplaceEdit(old="old_value", new="new_value"),
-            )
-        )
-        assert not result.is_error
-        assert await target.read_text() == "new_value = 1\n"
 
 
 # ── Dynamic mutation tests ──────────────────────────────────────────────────

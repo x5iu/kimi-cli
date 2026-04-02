@@ -18,7 +18,6 @@ from .grep_local import Grep  # noqa: E402
 from .read import ReadFile  # noqa: E402
 from .read_media import ReadMediaFile  # noqa: E402
 from .replace import EditTool as Edit  # noqa: E402
-from .replace import StrReplaceFile  # noqa: E402
 from .write import WriteFile  # noqa: E402
 
 __all__ = (
@@ -28,5 +27,4 @@ __all__ = (
     "Grep",
     "WriteFile",
     "Edit",
-    "StrReplaceFile",
 )

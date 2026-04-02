@@ -120,7 +120,7 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
             key_argument = _normalize_path(str(curr_args["path"]))
-        case "Edit" | "StrReplaceFile":
+        case "Edit":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
             key_argument = _normalize_path(str(curr_args["path"]))
