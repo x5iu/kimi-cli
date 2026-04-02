@@ -5,7 +5,7 @@ import time
 import pytest
 
 from kimi_cli.background import TaskRuntime, TaskSpec, TaskStatus
-from kimi_cli.tools.background import TASK_OUTPUT_PREVIEW_BYTES, TaskWrite, TaskWriteParams
+from kimi_cli.tools.background import TASK_OUTPUT_PREVIEW_BYTES, TaskWriteParams
 from kimi_cli.tools.shell import Params
 
 
@@ -303,14 +303,6 @@ async def test_task_output_does_not_suppress_for_running_task(runtime, task_outp
     assert spec.id not in runtime.background_tasks._observed_terminal_ids
 
 
-@pytest.mark.asyncio
-async def test_task_stop_blocks_in_plan_mode(runtime, task_stop_tool):
-    runtime.session.state.plan_mode = True
-    result = await task_stop_tool(task_stop_tool.params(task_id="b-noop"))
-    assert result.is_error
-    assert result.brief == "Blocked in plan mode"
-
-
 # ---------------------------------------------------------------------------
 # TaskWrite tests
 # ---------------------------------------------------------------------------
@@ -409,14 +401,6 @@ async def test_task_write_not_found(runtime, task_write_tool):
 
     assert result.is_error
     assert "not found" in result.message.lower()
-
-
-@pytest.mark.asyncio
-async def test_task_write_blocks_in_plan_mode(runtime, task_write_tool):
-    runtime.session.state.plan_mode = True
-    result = await task_write_tool(TaskWriteParams(task_id="bw-noop", input="hello"))
-    assert result.is_error
-    assert result.brief == "Blocked in plan mode"
 
 
 def test_shell_interactive_requires_background():

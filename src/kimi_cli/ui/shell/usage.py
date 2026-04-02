@@ -13,9 +13,9 @@ from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
-from kimi_cli.auth import KIMI_CODE_PLATFORM_ID
-from kimi_cli.auth.platforms import get_platform_by_id, parse_managed_provider_key
 from kimi_cli.config import LLMModel
+from kimi_cli.platforms import KIMI_CODE_PLATFORM_ID
+from kimi_cli.platforms.registry import get_platform_by_id, parse_managed_provider_key
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.slash import registry
@@ -39,7 +39,7 @@ async def usage(app: Shell, args: str):
     """Display API usage and quota information"""
     assert isinstance(app.soul, KimiSoul)
     if app.soul.runtime.llm is None:
-        console.print("[red]LLM not set. Please run /login first.[/red]")
+        console.print("[red]LLM not set.[/red]")
         return
 
     provider = app.soul.runtime.llm.provider_config
@@ -53,7 +53,7 @@ async def usage(app: Shell, args: str):
         return
 
     with console.status("[cyan]Fetching usage...[/cyan]"):
-        api_key = app.soul.runtime.oauth.resolve_api_key(provider.api_key, provider.oauth)
+        api_key = provider.api_key.get_secret_value()
         try:
             payload = await _fetch_usage(usage_url, api_key)
         except aiohttp.ClientResponseError as e:

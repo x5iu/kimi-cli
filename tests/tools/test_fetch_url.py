@@ -84,12 +84,12 @@ async def test_fetch_url_basic_functionality(fetch_url_tool: FetchURL) -> None:
 
     assert not result.is_error
     assert isinstance(result.output, str)
-    assert result.output.startswith("---\n")
-    assert "hostname: github.com" in result.output
     assert (
-        "The default parameter value for `optimizer` should probably be `adamw` instead of "
-        "`adamW` according to how `get_optimizer` is written."
-    ) in result.output
+        "The default parameter value for" in result.output
+        and "optimizer" in result.output
+        and "adamw" in result.output
+        and "adamW" in result.output
+    )
 
 
 async def test_fetch_url_invalid_url(fetch_url_tool: FetchURL) -> None:
@@ -139,7 +139,7 @@ async def test_fetch_url_empty_url(fetch_url_tool: FetchURL) -> None:
 
 
 async def test_fetch_url_javascript_driven_site(fetch_url_tool: FetchURL) -> None:
-    """Test fetching from a JavaScript-driven site that may not work with trafilatura."""
+    """Test fetching from a JavaScript-driven site that may not work with text extraction."""
     result = await fetch_url_tool(Params(url="https://www.moonshot.ai/"))
 
     # This may fail due to JavaScript rendering requirements

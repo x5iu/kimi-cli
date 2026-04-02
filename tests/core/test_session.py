@@ -10,8 +10,7 @@ from kaos.path import KaosPath
 from kosong.message import Message
 
 from kimi_cli.session import Session
-from kimi_cli.wire.file import WireFileMetadata, WireMessageRecord
-from kimi_cli.wire.protocol import WIRE_PROTOCOL_VERSION
+from kimi_cli.wire.file import WIRE_PROTOCOL_VERSION, WireFileMetadata, WireMessageRecord
 from kimi_cli.wire.types import TextPart, TurnBegin
 
 

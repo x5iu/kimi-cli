@@ -6,7 +6,6 @@ agent:
     ROLE_ADDITIONAL: ""
   tools:
     # - "kimi_cli.tools.multiagent:CreateSubagent"
-    # - "kimi_cli.tools.dmail:SendDMail"
     # - "kimi_cli.tools.think:Think"
     - "kimi_cli.tools.ask_user:AskUserQuestion"
     - "kimi_cli.tools.todo:SetTodoList"
@@ -24,5 +23,3 @@ agent:
     - "kimi_cli.tools.file:Edit"
     - "kimi_cli.tools.web:SearchWeb"
     - "kimi_cli.tools.web:FetchURL"
-    - "kimi_cli.tools.plan:ExitPlanMode"
-    - "kimi_cli.tools.plan.enter:EnterPlanMode"

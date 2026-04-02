@@ -1,8 +1,8 @@
 from __future__ import annotations
-import os
 
 import asyncio
 import contextlib
+import os
 import warnings
 from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
@@ -13,7 +13,6 @@ from pydantic import SecretStr
 
 import kaos
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
-from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.cli import InputFormat, OutputFormat
 from kimi_cli.config import Config, LLMModel, LLMProvider, load_config
 from kimi_cli.exception import ConfigError
@@ -124,8 +123,6 @@ class KimiCLI:
             else:
                 os.environ[key] = value
 
-        oauth = OAuthManager(config)
-
         model: LLMModel | None = None
         provider: LLMProvider | None = None
 
@@ -161,14 +158,13 @@ class KimiCLI:
             model,
             thinking=thinking,
             session_id=session.id,
-            oauth=oauth,
         )
         if llm is not None:
             logger.info("Using LLM provider: {provider}", provider=provider)
             logger.info("Using LLM model: {model}", model=model)
             logger.info("Thinking mode: {thinking}", thinking=thinking)
 
-        runtime = await Runtime.create(config, oauth, llm, session, yolo, skills_dir)
+        runtime = await Runtime.create(config, llm, session, yolo, skills_dir)
         runtime.notifications.recover()
         runtime.background_tasks.reconcile()
 
@@ -227,8 +223,7 @@ class KimiCLI:
         try:
             # to ignore possible warnings from dateparser
             warnings.filterwarnings("ignore", category=DeprecationWarning)
-            async with self._runtime.oauth.refreshing(self._runtime):
-                yield
+            yield
         finally:
             await kaos.chdir(original_cwd)
 
@@ -313,7 +308,7 @@ class KimiCLI:
             welcome_info.append(
                 WelcomeInfoItem(
                     name="Model",
-                    value="not set, send /login to login",
+                    value="not set",
                     level=WelcomeInfoItem.Level.WARN,
                 )
             )
@@ -361,12 +356,3 @@ class KimiCLI:
                 final_only=final_only,
             )
             return await print_.run(command)
-
-    async def run_wire_stdio(self) -> None:
-        """Run the Kimi Code CLI instance as Wire server over stdio."""
-        from kimi_cli.wire.server import WireServer
-
-        async with self._env():
-            with self._background_notification_targets("llm", "wire"):
-                server = WireServer(self._soul)
-                await server.serve()

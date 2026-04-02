@@ -15,7 +15,6 @@ from kimi_cli.exception import InvalidToolError, SystemPromptTemplateError
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import BuiltinSystemPromptArgs, Runtime, _load_system_prompt, load_agent
 from kimi_cli.soul.approval import Approval
-from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.utils.environment import Environment
 
@@ -125,7 +124,6 @@ def test_load_tools_valid(runtime: Runtime):
             Config: runtime.config,
             BuiltinSystemPromptArgs: runtime.builtin_args,
             Session: runtime.session,
-            DenwaRenji: runtime.denwa_renji,
             Approval: runtime.approval,
             Environment: runtime.environment,
         },
@@ -145,7 +143,6 @@ def test_load_tools_invalid(runtime: Runtime):
                 Config: runtime.config,
                 BuiltinSystemPromptArgs: runtime.builtin_args,
                 Session: runtime.session,
-                DenwaRenji: runtime.denwa_renji,
                 Approval: runtime.approval,
             },
         )

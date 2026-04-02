@@ -26,7 +26,6 @@ from kimi_cli.ui.shell.panels import (
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.rich.markdown import Markdown
 from kimi_cli.wire import WireUISide
 from kimi_cli.wire.types import (
     ApprovalRequest,
@@ -38,7 +37,6 @@ from kimi_cli.wire.types import (
     MCPLoadingBegin,
     MCPLoadingEnd,
     NotificationNotice,
-    PlanDisplay,
     QuestionRequest,
     SkillReminderNotice,
     StatusUpdate,
@@ -66,9 +64,7 @@ LIVE_VIEW_REFRESH_INTERVAL = 1.0
 
 def is_significant_for_render(msg: object) -> bool:
     """Whether a wire message should trigger an immediate repaint."""
-    if isinstance(msg, (ToolCallOutput, StatusUpdate, ApprovalResponse)):
-        return False
-    return True
+    return not isinstance(msg, (ToolCallOutput, StatusUpdate, ApprovalResponse))
 
 
 async def visualize(
@@ -145,18 +141,6 @@ def _render_info_block(text: str) -> RenderableType:
         box=box.ROUNDED,
         border_style="grey50",
         title=Text("Info", style="bold grey50"),
-        title_align="left",
-        padding=(0, 1),
-        expand=False,
-    )
-
-
-def _render_plan_display_block(content: str, file_path: str) -> RenderableType:
-    return Panel(
-        Markdown(content),
-        box=box.ROUNDED,
-        border_style="green",
-        title=Text(f"Plan ({file_path})", style="bold green"),
         title_align="left",
         padding=(0, 1),
         expand=False,
@@ -963,9 +947,6 @@ class LiveView:
                 self.append_skill_reminder(skills)
             case NotificationNotice():
                 pass
-            case PlanDisplay(content=content, file_path=file_path):
-                self.flush_content()
-                self._append_history_block(_render_plan_display_block(content, file_path))
             case StatusUpdate():
                 if self._status_block.update(msg):
                     self._need_recompose = True

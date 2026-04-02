@@ -4,21 +4,13 @@ An agent defines the AI's behavior, including system prompts, available tools, a
 
 ## Built-in agents
 
-Kimi Code CLI provides two built-in agents. You can select one at startup with the `--agent` flag:
-
-```sh
-kimi --agent okabe
-```
+Kimi Code CLI provides a built-in `default` agent.
 
 ### `default`
 
 The default agent, suitable for general use. Enabled tools:
 
 `Task`, `AskUserQuestion`, `SetTodoList`, `ExecuteTodo`, `Shell`, `TaskList`, `TaskOutput`, `TaskStop`, `ReadFile`, `ReadMediaFile`, `Glob`, `Grep`, `WriteFile`, `Edit`, `SearchWeb`, `FetchURL`
-
-### `okabe`
-
-An experimental agent for testing new prompts and tools. Adds `SendDMail` on top of `default`.
 
 ## Custom agent files
 
@@ -327,16 +319,6 @@ The following are all built-in tools in Kimi Code CLI.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `thought` | string | Thinking content |
-
-### `SendDMail`
-
-- **Path**: `kimi_cli.tools.dmail:SendDMail`
-- **Description**: Send delayed message (D-Mail), for checkpoint rollback scenarios
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `message` | string | Message to send |
-| `checkpoint_id` | int | Checkpoint ID to send back to (>= 0) |
 
 ### `CreateSubagent`
 

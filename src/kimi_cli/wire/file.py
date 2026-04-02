@@ -11,8 +11,10 @@ import aiofiles
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from kimi_cli.utils.logging import logger
-from kimi_cli.wire.protocol import WIRE_PROTOCOL_LEGACY_VERSION, WIRE_PROTOCOL_VERSION
 from kimi_cli.wire.types import WireMessage, WireMessageEnvelope
+
+WIRE_PROTOCOL_VERSION: str = "1.4"
+WIRE_PROTOCOL_LEGACY_VERSION: str = "1.1"
 
 
 class WireFileMetadata(BaseModel):

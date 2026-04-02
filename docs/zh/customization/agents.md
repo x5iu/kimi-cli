@@ -4,21 +4,13 @@ Agent 定义了 AI 的行为方式，包括系统提示词、可用工具和子 
 
 ## 内置 Agent
 
-Kimi Code CLI 提供两个内置 Agent。启动时可以通过 `--agent` 参数选择：
-
-```sh
-kimi --agent okabe
-```
+Kimi Code CLI 提供内置的 `default` Agent。
 
 ### `default`
 
 默认 Agent，适合通常情况使用。启用的工具：
 
 `Task`、`AskUserQuestion`、`SetTodoList`、`ExecuteTodo`、`Shell`、`TaskList`、`TaskOutput`、`TaskStop`、`ReadFile`、`ReadMediaFile`、`Glob`、`Grep`、`WriteFile`、`Edit`、`SearchWeb`、`FetchURL`
-
-### `okabe`
-
-实验性 Agent，用于实验新的提示词和工具。在 `default` 的基础上额外启用 `SendDMail`。
 
 ## 自定义 Agent 文件
 
@@ -327,16 +319,6 @@ agent:
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `thought` | string | 思考内容 |
-
-### `SendDMail`
-
-- **路径**：`kimi_cli.tools.dmail:SendDMail`
-- **描述**：发送延迟消息（D-Mail），用于检查点回滚场景
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `message` | string | 要发送的消息 |
-| `checkpoint_id` | int | 要发送回的检查点 ID（>= 0） |
 
 ### `CreateSubagent`
 

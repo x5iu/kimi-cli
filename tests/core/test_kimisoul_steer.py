@@ -169,30 +169,28 @@ async def test_early_turn_steer_is_not_dropped_before_agent_loop_starts(
         context=Context(file_backend=tmp_path / "history.jsonl"),
     )
 
-    oauth_started = asyncio.Event()
-    release_oauth = asyncio.Event()
+    step_started = asyncio.Event()
+    release_step = asyncio.Event()
     step_calls = 0
-
-    async def fake_ensure_fresh(_runtime) -> None:
-        oauth_started.set()
-        await release_oauth.wait()
 
     async def fake_step(self: KimiSoul) -> StepOutcome:
         nonlocal step_calls
         step_calls += 1
+        if step_calls == 1:
+            step_started.set()
+            await release_step.wait()
         return StepOutcome(
             stop_reason="no_tool_calls",
             assistant_message=Message(role="assistant", content=f"step {step_calls}"),
         )
 
-    monkeypatch.setattr(runtime.oauth, "ensure_fresh", fake_ensure_fresh)
     monkeypatch.setattr(KimiSoul, "_step", fake_step)
     monkeypatch.setattr("kimi_cli.soul.kimisoul.wire_send", lambda _: None)
 
     run_task = asyncio.create_task(soul.run("hello"))
-    await oauth_started.wait()
+    await step_started.wait()
     soul.steer("also do this")
-    release_oauth.set()
+    release_step.set()
     await run_task
 
     reminder_messages = [

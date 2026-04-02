@@ -75,10 +75,10 @@ cd your-project
 kimi
 ```
 
-On first launch, you need to configure your API source. Enter the `/login` command to start configuration:
+On first launch, you need to configure your API source. Enter the `/setup` command to start configuration:
 
 ```
-/login
+/setup
 ```
 
 After execution, first select a platform. We recommend **Kimi Code**, which automatically opens a browser for OAuth authorization; selecting other platforms requires entering an API key. After configuration, Kimi Code CLI will automatically save the settings and reload. See [Providers](../configuration/providers.md) for details.

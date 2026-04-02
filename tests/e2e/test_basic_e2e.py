@@ -2,7 +2,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import cast
 
 import pytest
 from kaos.path import KaosPath
@@ -86,113 +85,7 @@ def _run_shell_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tupl
         process.stdin.close()
     stdout_lines = _collect_stdout(process)
     return process.wait(), stdout_lines
-
-
-def _send_json(process: subprocess.Popen[str], payload: dict[str, object]) -> None:
-    assert process.stdin is not None
-    line = json.dumps(payload)
-    _print_trace("STDIN", line)
-    process.stdin.write(line + "\n")
-    process.stdin.flush()
-
-
-def _collect_until_response(
-    process: subprocess.Popen[str], response_id: str
-) -> tuple[dict[str, object], list[dict[str, object]]]:
-    assert process.stdout is not None
-    events: list[dict[str, object]] = []
-    while True:
-        line = process.stdout.readline()
-        if not line:
-            break
-        line = line.strip()
-        if not line:
-            continue
-        _print_trace("STDOUT", line)
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(msg, dict):
-            continue
-        msg = cast(dict[str, object], msg)
-        msg_id = msg.get("id")
-        if msg_id == response_id:
-            return msg, events
-        if msg.get("method") == "event":
-            params = msg.get("params")
-            if isinstance(params, dict):
-                events.append(cast(dict[str, object], params))
-    raise AssertionError(f"Missing response for id {response_id!r}")
-
-
-def _wire_has_text(events: list[dict[str, object]], text: str) -> bool:
-    for event in events:
-        if event.get("type") != "ContentPart":
-            continue
-        payload = event.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
-        payload_dict = cast(dict[str, object], payload)
-        if payload_dict.get("type") == "text" and text in str(payload_dict.get("text", "")):
-            return True
-    return False
-
-
-def _run_wire_mode(
-    config_path: Path, work_dir: Path, user_prompt: str
-) -> tuple[int, dict[str, object], list[dict[str, object]]]:
-    cmd = [
-        "uv",
-        "run",
-        "kimi",
-        "--wire",
-        "--yolo",
-        "--config-file",
-        str(config_path),
-        "--work-dir",
-        str(work_dir),
-    ]
-    process = subprocess.Popen(
-        cmd,
-        cwd=_repo_root(),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=os.environ.copy(),
-    )
-
-    _send_json(
-        process,
-        {
-            "jsonrpc": "2.0",
-            "id": "init",
-            "method": "initialize",
-            "params": {"protocol_version": "1.1"},
-        },
-    )
-    init_resp, _ = _collect_until_response(process, "init")
-    assert "result" in init_resp
-
-    _send_json(
-        process,
-        {
-            "jsonrpc": "2.0",
-            "id": "prompt-1",
-            "method": "prompt",
-            "params": {"user_input": user_prompt},
-        },
-    )
-    resp, events = _collect_until_response(process, "prompt-1")
-
-    if process.stdin is not None:
-        process.stdin.close()
-    _collect_stdout(process)
-    return process.wait(), resp, events
-
-
-@pytest.mark.parametrize("mode", ["print", "wire", "shell"])
+@pytest.mark.parametrize("mode", ["print", "shell"])
 async def test_scripted_echo_kimi_cli_agent_e2e(
     temp_work_dir: KaosPath, tmp_path: Path, mode: str
 ) -> None:
@@ -312,14 +205,6 @@ async def test_scripted_echo_kimi_cli_agent_e2e(
         return_code, stdout_lines = _run_print_mode(config_path, work_dir, user_prompt)
         assert return_code == 0
         assert any("Translation completed successfully." in line for line in stdout_lines)
-    elif mode == "wire":
-        return_code, resp, events = _run_wire_mode(config_path, work_dir, user_prompt)
-        assert return_code == 0
-        result = resp.get("result")
-        assert isinstance(result, dict)
-        result_dict = cast(dict[str, object], result)
-        assert result_dict.get("status") == "finished"
-        assert _wire_has_text(events, "Translation completed successfully.")
     elif mode == "shell":
         return_code, stdout_lines = _run_shell_mode(config_path, work_dir, user_prompt)
         assert return_code == 0

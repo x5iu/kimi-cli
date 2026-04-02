@@ -7,10 +7,9 @@ This repository uses VitePress for the documentation site. The current docs are 
 - Locales live under `docs/en/` and `docs/zh/` with mirrored paths and filenames.
 - Main sections (nav + sidebar) are:
   - Guides: getting-started, use-cases, interaction, sessions, integrations
-  - Customization: mcp, skills, agents, print-mode, wire-mode
-  - Configuration: config-files, providers, overrides, env-vars, data-locations
-  - Reference: kimi-command, kimi-acp, kimi-mcp, slash-commands, keyboard, tools, exit-codes
-  - FAQ: setup, interaction, acp, mcp, print-wire, updates
+  - Customization: mcp, skills, agents, print-mode
+  - Reference: kimi-command, kimi-info, kimi-mcp, slash-commands, keyboard
+  - FAQ: faq (single page)
   - Release notes: changelog, breaking-changes
 - Navigation and sidebar are defined in `docs/.vitepress/config.ts`. Any new or renamed page must be wired there for both locales.
 
@@ -36,13 +35,13 @@ Only the Chinese documentation and the English changelog are manually reviewed. 
 ## Wording conventions
 
 - Do not change H1 titles or nav/sidebar labels.
-- English H2+ headings use sentence case (only the first word capitalized unless it is a proper noun). Treat "Wire" as a proper noun; do not treat "agent", "shell mode", or "print mode" as proper nouns.
+- English H2+ headings use sentence case (only the first word capitalized unless it is a proper noun). Do not treat "agent", "shell mode", or "print mode" as proper nouns.
 - Chinese H2+ headings keep English words in sentence case; preserve proper nouns listed in the term table below.
 - Use `API key` in English and `API 密钥` in Chinese; keep `JSON`, `JSONL`, `OAuth`, `macOS`, and `uv` as-is.
 - Use straight double quotes with spaces for quoted content: `"被引内容"` (not curly quotes). Add a space before and after the quoted text when adjacent to CJK characters. Use corner brackets `「」` for special terms (e.g., `「工具」`, `「会话」`).
 - Prefer "终端" over "命令行" in Chinese when both are applicable (e.g., "运行在终端中", "终端界面", "终端操作").
 - Use "工具调用" / "tool call", not "工具使用" / "tool use".
-- Use inline code for tool names (e.g., `Task`, `ReadFile`, `Shell`).
+- Use inline code for tool names (e.g., `ReadFile`, `Shell`, `FetchURL`).
 
 Term mapping (Chinese <-> English, and proper noun handling):
 
@@ -52,7 +51,6 @@ Term mapping (Chinese <-> English, and proper noun handling):
 | Shell | shell | yes | no |
 | Shell 模式 | shell mode | yes | no |
 | Print 模式 | print mode | yes | no |
-| Wire 模式 | Wire mode | yes | yes (Wire) |
 | Thinking 模式 | thinking mode | yes | no |
 | MCP | MCP | yes | yes |
 | ACP | ACP | yes | yes |
@@ -79,8 +77,6 @@ Term mapping (Chinese <-> English, and proper noun handling):
 | Tool 消息 | tool message | yes (Tool) | no |
 | 轮次 | turn | no | no |
 | 供应商 | provider | no | no |
-| Prompt Flow | Prompt Flow | yes | yes |
-| Ralph 循环 | Ralph Loop | yes | yes |
 | Diff | diff | yes | no |
 
 JetBrains IDE terminology (Chinese UI translations):
@@ -108,10 +104,10 @@ JetBrains IDE terminology (Chinese UI translations):
   - ✗ `::: warning 不影响 Skills` (title too long, should be in content)
   - ✗ `::: tip Skills 路径独立于 KIMI_SHARE_DIR` (title too long)
 - **Version info blocks**: For version change callouts, use `::: info` with a category title (Added/Changed/Removed in English; 新增/变更/移除 in Chinese). The content should be a complete sentence.
-  - ✓ `::: info 新增` + content `新增于 Wire 1.2。`
-  - ✗ `::: info 新增于 Wire 1.2` (title too long)
-  - ✓ `::: info Changed` + content `Renamed in Wire 1.1. ...`
-  - ✗ `::: info Renamed in Wire 1.1` (title too long)
+  - ✓ `::: info 新增` + content `新增于 v2.0。`
+  - ✗ `::: info 新增于 v2.0` (title too long)
+  - ✓ `::: info Changed` + content `Renamed in v2.0. ...`
+  - ✗ `::: info Renamed in v2.0` (title too long)
 
 ## Writing style
 

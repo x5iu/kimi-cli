@@ -207,7 +207,7 @@ async def test_reminder_submitted_during_turn_rejects_when_llm_not_set(
     keep_running = await shell._run_interactive_turn(prompt_session, "hello")
 
     assert keep_running is True
-    assert results == [TurnSubmitResult.reject('LLM not set, send "/login" to login')]
+    assert results == [TurnSubmitResult.reject('LLM not set, send "/setup" to configure')]
     assert recorded == []
 
 

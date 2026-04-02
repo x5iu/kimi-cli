@@ -50,14 +50,13 @@ class SearchWeb(CallableTool2[Params]):
         self._runtime = runtime
         self._base_url = config.services.moonshot_search.base_url
         self._api_key = config.services.moonshot_search.api_key
-        self._oauth_ref = config.services.moonshot_search.oauth
         self._custom_headers = config.services.moonshot_search.custom_headers or {}
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
 
-        api_key = self._runtime.oauth.resolve_api_key(self._api_key, self._oauth_ref)
+        api_key = self._api_key.get_secret_value()
         if not self._base_url or not api_key:
             return builder.error(
                 "Search service is not configured. You may want to try other methods to search.",
@@ -76,7 +75,6 @@ class SearchWeb(CallableTool2[Params]):
                         "User-Agent": USER_AGENT,
                         "Authorization": f"Bearer {api_key}",
                         "X-Msh-Tool-Call-Id": tool_call.id,
-                        **self._runtime.oauth.common_headers(),
                         **self._custom_headers,
                     },
                     json={

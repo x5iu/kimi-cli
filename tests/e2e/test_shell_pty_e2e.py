@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import sys
 import time
 from pathlib import Path
@@ -1080,70 +1079,6 @@ def test_shell_turn_end_detected_question_keeps_original_reply_visible(
         assert list_turn_begin_inputs(home_dir, work_dir) == ["show detected turn-end question"]
     finally:
         shell.close()
-
-
-def test_shell_ctrl_e_expands_question_body_in_pager(tmp_path: Path) -> None:
-    hidden_marker = "QUESTION-BODY-LINE-5"
-    exit_plan_tool_call = {
-        "id": "tc-q-expand",
-        "name": "ExitPlanMode",
-        "arguments": "{}",
-    }
-    config_path = write_scripted_config(
-        tmp_path,
-        [
-            f"tool_call: {json.dumps(exit_plan_tool_call)}",
-        ],
-    )
-    work_dir = make_work_dir(tmp_path)
-    home_dir = make_home_dir(tmp_path)
-    shell = start_shell_pty(
-        config_path=config_path,
-        work_dir=work_dir,
-        home_dir=home_dir,
-        yolo=True,
-        extra_env={"PAGER": "cat"},
-    )
-
-    try:
-        shell.read_until_contains("Welcome to Kimi Code CLI!")
-        _read_until_prompt(shell, after=shell.mark())
-
-        plan_mark = shell.mark()
-        shell.send_line("/plan on")
-        plan_text = shell.read_until_contains(
-            "Plan mode ON. Plan file:", after=plan_mark, timeout=15.0
-        )
-        match = re.search(r"Plan file:\s*(.+?\.md)", plan_text[plan_mark:], re.S)
-        assert match is not None
-        plan_path = Path("".join(match.group(1).split()))
-        plan_path.parent.mkdir(parents=True, exist_ok=True)
-        plan_path.write_text(
-            "\n".join([f"Question body line {i}" for i in range(1, 5)] + [hidden_marker]),
-            encoding="utf-8",
-        )
-        _read_until_prompt(shell, after=shell.mark())
-
-        turn_mark = shell.mark()
-        shell.send_line("expand question body")
-        shell.read_until_contains("Ctrl-E", after=turn_mark, timeout=15.0)
-        time.sleep(0.3)
-
-        expand_mark = shell.mark()
-        shell.send_key("ctrl_e")
-        shell.read_until_contains(hidden_marker, after=expand_mark, timeout=15.0)
-
-        collapse_mark = shell.mark()
-        shell.send_key("q")
-        shell.wait_for_quiet(after=collapse_mark, quiet_period=0.3, timeout=5.0)
-
-        shell.send_key("1")
-        shell.read_until_contains("Plan approved", after=turn_mark, timeout=15.0)
-        _read_until_prompt(shell, after=shell.mark())
-    finally:
-        shell.close()
-
-
 def test_shell_question_pager_quit_does_not_toggle_alternate_screen(tmp_path: Path) -> None:
     pager_script = tmp_path / "fake_pager.py"
     pager_script.write_text(

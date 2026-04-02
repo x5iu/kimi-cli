@@ -19,7 +19,7 @@ kimi [OPTIONS] COMMAND [ARGS]
 
 | 选项 | 说明 |
 |------|------|
-| `--agent NAME` | 使用内置 Agent，可选值：`default`、`okabe` |
+| `--agent NAME` | 使用内置 Agent，可选值：`default` |
 | `--agent-file PATH` | 使用自定义 Agent 文件 |
 
 `--agent` 和 `--agent-file` 互斥，不能同时使用。详见 [Agent 与子 Agent](../customization/agents.md)。
@@ -88,9 +88,8 @@ kimi [OPTIONS] COMMAND [ARGS]
 |------|------|
 | `--print` | 以 Print 模式运行（非交互式），隐式启用 `--yolo` |
 | `--quiet` | `--print --output-format text --final-message-only` 的快捷方式 |
-| `--wire` | 以 Wire 服务器模式运行（实验性） |
 
-三个选项互斥，只能选择一个。默认使用 Shell 模式。详见 [Print 模式](../customization/print-mode.md) 和 [Wire 模式](../customization/wire-mode.md)。
+两个选项互斥，只能选择一个。默认使用 Shell 模式。详见 [Print 模式](../customization/print-mode.md)。
 
 ## Print 模式选项
 

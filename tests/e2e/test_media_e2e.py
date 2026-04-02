@@ -2,7 +2,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import cast
 
 import pytest
 from kaos.path import KaosPath
@@ -24,76 +23,6 @@ def _send_json(process: subprocess.Popen[str], payload: dict[str, object]) -> No
     _print_trace("STDIN", line)
     process.stdin.write(line + "\n")
     process.stdin.flush()
-
-
-def _collect_until_response(
-    process: subprocess.Popen[str], response_id: str
-) -> tuple[dict[str, object], list[dict[str, object]]]:
-    assert process.stdout is not None
-    events: list[dict[str, object]] = []
-    while True:
-        line = process.stdout.readline()
-        if not line:
-            break
-        line = line.strip()
-        if not line:
-            continue
-        _print_trace("STDOUT", line)
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(msg, dict):
-            continue
-        msg = cast(dict[str, object], msg)
-        msg_id = msg.get("id")
-        if msg_id == response_id:
-            return msg, events
-        if msg.get("method") == "event":
-            params = msg.get("params")
-            if isinstance(params, dict):
-                events.append(cast(dict[str, object], params))
-    raise AssertionError(f"Missing response for id {response_id!r}")
-
-
-def _turn_has_part_type(events: list[dict[str, object]], part_type: str) -> bool:
-    for event in events:
-        if event.get("type") != "TurnBegin":
-            continue
-        payload = event.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
-        payload_dict = cast(dict[str, object], payload)
-        user_input = payload_dict.get("user_input")
-        if not isinstance(user_input, list):
-            continue
-        for part in user_input:
-            if isinstance(part, dict) and cast(dict[str, object], part).get("type") == part_type:
-                return True
-    return False
-
-
-def _has_content_part(events: list[dict[str, object]], part_type: str) -> bool:
-    for event in events:
-        if event.get("type") != "ContentPart":
-            continue
-        payload = event.get("payload", {})
-        if isinstance(payload, dict) and cast(dict[str, object], payload).get("type") == part_type:
-            return True
-    return False
-
-
-def _has_text_content(events: list[dict[str, object]], text: str) -> bool:
-    for event in events:
-        if event.get("type") != "ContentPart":
-            continue
-        payload = event.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
-        payload_dict = cast(dict[str, object], payload)
-        if payload_dict.get("type") == "text" and text in str(payload_dict.get("text", "")):
-            return True
-    return False
 
 
 def _parse_message_content(line: str) -> list[dict[str, object]]:
@@ -160,7 +89,7 @@ def _run_print_mode(
     return process.wait(), stdout_lines
 
 
-@pytest.mark.parametrize("mode", ["print", "wire"])
+@pytest.mark.parametrize("mode", ["print"])
 def test_scripted_echo_media_e2e(temp_work_dir: KaosPath, tmp_path: Path, mode: str) -> None:
     image_url = "data:image/png;base64,AAAA"
     video_url = "data:video/mp4;base64,AAAA"
@@ -240,88 +169,5 @@ def test_scripted_echo_media_e2e(temp_work_dir: KaosPath, tmp_path: Path, mode: 
         assert _content_has_text(parsed_contents[0], "The image shows a simple scene.")
         assert _content_has_part(parsed_contents[1], "think")
         assert _content_has_text(parsed_contents[1], "The video appears to be a short clip.")
-    elif mode == "wire":
-        cmd = [
-            "uv",
-            "run",
-            "kimi",
-            "--wire",
-            "--yolo",
-            "--config-file",
-            str(config_path),
-            "--work-dir",
-            str(work_dir),
-        ]
-        process = subprocess.Popen(
-            cmd,
-            cwd=_repo_root(),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=os.environ.copy(),
-        )
-
-        _send_json(
-            process,
-            {
-                "jsonrpc": "2.0",
-                "id": "init",
-                "method": "initialize",
-                "params": {"protocol_version": "1.1"},
-            },
-        )
-        init_resp, _ = _collect_until_response(process, "init")
-        assert "result" in init_resp
-
-        _send_json(
-            process,
-            {
-                "jsonrpc": "2.0",
-                "id": "prompt-1",
-                "method": "prompt",
-                "params": {
-                    "user_input": [
-                        {"type": "text", "text": "Describe this image."},
-                        {"type": "image_url", "image_url": {"url": image_url}},
-                    ]
-                },
-            },
-        )
-        resp1, events1 = _collect_until_response(process, "prompt-1")
-        result1 = resp1.get("result")
-        assert isinstance(result1, dict)
-        result1_dict = cast(dict[str, object], result1)
-        assert result1_dict.get("status") == "finished"
-        assert _turn_has_part_type(events1, "image_url")
-        assert _has_content_part(events1, "think")
-        assert _has_text_content(events1, "The image shows a simple scene.")
-
-        _send_json(
-            process,
-            {
-                "jsonrpc": "2.0",
-                "id": "prompt-2",
-                "method": "prompt",
-                "params": {
-                    "user_input": [
-                        {"type": "text", "text": "Describe this video."},
-                        {"type": "video_url", "video_url": {"url": video_url}},
-                    ]
-                },
-            },
-        )
-        resp2, events2 = _collect_until_response(process, "prompt-2")
-        result2 = resp2.get("result")
-        assert isinstance(result2, dict)
-        result2_dict = cast(dict[str, object], result2)
-        assert result2_dict.get("status") == "finished"
-        assert _turn_has_part_type(events2, "video_url")
-        assert _has_content_part(events2, "think")
-        assert _has_text_content(events2, "The video appears to be a short clip.")
-
-        assert process.stdin is not None
-        process.stdin.close()
-        process.wait(timeout=10)
     else:
         raise AssertionError(f"Unknown mode: {mode}")

@@ -19,7 +19,7 @@ kimi [OPTIONS] COMMAND [ARGS]
 
 | Option | Description |
 |--------|-------------|
-| `--agent NAME` | Use built-in agent, options: `default`, `okabe` |
+| `--agent NAME` | Use built-in agent, options: `default` |
 | `--agent-file PATH` | Use custom agent file |
 
 `--agent` and `--agent-file` are mutually exclusive. See [Agents and Subagents](../customization/agents.md) for details.
@@ -88,9 +88,8 @@ When `--max-ralph-iterations` is not `0`, Kimi Code CLI enters Ralph Loop mode a
 |--------|-------------|
 | `--print` | Run in print mode (non-interactive), implicitly enables `--yolo` |
 | `--quiet` | Shortcut for `--print --output-format text --final-message-only` |
-| `--wire` | Run in Wire server mode (experimental) |
 
-The three options are mutually exclusive, only one can be selected. Default is shell mode. See [Print Mode](../customization/print-mode.md) and [Wire Mode](../customization/wire-mode.md) for details.
+The two options are mutually exclusive, only one can be selected. Default is shell mode. See [Print Mode](../customization/print-mode.md) for details.
 
 ## Print mode options
 

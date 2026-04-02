@@ -19,47 +19,11 @@ $ git status
 $ npm run build
 ```
 
-Shell 模式也支持部分斜杠命令，包括 `/help`、`/exit`、`/version`、`/editor`、`/changelog`、`/feedback`、`/export` 和 `/import`。
+Shell 模式也支持部分斜杠命令，包括 `/help`、`/exit`、`/version`、`/editor`、`/changelog` 和 `/feedback`。
 
 ::: warning 注意
 Shell 模式中每个命令独立执行，`cd`、`export` 等改变环境的命令不会影响后续命令。
 :::
-
-## Plan 模式
-
-Plan 模式是一种只读的规划模式，让 AI 在动手编码之前先制定实施方案，避免在错误方向上浪费精力。
-
-在 Plan 模式下，AI 只能使用只读工具（`Glob`、`Grep`、`ReadFile`）探索代码库，不能修改任何文件或执行命令。AI 会将方案写入一个专门的 plan 文件，然后提交给你审批。你可以选择批准、拒绝或提供修改意见。
-
-### 进入 Plan 模式
-
-有三种方式进入 Plan 模式：
-
-- **快捷键**：按 `Shift-Tab` 切换 Plan 模式的开关
-- **斜杠命令**：输入 `/plan` 或 `/plan on`
-- **AI 主动触发**：面对复杂任务时，AI 可能会通过 `EnterPlanMode` 工具请求进入 Plan 模式，你可以选择同意或拒绝
-
-进入 Plan 模式后，提示符会变为 `📋`，底部状态栏会显示蓝色的 `plan` 标识。
-
-### 审批方案
-
-AI 完成方案后会通过 `ExitPlanMode` 提交审批。审批面板会显示完整的方案内容，你可以：
-
-- **Approve**：批准方案，退出 Plan 模式，AI 开始执行
-- **Reject**：拒绝方案，保持 Plan 模式，你可以在对话中提供反馈
-- **Revise**：输入修改意见，AI 会据此修订方案并重新提交
-
-按 `Ctrl-E` 可以在当前 TUI 中展开完整方案内容；展开后可用 `↑/↓`、`PgUp/PgDn`、`Home/End` 滚动，按 `q` 或 `Esc` 返回。
-
-### 管理 Plan 模式
-
-使用 `/plan` 命令可以管理 Plan 模式：
-
-- `/plan`：切换 Plan 模式开关
-- `/plan on`：开启 Plan 模式
-- `/plan off`：关闭 Plan 模式
-- `/plan view`：查看当前方案内容
-- `/plan clear`：清除当前方案文件
 
 ## Thinking 模式
 
@@ -93,7 +57,7 @@ Thinking 模式需要当前模型支持。部分模型（如 `kimi-k2-thinking-t
 
 ## 斜杠命令
 
-斜杠命令是以 `/` 开头的特殊指令，用于执行 Kimi Code CLI 的内置功能，如 `/help`、`/login`、`/sessions` 等。输入 `/` 后会自动显示可用命令列表。完整的斜杠命令列表请参考 [斜杠命令参考](../reference/slash-commands.md)。
+斜杠命令是以 `/` 开头的特殊指令，用于执行 Kimi Code CLI 的内置功能，如 `/help`、`/setup`、`/sessions` 等。输入 `/` 后会自动显示可用命令列表。完整的斜杠命令列表请参考 [斜杠命令参考](../reference/slash-commands.md)。
 
 ## @ 路径补全
 
@@ -150,4 +114,3 @@ kimi --yolo
 ::: warning 注意
 YOLO 模式会跳过所有确认，请确保你了解可能的风险。建议仅在可控环境中使用。
 :::
-

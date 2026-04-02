@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal, Self
+from typing import Self
 
 import tomlkit
 from pydantic import (
@@ -22,15 +22,6 @@ from kimi_cli.share import get_share_dir
 from kimi_cli.utils.logging import logger
 
 
-class OAuthRef(BaseModel):
-    """Reference to OAuth credentials stored outside the config file."""
-
-    storage: Literal["keyring", "file"] = "file"
-    """Credential storage backend."""
-    key: str
-    """Storage key to locate OAuth credentials."""
-
-
 class LLMProvider(BaseModel):
     """LLM provider configuration."""
 
@@ -44,8 +35,6 @@ class LLMProvider(BaseModel):
     """Environment variables to set before creating the provider instance"""
     custom_headers: dict[str, str] | None = None
     """Custom headers to include in API requests"""
-    oauth: OAuthRef | None = None
-    """OAuth credential reference (do not store tokens here)."""
 
     @field_serializer("api_key", when_used="json")
     def dump_secret(self, v: SecretStr):
@@ -131,8 +120,6 @@ class MoonshotSearchConfig(BaseModel):
     """API key for Moonshot Search service."""
     custom_headers: dict[str, str] | None = None
     """Custom headers to include in API requests."""
-    oauth: OAuthRef | None = None
-    """OAuth credential reference (do not store tokens here)."""
 
     @field_serializer("api_key", when_used="json")
     def dump_secret(self, v: SecretStr):
@@ -148,8 +135,6 @@ class MoonshotFetchConfig(BaseModel):
     """API key for Moonshot Fetch service."""
     custom_headers: dict[str, str] | None = None
     """Custom headers to include in API requests."""
-    oauth: OAuthRef | None = None
-    """OAuth credential reference (do not store tokens here)."""
 
     @field_serializer("api_key", when_used="json")
     def dump_secret(self, v: SecretStr):

@@ -39,8 +39,6 @@ def test_load_default_agent_spec():
             "kimi_cli.tools.file:Edit",
             "kimi_cli.tools.web:SearchWeb",
             "kimi_cli.tools.web:FetchURL",
-            "kimi_cli.tools.plan:ExitPlanMode",
-            "kimi_cli.tools.plan.enter:EnterPlanMode",
         ]
     )
 
@@ -131,8 +129,6 @@ agent:
                 "kimi_cli.tools.file:Edit",
                 "kimi_cli.tools.web:SearchWeb",
                 "kimi_cli.tools.web:FetchURL",
-                "kimi_cli.tools.plan:ExitPlanMode",
-                "kimi_cli.tools.plan.enter:EnterPlanMode",
             ]
         )
         assert spec.exclude_tools == snapshot(

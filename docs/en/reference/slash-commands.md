@@ -3,7 +3,7 @@
 Slash commands are built-in commands for Kimi Code CLI, used to control sessions, configuration, and debugging. Enter a command starting with `/` in the input box to trigger.
 
 ::: tip Shell mode
-Some slash commands are also available in shell mode, including `/help`, `/exit`, `/version`, `/editor`, `/changelog`, `/feedback`, `/export`, and `/import`.
+Some slash commands are also available in shell mode, including `/help`, `/exit`, `/version`, `/editor`, `/changelog`, and `/feedback`.
 :::
 
 ## Help and info
@@ -30,24 +30,17 @@ Open the GitHub Issues page to submit feedback.
 
 ## Account and configuration
 
-### `/login`
+### `/setup`
 
-Log in or configure an API platform. After execution, first select a platform:
-
-- **Kimi Code**: Automatically opens a browser for OAuth authorization
-- **Other platforms**: Enter an API key, then select an available model
+Configure an API platform. After execution, first select a platform, then enter an API key and select an available model.
 
 After configuration, settings are automatically saved to `~/.kimi/config.toml` and reloaded. See [Providers](../configuration/providers.md) for details.
 
-Alias: `/setup`
+Alias: `/login`
 
 ::: tip
 This command is only available when using the default configuration file. If a configuration was specified via `--config` or `--config-file`, this command cannot be used.
 :::
-
-### `/logout`
-
-Log out from the current platform. This clears stored credentials and removes related configuration from the config file. After logout, Kimi Code CLI will automatically reload the configuration.
 
 ### `/model`
 
@@ -110,29 +103,6 @@ Alias: `/resume`
 
 Use arrow keys to select a session, press `Enter` to confirm switch, press `Ctrl-C` to cancel.
 
-### `/export`
-
-Export the current session context to a Markdown file for archiving or sharing.
-
-Usage:
-
-- `/export`: Export to the current working directory with an auto-generated filename (format: `kimi-export-<first 8 chars of session ID>-<timestamp>.md`)
-- `/export <path>`: Export to the specified path. If the path is a directory, the filename is auto-generated; if it is a file path, the content is written directly to that file
-
-The exported file includes:
-- Session metadata (session ID, export time, working directory, message count, token count)
-- Conversation overview (topic, number of turns, tool call count)
-- Complete conversation history organized by turns, including user messages, AI responses, tool calls, and tool results
-
-### `/import`
-
-Import context from a file or another session into the current session. The imported content is appended as reference context, and the AI can use this information to inform subsequent interactions.
-
-Usage:
-
-- `/import <file_path>`: Import from a file. Supports common text-based formats such as Markdown, plain text, source code, and configuration files; binary files (e.g., images, PDFs, archives) are not supported
-- `/import <session_id>`: Import from the specified session ID. Cannot import the current session into itself
-
 ### `/clear`
 
 Clear the current session's context and start a new conversation.
@@ -149,7 +119,7 @@ When the context is too long, Kimi Code CLI will automatically trigger compactio
 
 ### `/skill:<name>`
 
-Load a specific skill, sending the `SKILL.md` content to the Agent as a prompt. This command works for both standard skills and flow skills.
+Load a specific skill, sending the `SKILL.md` content to the Agent as a prompt.
 
 For example:
 
@@ -159,24 +129,6 @@ For example:
 
 You can append additional text after the command, which will be added to the skill prompt. See [Agent Skills](../customization/skills.md) for details.
 
-::: tip
-Flow skills can also be invoked via `/skill:<name>`, which loads the content as a standard skill without automatically executing the flow. To execute the flow, use `/flow:<name>` instead.
-:::
-
-### `/flow:<name>`
-
-Execute a specific flow skill. Flow skills embed an Agent Flow diagram in `SKILL.md`. After execution, the Agent will start from the `BEGIN` node and process each node according to the flow diagram definition until reaching the `END` node.
-
-For example:
-
-- `/flow:code-review`: Execute code review workflow
-- `/flow:release`: Execute release workflow
-
-::: tip
-Flow skills can also be invoked via `/skill:<name>`, which loads the content as a standard skill without automatically executing the flow.
-:::
-
-See [Agent Skills](../customization/skills.md#flow-skills) for details.
 
 ## Workspace
 
@@ -200,20 +152,6 @@ Directories already within the working directory do not need to be added, as the
 Analyze the current project and generate an `AGENTS.md` file.
 
 This command starts a temporary sub-session to analyze the codebase structure and generate a project description document, helping the Agent better understand the project.
-
-### `/plan`
-
-Toggle plan mode. In plan mode, the AI can only use read-only tools to explore the codebase, writing an implementation plan to a plan file and submitting it for your approval. See [Plan mode](../guides/interaction.md#plan-mode) for details.
-
-Usage:
-
-- `/plan`: Toggle plan mode
-- `/plan on`: Enable plan mode
-- `/plan off`: Disable plan mode
-- `/plan view`: View the current plan content
-- `/plan clear`: Clear the current plan file
-
-When plan mode is enabled, the prompt changes to `📋` and a blue `plan` badge appears in the status bar.
 
 ### `/yolo`
 

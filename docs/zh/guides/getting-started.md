@@ -75,10 +75,10 @@ cd your-project
 kimi
 ```
 
-首次启动时，你需要配置 API 来源。输入 `/login` 命令开始配置：
+首次启动时，你需要配置 API 来源。输入 `/setup` 命令开始配置：
 
 ```
-/login
+/setup
 ```
 
 执行后首先选择平台。推荐选择 **Kimi Code**，会自动打开浏览器进行 OAuth 授权；选择其他平台则需要输入 API 密钥。配置完成后 Kimi Code CLI 会自动保存设置并重新加载。详见 [平台与模型](../configuration/providers.md)。

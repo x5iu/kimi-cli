@@ -32,9 +32,6 @@ class SessionState(BaseModel):
     version: int = 1
     approval: ApprovalStateData = Field(default_factory=ApprovalStateData)
     additional_dirs: list[str] = Field(default_factory=list)
-    plan_mode: bool = False
-    plan_session_id: str | None = None
-    plan_file_slug: str | None = None
     todos: list[TodoStateItem] = Field(default_factory=_default_todos)
 
 

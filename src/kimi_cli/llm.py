@@ -13,7 +13,6 @@ from kimi_cli.constant import USER_AGENT
 from kimi_cli.exception import ConfigError
 
 if TYPE_CHECKING:
-    from kimi_cli.auth.oauth import OAuthManager
     from kimi_cli.config import LLMModel, LLMProvider
 
 type ProviderType = Literal[
@@ -100,10 +99,11 @@ def augment_provider_with_env_vars(provider: LLMProvider, model: LLMModel) -> di
     return applied
 
 
-def _kimi_default_headers(provider: LLMProvider, oauth: OAuthManager | None) -> dict[str, str]:
+def _kimi_default_headers(provider: LLMProvider) -> dict[str, str]:
+    from kimi_cli.utils.headers import common_headers
+
     headers = {"User-Agent": USER_AGENT}
-    if oauth:
-        headers.update(oauth.common_headers())
+    headers.update(common_headers())
     if provider.custom_headers:
         headers.update(provider.custom_headers)
     return headers
@@ -115,18 +115,13 @@ def create_llm(
     *,
     thinking: bool | None = None,
     session_id: str | None = None,
-    oauth: OAuthManager | None = None,
 ) -> LLM | None:
     if provider.type not in {"_echo", "_scripted_echo"} and (
         not provider.base_url or not model.model
     ):
         return None
 
-    resolved_api_key = (
-        oauth.resolve_api_key(provider.api_key, provider.oauth)
-        if oauth and provider.oauth
-        else provider.api_key.get_secret_value()
-    )
+    resolved_api_key = provider.api_key.get_secret_value()
 
     match provider.type:
         case "kimi":
@@ -136,7 +131,7 @@ def create_llm(
                 model=model.model,
                 base_url=provider.base_url,
                 api_key=resolved_api_key,
-                default_headers=_kimi_default_headers(provider, oauth),
+                default_headers=_kimi_default_headers(provider),
             )
 
             gen_kwargs: Kimi.GenerationKwargs = {}
@@ -232,7 +227,7 @@ def create_llm(
                     model=model.model,
                     base_url=provider.base_url,
                     api_key=resolved_api_key,
-                    default_headers=_kimi_default_headers(provider, oauth),
+                    default_headers=_kimi_default_headers(provider),
                 ),
                 chaos_config=ChaosConfig(
                     error_probability=0.8,

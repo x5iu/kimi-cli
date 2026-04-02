@@ -100,11 +100,6 @@ class Shell:
                 wire_file=self.soul.wire_file,
             )
 
-        async def _plan_mode_toggle() -> bool:
-            if isinstance(self.soul, KimiSoul):
-                return await self.soul.toggle_plan_mode_from_manual()
-            return False
-
         async def _redraw() -> None:
             if isinstance(self.soul, KimiSoul):
                 await replay_recent_history(
@@ -122,7 +117,6 @@ class Shell:
             editor_command_provider=lambda: (
                 self.soul.runtime.config.default_editor if isinstance(self.soul, KimiSoul) else ""
             ),
-            plan_mode_toggle_callback=_plan_mode_toggle,
             working_dir_provider=self._working_dir_text,
             redraw_callback=_redraw,
         ) as prompt_session:
@@ -379,7 +373,7 @@ class Shell:
             try:
                 validate_live_user_input(self.soul.runtime.llm, turn_input.content)
             except LLMNotSet:
-                return TurnSubmitResult.reject('LLM not set, send "/login" to login')
+                return TurnSubmitResult.reject('LLM not set, send "/setup" to configure')
             except LLMNotSupported as e:
                 return TurnSubmitResult.reject(str(e))
             self.soul.steer(turn_input.content)
@@ -407,7 +401,7 @@ class Shell:
             )
         except LLMNotSet:
             logger.exception("LLM not set:")
-            console.print('[red]LLM not set, send "/login" to login[/red]')
+            console.print('[red]LLM not set, send "/setup" to configure[/red]')
             keep_running = False
         except LLMNotSupported as e:
             logger.exception("LLM not supported:")
@@ -473,7 +467,7 @@ class Shell:
             return True
         except LLMNotSet:
             logger.exception("LLM not set:")
-            console.print('[red]LLM not set, send "/login" to login[/red]')
+            console.print('[red]LLM not set, send "/setup" to configure[/red]')
         except LLMNotSupported as e:
             logger.exception("LLM not supported:")
             console.print(f"[red]{e}[/red]")

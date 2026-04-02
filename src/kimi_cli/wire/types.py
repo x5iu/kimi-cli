@@ -129,13 +129,6 @@ class NotificationNotice(BaseModel):
     payload: dict[str, JsonType] = Field(default_factory=dict)
 
 
-class PlanDisplay(BaseModel):
-    """Carries plan content so the UI can render it with special formatting."""
-
-    content: str
-    file_path: str
-
-
 class StatusUpdate(BaseModel):
     """
     An update on the current status of the soul.
@@ -152,8 +145,6 @@ class StatusUpdate(BaseModel):
     """The token usage statistics of the current step."""
     message_id: str | None = None
     """The message ID of the current step."""
-    plan_mode: bool | None = None
-    """Whether plan mode (read-only) is active. None means no change."""
 
 
 class ToolCallOutput(BaseModel):
@@ -390,7 +381,6 @@ type Event = (
     | MCPLoadingEnd
     | SkillReminderNotice
     | NotificationNotice
-    | PlanDisplay
     | StatusUpdate
     | ContentPart
     | ToolCall
@@ -477,7 +467,6 @@ __all__ = [
     "MCPLoadingBegin",
     "MCPLoadingEnd",
     "SkillReminderNotice",
-    "PlanDisplay",
     "StatusUpdate",
     "ContentPart",
     "ToolCall",

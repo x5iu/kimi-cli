@@ -19,47 +19,11 @@ $ git status
 $ npm run build
 ```
 
-Shell mode also supports some slash commands, including `/help`, `/exit`, `/version`, `/editor`, `/changelog`, `/feedback`, `/export`, and `/import`.
+Shell mode also supports some slash commands, including `/help`, `/exit`, `/version`, `/editor`, `/changelog`, and `/feedback`.
 
 ::: warning Note
 In shell mode, each command executes independently. Commands that change the environment like `cd` or `export` won't affect subsequent commands.
 :::
-
-## Plan mode
-
-Plan mode is a read-only planning mode that lets the AI design an implementation plan before writing code, preventing wasted effort in the wrong direction.
-
-In plan mode, the AI can only use read-only tools (`Glob`, `Grep`, `ReadFile`) to explore the codebase — it cannot modify any files or execute commands. The AI writes its plan to a dedicated plan file, then submits it to you for approval. You can approve, reject, or provide revision feedback.
-
-### Entering plan mode
-
-There are three ways to enter plan mode:
-
-- **Keyboard shortcut**: Press `Shift-Tab` to toggle plan mode
-- **Slash command**: Enter `/plan` or `/plan on`
-- **AI-initiated**: When facing complex tasks, the AI may request to enter plan mode via the `EnterPlanMode` tool — you can accept or decline
-
-When plan mode is active, the prompt changes to `📋` and a blue `plan` badge appears in the status bar.
-
-### Reviewing plans
-
-When the AI finishes its plan, it submits it for approval via `ExitPlanMode`. The approval panel shows the full plan content, and you can:
-
-- **Approve**: Accept the plan, exit plan mode, and let the AI begin execution
-- **Reject**: Decline the plan, stay in plan mode, and provide feedback via conversation
-- **Revise**: Enter revision notes — the AI will update the plan and resubmit
-
-Press `Ctrl-E` to expand the full plan content inside the current TUI. Once expanded, use `↑/↓`, `PgUp/PgDn`, and `Home/End` to scroll, then press `q` or `Esc` to return.
-
-### Managing plan mode
-
-Use the `/plan` command to manage plan mode:
-
-- `/plan`: Toggle plan mode
-- `/plan on`: Enable plan mode
-- `/plan off`: Disable plan mode
-- `/plan view`: View the current plan content
-- `/plan clear`: Clear the current plan file
 
 ## Thinking mode
 
@@ -93,7 +57,7 @@ Image input requires the model to support the `image_in` capability. Video input
 
 ## Slash commands
 
-Slash commands are special instructions starting with `/`, used to execute Kimi Code CLI's built-in features, such as `/help`, `/login`, `/sessions`, etc. After typing `/`, a list of available commands will automatically appear. For the complete list of slash commands, see the [slash commands reference](../reference/slash-commands.md).
+Slash commands are special instructions starting with `/`, used to execute Kimi Code CLI's built-in features, such as `/help`, `/setup`, `/sessions`, etc. After typing `/`, a list of available commands will automatically appear. For the complete list of slash commands, see the [slash commands reference](../reference/slash-commands.md).
 
 ## @ path completion
 

@@ -23,7 +23,6 @@ from kosong.chat_provider import (
     RetryableChatProvider,
 )
 from kosong.message import Message
-from kosong.tooling import ToolError, ToolReturnValue
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from kimi_cli.background import build_active_task_snapshot
@@ -34,7 +33,6 @@ from kimi_cli.notifications import (
     extract_notification_ids,
 )
 from kimi_cli.skill import Skill, normalize_skill_name, read_skill_text
-from kimi_cli.skill.flow import Flow, FlowEdge, FlowNode, parse_choice
 from kimi_cli.soul import (
     LLMNotSet,
     LLMNotSupported,
@@ -46,7 +44,6 @@ from kimi_cli.soul import (
 )
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.attachment import Attachment, AttachmentProvider, IncrementalHistoryNormalizer
-from kimi_cli.soul.attachments.plan_mode import PlanModeAttachmentProvider
 from kimi_cli.soul.attachments.prefer_shell_rg import PreferShellRgAttachmentProvider
 from kimi_cli.soul.compaction import (
     Compaction,
@@ -69,7 +66,6 @@ from kimi_cli.soul.message import (
 )
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
-from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import content_parts_stringify
@@ -106,8 +102,6 @@ if TYPE_CHECKING:
 
 
 SKILL_COMMAND_PREFIX = "skill:"
-FLOW_COMMAND_PREFIX = "flow:"
-DEFAULT_MAX_FLOW_MOVES = 1000
 MAX_SKILL_RECOMMENDATIONS = 3
 
 TURN_END_QUESTION_DETECTOR_PROMPT = (
@@ -198,7 +192,6 @@ class KimiSoul:
         """
         self._agent = agent
         self._runtime = agent.runtime
-        self._denwa_renji = agent.runtime.denwa_renji
         self._approval = agent.runtime.approval
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
@@ -221,34 +214,18 @@ class KimiSoul:
                     mcs=mcs,
                 )
 
-        for tool in agent.toolset.tools:
-            if tool.name == SendDMail_NAME:
-                self._checkpoint_with_user_message = True
-                break
-        else:
-            self._checkpoint_with_user_message = False
+        self._checkpoint_with_user_message = False
 
         self._steer_queue: asyncio.Queue[_QueuedSteer] = asyncio.Queue()
         self._active_turn_id: int | None = None
         self._next_turn_id = 0
-        self._plan_mode: bool = self._runtime.session.state.plan_mode
-        self._plan_session_id: str | None = self._runtime.session.state.plan_session_id
-        self._plan_file_slug: str | None = self._runtime.session.state.plan_file_slug
-        self._pending_plan_activation_attachment: bool = False
-        if (
-            self._plan_mode or self._plan_session_id is not None or self._plan_file_slug is not None
-        ) and self._ensure_plan_identity():
-            self._runtime.session.save_state()
-        self._attachment_providers: list[AttachmentProvider] = [
-            PlanModeAttachmentProvider(),
-            PreferShellRgAttachmentProvider(),
-        ]
+        self._attachment_providers: list[AttachmentProvider] = [PreferShellRgAttachmentProvider()]
         self._history_normalizer = IncrementalHistoryNormalizer()
 
         self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
 
         # Bind tool state that depends on the live soul/context
-        self._bind_plan_mode_tools()
+        self._bind_approval_aware_tools()
         self._bind_context_recall_tools()
 
         self._slash_command_content_parts: list[ContentPart] = []
@@ -271,11 +248,6 @@ class KimiSoul:
             return None
         return self._runtime.llm.capabilities
 
-    @property
-    def plan_mode(self) -> bool:
-        """Whether plan mode (read-only research and planning) is active."""
-        return self._plan_mode
-
     def add_attachment_provider(self, provider: AttachmentProvider) -> None:
         """Register an additional attachment provider."""
         self._attachment_providers.append(provider)
@@ -288,62 +260,18 @@ class KimiSoul:
             attachments.extend(result)
         return attachments
 
-    def _plan_mode_bound_toolsets(self) -> list[KimiToolset]:
-        """Collect toolsets that track plan mode state."""
-        if not isinstance(self._agent.toolset, KimiToolset):
-            return []
-
-        return [self._agent.toolset]
-
-    def _bind_plan_mode_tools(self) -> None:
-        """Bind plan mode state to tools that support it."""
+    def _bind_approval_aware_tools(self) -> None:
+        """Bind late-initialized runtime state to tools that need it."""
         if not isinstance(self._agent.toolset, KimiToolset):
             return
-
-        def checker() -> bool:
-            return self._plan_mode
-
-        def path_getter() -> Path | None:
-            return self.get_plan_file_path()
-
-        toolsets = self._plan_mode_bound_toolsets()
-        for toolset in toolsets:
-            toolset.bind_execution_guard(self._guard_plan_mode_tool_call)
-        # Write tools get plan mode bindings for plan-file-only edits.
-        from kimi_cli.tools.file.replace import EditTool
-        from kimi_cli.tools.file.write import WriteFile
-
-        write_tool = self._agent.toolset.find("WriteFile")
-        if isinstance(write_tool, WriteFile):
-            write_tool.bind_plan_mode(checker, path_getter)
-
-        edit_tool = self._agent.toolset.find("Edit")
-        if isinstance(edit_tool, EditTool):
-            edit_tool.bind_plan_mode(checker, path_getter)
-
-        # ExitPlanMode has a special bind() method
-        from kimi_cli.tools.plan import ExitPlanMode
 
         def yolo_checker() -> bool:
             return self._approval.is_yolo()
 
-        exit_tool = self._agent.toolset.find("ExitPlanMode")
-        if isinstance(exit_tool, ExitPlanMode):
-            exit_tool.bind(self.toggle_plan_mode, path_getter, checker, yolo_checker)
-
-        # EnterPlanMode has a special bind() with yolo_checker
-        from kimi_cli.tools.plan.enter import EnterPlanMode
-
-        enter_tool = self._agent.toolset.find("EnterPlanMode")
-        if isinstance(enter_tool, EnterPlanMode):
-            enter_tool.bind(self.toggle_plan_mode, path_getter, checker, yolo_checker)
-
-        # AskUserQuestion gets plan mode checker + yolo auto-dismiss
         from kimi_cli.tools.ask_user import AskUserQuestion
 
         ask_tool = self._agent.toolset.find("AskUserQuestion")
         if isinstance(ask_tool, AskUserQuestion):
-            ask_tool.bind_plan_mode(checker)
             ask_tool.bind_approval(yolo_checker)
 
     def _bind_context_recall_tools(self) -> None:
@@ -372,156 +300,6 @@ class KimiSoul:
         else:
             self._agent.toolset.hide("RecallCompactedContext")
 
-    def _ensure_plan_session_id(self) -> bool:
-        """Allocate and persist a stable plan session ID when needed."""
-        changed = False
-        if self._plan_session_id is None:
-            import uuid
-
-            self._plan_session_id = uuid.uuid4().hex
-            changed = True
-        if self._runtime.session.state.plan_session_id != self._plan_session_id:
-            self._runtime.session.state.plan_session_id = self._plan_session_id
-            changed = True
-        return changed
-
-    def _plan_work_dir_basename(self) -> str:
-        """Return the current session work directory basename for plan filenames."""
-        return Path(str(self._runtime.session.work_dir)).name or "workspace"
-
-    def _ensure_plan_file_slug(self) -> bool:
-        """Allocate and persist the stable plan file slug when needed."""
-        changed = False
-        if self._plan_file_slug is None:
-            if self._plan_session_id is None:
-                changed = self._ensure_plan_session_id() or changed
-            from kimi_cli.tools.plan.naming import get_or_create_slug
-
-            assert self._plan_session_id is not None
-            self._plan_file_slug = get_or_create_slug(
-                self._plan_session_id,
-                self._plan_work_dir_basename(),
-            )
-            changed = True
-        if self._runtime.session.state.plan_file_slug != self._plan_file_slug:
-            self._runtime.session.state.plan_file_slug = self._plan_file_slug
-            changed = True
-        return changed
-
-    def _ensure_plan_identity(self) -> bool:
-        """Ensure the persisted plan identity exists and is in sync with session state."""
-        changed = self._ensure_plan_session_id()
-        return self._ensure_plan_file_slug() or changed
-
-    def _guard_plan_mode_tool_call(
-        self,
-        tool_name: str,
-        arguments: dict[str, Any] | list[Any] | str | int | float | bool | None,
-    ) -> ToolReturnValue | None:
-        """Block non-readonly tools while plan mode is active."""
-        if not self._plan_mode:
-            return None
-
-        allowed_tools = {
-            "AskUserQuestion",
-            "EnterPlanMode",
-            "ExitPlanMode",
-            "FetchURL",
-            "Glob",
-            "Grep",
-            "ReadFile",
-            "ReadMediaFile",
-            "RecallCompactedContext",
-            "SearchWeb",
-            "TaskList",
-            "TaskOutput",
-            "Think",
-        }
-        if tool_name in allowed_tools:
-            return None
-
-        if tool_name in {"WriteFile", "Edit"} and isinstance(arguments, dict):
-            plan_path = self.get_plan_file_path()
-            path_arg = arguments.get("path")
-            if plan_path is not None and isinstance(path_arg, str):
-                try:
-                    if Path(path_arg).expanduser().resolve() == plan_path.resolve():
-                        return None
-                except OSError:
-                    pass
-
-        return ToolError(
-            message=(
-                "This tool is not available in plan mode. Use read-only tools to research, "
-                "edit only the plan file with WriteFile/Edit, then call ExitPlanMode when ready."
-            ),
-            brief="Blocked in plan mode",
-        )
-
-    def _set_plan_mode(self, enabled: bool, *, source: Literal["manual", "tool"]) -> bool:
-        """Update plan mode state for either manual or tool-driven toggles."""
-        if enabled == self._plan_mode:
-            return self._plan_mode
-        self._plan_mode = enabled
-        if enabled:
-            self._ensure_plan_identity()
-            self._pending_plan_activation_attachment = source == "manual"
-        else:
-            self._pending_plan_activation_attachment = False
-        # Persist plan mode to session state so it survives process restarts
-        self._runtime.session.state.plan_mode = self._plan_mode
-        self._runtime.session.save_state()
-        return self._plan_mode
-
-    def get_plan_file_path(self) -> Path | None:
-        """Get the plan file path for the current session."""
-        if self._plan_file_slug is None:
-            return None
-        from kimi_cli.tools.plan.naming import get_plan_file_path_by_slug
-
-        return get_plan_file_path_by_slug(self._plan_file_slug)
-
-    def read_current_plan(self) -> str | None:
-        """Read the current plan file content."""
-        path = self.get_plan_file_path()
-        if path is None or not path.exists():
-            return None
-        return path.read_text(encoding="utf-8")
-
-    def clear_current_plan(self) -> None:
-        """Delete the current plan file."""
-        path = self.get_plan_file_path()
-        if path and path.exists():
-            path.unlink()
-
-    async def toggle_plan_mode(self) -> bool:
-        """Toggle plan mode on/off. Returns the new state.
-
-        Tools are not hidden/unhidden — instead, each tool checks plan mode
-        state at call time and rejects if blocked.
-        Periodic reminders are handled by the attachment system.
-        """
-        return self._set_plan_mode(not self._plan_mode, source="tool")
-
-    async def toggle_plan_mode_from_manual(self) -> bool:
-        """Toggle plan mode from UI/manual entry points (slash command, keybinding)."""
-        return self._set_plan_mode(not self._plan_mode, source="manual")
-
-    async def set_plan_mode_from_manual(self, enabled: bool) -> bool:
-        """Set plan mode to a specific state from UI/manual entry points.
-
-        Unlike toggle, this accepts the desired state directly, avoiding
-        race conditions when the caller already knows the target value.
-        """
-        return self._set_plan_mode(enabled, source="manual")
-
-    def consume_pending_plan_activation_attachment(self) -> bool:
-        """Consume the next-step activation reminder scheduled by a manual toggle."""
-        if not self._plan_mode or not self._pending_plan_activation_attachment:
-            return False
-        self._pending_plan_activation_attachment = False
-        return True
-
     @property
     def thinking(self) -> bool | None:
         """Whether thinking mode is enabled."""
@@ -538,7 +316,6 @@ class KimiSoul:
         return StatusSnapshot(
             context_usage=self._context_usage,
             yolo_enabled=self._approval.is_yolo(),
-            plan_mode=self._plan_mode,
             context_tokens=token_count,
             max_context_tokens=max_size,
         )
@@ -581,8 +358,6 @@ class KimiSoul:
         await self._context.revert_to(last_turn_cp)
 
         # Sync dependent state
-        self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
-        self._denwa_renji.invalidate_stale_dmail()
         self._sync_context_recall_tool_visibility()
 
         return True
@@ -744,9 +519,6 @@ class KimiSoul:
     async def run(self, user_input: str | list[ContentPart]):
         turn_id = self._begin_turn()
         try:
-            # Refresh OAuth tokens on each turn to avoid idle-time expirations.
-            await self._runtime.oauth.ensure_fresh(self._runtime)
-
             wire_send(TurnBegin(user_input=user_input))
             user_message = Message(role="user", content=user_input)
             text_input = user_message.extract_text(" ").strip()
@@ -774,12 +546,6 @@ class KimiSoul:
                             await ret
                     finally:
                         self._slash_command_content_parts = []
-            elif self._loop_control.max_ralph_iterations != 0:
-                runner = FlowRunner.ralph_loop(
-                    user_message,
-                    self._loop_control.max_ralph_iterations,
-                )
-                await runner.run(self, "", enable_skill_reminder=True)
             else:
                 outcome = await self._turn(user_message, enable_skill_reminder=True)
 
@@ -826,7 +592,7 @@ class KimiSoul:
         seen_names = {cmd.name for cmd in commands}
 
         for skill in self._runtime.skills.values():
-            if skill.type not in ("standard", "flow"):
+            if skill.type != "standard":
                 continue
             name = f"{SKILL_COMMAND_PREFIX}{skill.name}"
             if name in seen_names:
@@ -844,30 +610,6 @@ class KimiSoul:
                 )
             )
             seen_names.add(name)
-
-        for skill in self._runtime.skills.values():
-            if skill.type != "flow":
-                continue
-            if skill.flow is None:
-                logger.warning("Flow skill {name} has no flow; skipping", name=skill.name)
-                continue
-            command_name = f"{FLOW_COMMAND_PREFIX}{skill.name}"
-            if command_name in seen_names:
-                logger.warning(
-                    "Skipping prompt flow slash command /{name}: name already registered",
-                    name=command_name,
-                )
-                continue
-            runner = FlowRunner(skill.flow, name=skill.name)
-            commands.append(
-                SlashCommand(
-                    name=command_name,
-                    func=runner.run,
-                    description=skill.description or "",
-                    aliases=[],
-                )
-            )
-            seen_names.add(command_name)
 
         return commands
 
@@ -1538,7 +1280,6 @@ class KimiSoul:
 
             wire_send(StepBegin(n=step_no))
             approval_task = asyncio.create_task(_pipe_approval_to_wire())
-            back_to_the_future: BackToTheFuture | None = None
             step_outcome: StepOutcome | None = None
             try:
                 if await self._consume_ready_skill_reminder(skill_reminder):
@@ -1576,10 +1317,7 @@ class KimiSoul:
 
                 logger.debug("Beginning step {step_no}", step_no=step_no)
                 await self._checkpoint()
-                self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
                 step_outcome = await self._step()
-            except BackToTheFuture as e:
-                back_to_the_future = e
             except Exception:
                 # any other exception should interrupt the step
                 wire_send(StepInterrupted())
@@ -1610,11 +1348,6 @@ class KimiSoul:
                     final_message=final_message,
                     step_count=step_no,
                 )
-
-            if back_to_the_future is not None:
-                await self._context.revert_to(back_to_the_future.checkpoint_id)
-                await self._checkpoint()
-                await self._context.append_message(back_to_the_future.messages)
 
             # Consume any pending steers between steps
             await self._consume_pending_steers()
@@ -1678,9 +1411,7 @@ class KimiSoul:
 
         result = await _kosong_step_with_retry()
         logger.debug("Got step result: {result}", result=result)
-        status_update = StatusUpdate(
-            token_usage=result.usage, message_id=result.id, plan_mode=self._plan_mode
-        )
+        status_update = StatusUpdate(token_usage=result.usage, message_id=result.id)
         if result.usage is not None:
             # mark the token count for the context before the step
             await self._context.update_token_count(result.usage.input)
@@ -1691,47 +1422,15 @@ class KimiSoul:
         wire_send(status_update)
 
         # wait for all tool results (may be interrupted)
-        plan_mode_before_tools = self._plan_mode
         results = await result.tool_results()
         logger.debug("Got tool results: {results}", results=results)
-
-        # If a tool (EnterPlanMode/ExitPlanMode) changed plan mode during execution,
-        # send a corrected StatusUpdate so the client sees the up-to-date state.
-        if self._plan_mode != plan_mode_before_tools:
-            wire_send(StatusUpdate(plan_mode=self._plan_mode))
 
         # shield the context manipulation from interruption
         await asyncio.shield(self._grow_context(result, results))
 
         rejected = any(isinstance(result.return_value, ToolRejectedError) for result in results)
         if rejected:
-            _ = self._denwa_renji.fetch_pending_dmail()
             return StepOutcome(stop_reason="tool_rejected", assistant_message=result.message)
-
-        # handle pending D-Mail
-        if dmail := self._denwa_renji.fetch_pending_dmail():
-            assert dmail.checkpoint_id >= 0, "DenwaRenji guarantees checkpoint_id >= 0"
-            assert dmail.checkpoint_id < self._context.n_checkpoints, (
-                "DenwaRenji guarantees checkpoint_id < n_checkpoints"
-            )
-            # raise to let the main loop take us back to the future
-            raise BackToTheFuture(
-                dmail.checkpoint_id,
-                [
-                    internal_user_message(
-                        [
-                            system(
-                                "You just got a D-Mail from your future self. "
-                                "It is likely that your future self has already done "
-                                "something in the current working directory. Please read "
-                                "the D-Mail and decide what to do next. You MUST NEVER "
-                                "mention to the user about this information. "
-                                f"D-Mail content:\n\n{dmail.message.strip()}"
-                            )
-                        ]
-                    )
-                ],
-            )
 
         if result.tool_calls:
             return None
@@ -1836,7 +1535,6 @@ class KimiSoul:
 
             try:
                 await self._checkpoint()
-                self._denwa_renji.invalidate_stale_dmail()
                 await self._context.append_message(final_messages)
             except Exception:
                 logger.opt(exception=True).warning(
@@ -1943,224 +1641,3 @@ class KimiSoul:
         )
 
 
-class BackToTheFuture(Exception):
-    """
-    Raise when we need to revert the context to a previous checkpoint.
-    The main agent loop should catch this exception and handle it.
-    """
-
-    def __init__(self, checkpoint_id: int, messages: Sequence[Message]):
-        self.checkpoint_id = checkpoint_id
-        self.messages = messages
-
-
-class FlowRunner:
-    def __init__(
-        self,
-        flow: Flow,
-        *,
-        name: str | None = None,
-        max_moves: int = DEFAULT_MAX_FLOW_MOVES,
-    ) -> None:
-        self._flow = flow
-        self._name = name
-        self._max_moves = max_moves
-
-    @staticmethod
-    def ralph_loop(
-        user_message: Message,
-        max_ralph_iterations: int,
-    ) -> FlowRunner:
-        prompt_content = list(user_message.content)
-        prompt_text = Message(role="user", content=prompt_content).extract_text(" ").strip()
-        total_runs = max_ralph_iterations + 1
-        if max_ralph_iterations < 0:
-            total_runs = 1000000000000000  # effectively infinite
-
-        nodes: dict[str, FlowNode] = {
-            "BEGIN": FlowNode(id="BEGIN", label="BEGIN", kind="begin"),
-            "END": FlowNode(id="END", label="END", kind="end"),
-        }
-        outgoing: dict[str, list[FlowEdge]] = {"BEGIN": [], "END": []}
-
-        nodes["R1"] = FlowNode(id="R1", label=prompt_content, kind="task")
-        nodes["R2"] = FlowNode(
-            id="R2",
-            label=(
-                f"{prompt_text}. (You are running in an automated loop where the same "
-                "prompt is fed repeatedly. Only choose STOP when the task is fully complete. "
-                "Including it will stop further iterations. If you are not 100% sure, "
-                "choose CONTINUE.)"
-            ).strip(),
-            kind="decision",
-        )
-        outgoing["R1"] = []
-        outgoing["R2"] = []
-
-        outgoing["BEGIN"].append(FlowEdge(src="BEGIN", dst="R1", label=None))
-        outgoing["R1"].append(FlowEdge(src="R1", dst="R2", label=None))
-        outgoing["R2"].append(FlowEdge(src="R2", dst="R2", label="CONTINUE"))
-        outgoing["R2"].append(FlowEdge(src="R2", dst="END", label="STOP"))
-
-        flow = Flow(nodes=nodes, outgoing=outgoing, begin_id="BEGIN", end_id="END")
-        max_moves = total_runs
-        return FlowRunner(flow, max_moves=max_moves)
-
-    async def run(
-        self,
-        soul: KimiSoul,
-        args: str,
-        *,
-        enable_skill_reminder: bool = False,
-    ) -> None:
-        if args.strip():
-            command = f"/{FLOW_COMMAND_PREFIX}{self._name}" if self._name else "/flow"
-            logger.warning("Agent flow {command} ignores args: {args}", command=command, args=args)
-            return
-
-        current_id = self._flow.begin_id
-        moves = 0
-        total_steps = 0
-        reminder_enabled = enable_skill_reminder
-        soul._suppress_auto_compaction = True
-        try:
-            while True:
-                node = self._flow.nodes[current_id]
-                edges = self._flow.outgoing.get(current_id, [])
-
-                if node.kind == "end":
-                    logger.info(
-                        "Agent flow reached END node {node_id}",
-                        node_id=current_id,
-                    )
-                    return
-
-                if node.kind == "begin":
-                    if not edges:
-                        logger.error(
-                            'Agent flow BEGIN node "{node_id}" has no outgoing edges; stopping.',
-                            node_id=node.id,
-                        )
-                        return
-                    current_id = edges[0].dst
-                    continue
-
-                if moves >= self._max_moves:
-                    raise MaxStepsReached(total_steps)
-                next_id, steps_used = await self._execute_flow_node(
-                    soul,
-                    node,
-                    edges,
-                    enable_skill_reminder=reminder_enabled,
-                )
-                reminder_enabled = False
-                total_steps += steps_used
-                if next_id is None:
-                    return
-                moves += 1
-                current_id = next_id
-        finally:
-            soul._suppress_auto_compaction = False
-
-    async def _execute_flow_node(
-        self,
-        soul: KimiSoul,
-        node: FlowNode,
-        edges: list[FlowEdge],
-        *,
-        enable_skill_reminder: bool = False,
-    ) -> tuple[str | None, int]:
-        if not edges:
-            logger.error(
-                'Agent flow node "{node_id}" has no outgoing edges; stopping.',
-                node_id=node.id,
-            )
-            return None, 0
-
-        base_prompt = self._build_flow_prompt(node, edges)
-        prompt = base_prompt
-        steps_used = 0
-        max_retries = 3
-        retries = 0
-        while True:
-            result = await self._flow_turn(
-                soul,
-                prompt,
-                enable_skill_reminder=enable_skill_reminder,
-            )
-            enable_skill_reminder = False
-            steps_used += result.step_count
-            if result.stop_reason == "tool_rejected":
-                logger.error("Agent flow stopped after tool rejection.")
-                return None, steps_used
-
-            if node.kind != "decision":
-                return edges[0].dst, steps_used
-
-            choice = (
-                parse_choice(result.final_message.extract_text(" "))
-                if result.final_message
-                else None
-            )
-            next_id = self._match_flow_edge(edges, choice)
-            if next_id is not None:
-                return next_id, steps_used
-
-            options = ", ".join(edge.label or "" for edge in edges)
-            logger.warning(
-                "Agent flow invalid choice. Got: {choice}. Available: {options}.",
-                choice=choice or "<missing>",
-                options=options,
-            )
-            retries += 1
-            if retries >= max_retries:
-                raise MaxStepsReached(f"Flow decision node failed after {max_retries} retries")
-            prompt = (
-                f"{base_prompt}\n\n"
-                "Your last response did not include a valid choice. "
-                "Reply with one of the choices using <choice>...</choice>."
-            )
-
-    @staticmethod
-    def _build_flow_prompt(node: FlowNode, edges: list[FlowEdge]) -> str | list[ContentPart]:
-        if node.kind != "decision":
-            return node.label
-
-        if not isinstance(node.label, str):
-            label_text = Message(role="user", content=node.label).extract_text(" ")
-        else:
-            label_text = node.label
-        choices = [edge.label for edge in edges if edge.label]
-        lines = [
-            label_text,
-            "",
-            "Available branches:",
-            *(f"- {choice}" for choice in choices),
-            "",
-            "Reply with a choice using <choice>...</choice>.",
-        ]
-        return "\n".join(lines)
-
-    @staticmethod
-    def _match_flow_edge(edges: list[FlowEdge], choice: str | None) -> str | None:
-        if not choice:
-            return None
-        for edge in edges:
-            if edge.label.strip().lower() == choice.strip().lower():
-                return edge.dst
-        return None
-
-    @staticmethod
-    async def _flow_turn(
-        soul: KimiSoul,
-        prompt: str | list[ContentPart],
-        *,
-        enable_skill_reminder: bool = False,
-    ) -> TurnOutcome:
-        wire_send(TurnBegin(user_input=prompt))
-        res = await soul._turn(  # pyright: ignore[reportPrivateUsage]
-            Message(role="user", content=prompt),
-            enable_skill_reminder=enable_skill_reminder,
-        )
-        wire_send(TurnEnd())
-        return res

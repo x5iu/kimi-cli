@@ -12,4 +12,4 @@ Guidelines:
 - Prefer the default `active_only=true` unless you specifically need completed or failed tasks.
 - Use `TaskOutput` to inspect one task in detail after you have identified the correct task ID.
 - Do not guess which tasks are still running when you can call this tool directly.
-- This tool is read-only and safe to use in plan mode.
+- This tool is read-only and safe to call at any time.

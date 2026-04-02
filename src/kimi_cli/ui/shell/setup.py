@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, NamedTuple
 
 from loguru import logger
@@ -7,7 +8,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 from pydantic import SecretStr
 
-from kimi_cli.auth.platforms import (
+from kimi_cli.platforms.registry import (
     PLATFORMS,
     ModelInfo,
     Platform,
@@ -185,6 +186,26 @@ async def _prompt_text(prompt: str, *, is_password: bool = False) -> str | None:
         ).strip()
     except (EOFError, KeyboardInterrupt):
         return None
+
+
+@registry.command
+async def setup(app: Shell, args: str) -> None:
+    """Setup a platform with API key."""
+    from kimi_cli.cli import Reload
+    from kimi_cli.ui.shell.slash import ensure_kimi_soul
+
+    soul = ensure_kimi_soul(app)
+    if soul is None:
+        return
+    platform = await select_platform()
+    if platform is None:
+        return
+    ok = await setup_platform(platform)
+    if not ok:
+        return
+    await asyncio.sleep(1)
+    console.clear()
+    raise Reload
 
 
 @registry.command

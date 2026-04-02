@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Literal
 
@@ -12,12 +12,9 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 from kaos import get_current_kaos
-from kimi_cli.skill.flow import Flow, FlowError
-from kimi_cli.skill.flow.d2 import parse_d2_flowchart
-from kimi_cli.skill.flow.mermaid import parse_mermaid_flowchart
 from kimi_cli.utils.frontmatter import parse_frontmatter
 
-SkillType = Literal["standard", "flow"]
+SkillType = Literal["standard"]
 
 
 def get_builtin_skills_dir() -> Path:
@@ -149,7 +146,6 @@ class Skill(BaseModel):
     description: str
     type: SkillType = "standard"
     dir: KaosPath
-    flow: Flow | None = None
 
     @property
     def skill_md_file(self) -> KaosPath:
@@ -199,40 +195,15 @@ def parse_skill_text(content: str, *, dir_path: KaosPath) -> Skill:
     name = frontmatter.get("name") or dir_path.name
     description = frontmatter.get("description") or "No description provided."
     skill_type = frontmatter.get("type") or "standard"
-    if skill_type not in ("standard", "flow"):
+    if skill_type != "standard":
         raise ValueError(f'Invalid skill type "{skill_type}"')
-    flow = None
-    if skill_type == "flow":
-        try:
-            flow = _parse_flow_from_skill(content)
-        except ValueError as exc:
-            logger.error("Failed to parse flow skill {name}: {error}", name=name, error=exc)
-            skill_type = "standard"
-            flow = None
 
     return Skill(
         name=name,
         description=description,
         type=skill_type,
         dir=dir_path,
-        flow=flow,
     )
-
-
-def _parse_flow_from_skill(content: str) -> Flow:
-    for lang, code in _iter_fenced_codeblocks(content):
-        if lang == "mermaid":
-            return _parse_flow_block(parse_mermaid_flowchart, code)
-        if lang == "d2":
-            return _parse_flow_block(parse_d2_flowchart, code)
-    raise ValueError("Flow skills require a mermaid or d2 code block in SKILL.md.")
-
-
-def _parse_flow_block(parser: Callable[[str], Flow], code: str) -> Flow:
-    try:
-        return parser(code)
-    except FlowError as exc:
-        raise ValueError(f"Invalid flow diagram: {exc}") from exc
 
 
 def _iter_fenced_codeblocks(content: str) -> Iterator[tuple[str, str]]:

@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 
-from kimi_cli.auth.platforms import get_platform_name_for_provider, refresh_managed_models
 from kimi_cli.background import format_task, format_task_list, list_task_views
 from kimi_cli.cli import Reload
 from kimi_cli.config import load_config, save_config
@@ -13,7 +12,6 @@ from kimi_cli.exception import ConfigError
 from kimi_cli.session import Session
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
-from kimi_cli.utils.changelog import CHANGELOG
 from kimi_cli.utils.datetime import format_relative_time
 from kimi_cli.utils.slashcmd import SlashCommand, SlashCommandRegistry
 
@@ -61,7 +59,6 @@ SKILL_COMMAND_PREFIX = "skill:"
 
 _KEYBOARD_SHORTCUTS = [
     ("Ctrl-X", "Toggle agent/shell mode"),
-    ("Shift-Tab", "Toggle plan mode (read-only research)"),
     ("Ctrl-O", "Edit in external editor ($VISUAL/$EDITOR)"),
     ("Ctrl-J / Alt-Enter", "Insert newline"),
     ("Ctrl-Y", "Toggle history during a live turn"),
@@ -153,6 +150,7 @@ def version(app: Shell, args: str):
 async def model(app: Shell, args: str):
     """Switch LLM model or thinking mode"""
     from kimi_cli.llm import derive_model_capabilities
+    from kimi_cli.platforms.registry import get_platform_name_for_provider, refresh_managed_models
 
     soul = ensure_kimi_soul(app)
     if soul is None:
@@ -162,7 +160,7 @@ async def model(app: Shell, args: str):
     await refresh_managed_models(config)
 
     if not config.models:
-        console.print('[yellow]No models configured, send "/login" to login.[/yellow]')
+        console.print("[yellow]No models configured.[/yellow]")
         return
 
     if not config.is_from_default_location:
@@ -368,37 +366,6 @@ async def editor(app: Shell, args: str):
         console.print(f"[green]Editor set to auto-detect (resolved: {label})[/green]")
 
 
-@registry.command(aliases=["release-notes"])
-@shell_mode_registry.command(aliases=["release-notes"])
-def changelog(app: Shell, args: str):
-    """Show release notes"""
-    from rich.console import Group, RenderableType
-    from rich.text import Text
-
-    from kimi_cli.utils.rich.columns import BulletColumns
-
-    renderables: list[RenderableType] = []
-    for ver, entry in CHANGELOG.items():
-        title = f"[bold]{ver}[/bold]"
-        if entry.description:
-            title += f": {entry.description}"
-
-        lines: list[RenderableType] = [Text.from_markup(title)]
-        for item in entry.entries:
-            if item.lower().startswith("lib:"):
-                continue
-            lines.append(
-                BulletColumns(
-                    Text.from_markup(f"[grey50]{item}[/grey50]"),
-                    bullet_style="grey50",
-                ),
-            )
-        renderables.append(BulletColumns(Group(*lines)))
-
-    with console.pager(styles=True):
-        console.print(Group(*renderables))
-
-
 @registry.command
 @shell_mode_registry.command
 def feedback(app: Shell, args: str):
@@ -582,5 +549,5 @@ async def mcp(app: Shell, args: str):
 
 from importlib import import_module  # noqa: E402
 
-for _module_name in ("debug", "export_import", "oauth", "setup", "update", "usage"):
+for _module_name in ("debug", "setup", "usage"):
     import_module(f"{__package__}.{_module_name}")

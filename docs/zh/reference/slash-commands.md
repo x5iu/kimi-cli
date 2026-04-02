@@ -3,7 +3,7 @@
 斜杠命令是 Kimi Code CLI 的内置命令，用于控制会话、配置和调试。在输入框中输入 `/` 开头的命令即可触发。
 
 ::: tip Shell 模式
-部分斜杠命令在 Shell 模式下也可以使用，包括 `/help`、`/exit`、`/version`、`/editor`、`/changelog`、`/feedback`、`/export` 和 `/import`。
+部分斜杠命令在 Shell 模式下也可以使用，包括 `/help`、`/exit`、`/version`、`/editor`、`/changelog` 和 `/feedback`。
 :::
 
 ## 帮助与信息
@@ -30,24 +30,17 @@
 
 ## 账号与配置
 
-### `/login`
+### `/setup`
 
-登录或配置 API 平台。执行后首先选择平台：
-
-- **Kimi Code**：自动打开浏览器进行 OAuth 授权登录
-- **其他平台**：输入 API 密钥，然后选择可用模型
+配置 API 平台。执行后首先选择平台，然后输入 API 密钥并选择可用模型。
 
 配置完成后自动保存到 `~/.kimi/config.toml` 并重新加载。详见 [平台与模型](../configuration/providers.md)。
 
-别名：`/setup`
+别名：`/login`
 
 ::: tip 提示
 此命令仅在使用默认配置文件时可用。如果通过 `--config` 或 `--config-file` 指定了配置，则无法使用此命令。
 :::
-
-### `/logout`
-
-登出当前平台。会清理存储的凭据并移除配置文件中的相关配置。登出后 Kimi Code CLI 会自动重新加载配置。
 
 ### `/model`
 
@@ -110,29 +103,6 @@
 
 使用方向键选择会话，按 `Enter` 确认切换，按 `Ctrl-C` 取消。
 
-### `/export`
-
-将当前会话的上下文导出为 Markdown 文件，方便归档或分享。
-
-用法：
-
-- `/export`：导出到当前工作目录，文件名自动生成（格式为 `kimi-export-<会话ID前8位>-<时间戳>.md`）
-- `/export <path>`：导出到指定路径。如果路径是目录，文件名会自动生成；如果是文件路径，则直接写入该文件
-
-导出文件包含：
-- 会话元数据（会话 ID、导出时间、工作目录、消息数、token 数）
-- 对话概览（主题、轮次数、工具调用次数）
-- 完整的对话历史，按轮次组织，包括用户消息、AI 回复、工具调用和工具结果
-
-### `/import`
-
-从文件或其他会话导入上下文到当前会话。导入的内容会作为参考上下文附加到当前对话中，AI 可以利用这些信息来辅助后续的交互。
-
-用法：
-
-- `/import <file_path>`：从文件导入。支持 Markdown、文本、代码、配置文件等常见文本格式；不支持二进制文件（如图片、PDF、压缩包）
-- `/import <session_id>`：从指定会话 ID 导入。不能导入当前会话自身
-
 ### `/clear`
 
 清空当前会话的上下文，开始新的对话。
@@ -149,7 +119,7 @@
 
 ### `/skill:<name>`
 
-加载指定的 Skill，将 `SKILL.md` 内容作为提示词发送给 Agent。此命令适用于普通 Skill 和 Flow Skill。
+加载指定的 Skill，将 `SKILL.md` 内容作为提示词发送给 Agent。
 
 例如：
 
@@ -159,24 +129,6 @@
 
 命令后面可以附带额外的文本，这些内容会追加到 Skill 提示词之后。详见 [Agent Skills](../customization/skills.md)。
 
-::: tip 提示
-Flow Skill 也可以通过 `/skill:<name>` 调用，此时作为普通 Skill 加载内容，不会自动执行流程。如需执行流程，请使用 `/flow:<name>`。
-:::
-
-### `/flow:<name>`
-
-执行指定的 Flow Skill。Flow Skill 在 `SKILL.md` 中内嵌 Agent Flow 流程图，执行后 Agent 会从 `BEGIN` 节点开始，按照流程图定义依次处理每个节点，直到到达 `END` 节点。
-
-例如：
-
-- `/flow:code-review`：执行代码审查工作流
-- `/flow:release`：执行发布工作流
-
-::: tip 提示
-Flow Skill 也可以通过 `/skill:<name>` 调用，此时作为普通 Skill 加载内容，不会自动执行流程。
-:::
-
-详见 [Agent Skills](../customization/skills.md#flow-skills)。
 
 ## 工作区
 
@@ -200,20 +152,6 @@ Flow Skill 也可以通过 `/skill:<name>` 调用，此时作为普通 Skill 加
 分析当前项目并生成 `AGENTS.md` 文件。
 
 此命令会启动一个临时子会话分析代码库结构，生成项目说明文档，帮助 Agent 更好地理解项目。
-
-### `/plan`
-
-切换 Plan 模式。Plan 模式下 AI 只能使用只读工具探索代码库，将实施方案写入 plan 文件后提交给你审批。详见 [Plan 模式](../guides/interaction.md#plan-模式)。
-
-用法：
-
-- `/plan`：切换 Plan 模式开关
-- `/plan on`：开启 Plan 模式
-- `/plan off`：关闭 Plan 模式
-- `/plan view`：查看当前方案内容
-- `/plan clear`：清除当前方案文件
-
-开启 Plan 模式后，提示符变为 `📋`，底部状态栏显示蓝色的 `plan` 标识。
 
 ### `/yolo`
 

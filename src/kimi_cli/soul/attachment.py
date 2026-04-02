@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class Attachment:
     """A dynamic prompt content to be injected before an LLM step."""
 
-    type: str  # identifier, e.g. "plan_mode"
+    type: str  # identifier for the attachment type
     content: str  # text content (will be wrapped in <system-reminder> or <system-hint> tags)
     is_hint: bool = False  # True = <system-hint>, False = <system-reminder>
 

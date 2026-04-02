@@ -10,7 +10,6 @@ from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.wire import Wire
 from kimi_cli.wire.types import (
     ContentPart,
-    PlanDisplay,
     StepBegin,
     StepInterrupted,
     ToolCall,
@@ -34,9 +33,6 @@ def _merge_content(buffer: list[ContentPart], part: ContentPart) -> None:
 class TextPrinter(Printer):
     def feed(self, msg: WireMessage) -> None:
         if isinstance(msg, ToolCallOutput):
-            return
-        if isinstance(msg, PlanDisplay):
-            print(f"\n--- Plan ({msg.file_path}) ---\n{msg.content}\n---\n", flush=True)
             return
         rich.print(msg)
 

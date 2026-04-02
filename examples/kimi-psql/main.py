@@ -32,7 +32,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.config import LLMModel, LLMProvider
 from kimi_cli.llm import LLM, create_llm
 from kimi_cli.session import Session
@@ -274,7 +273,6 @@ async def create_psql_soul(llm: LLM | None, conninfo: str) -> KimiSoul:
     session = await Session.create(kaos_work_dir)
     runtime = await Runtime.create(
         config=config,
-        oauth=OAuthManager(config),
         llm=llm,
         session=session,
         yolo=True,  # Auto-approve read-only SQL queries

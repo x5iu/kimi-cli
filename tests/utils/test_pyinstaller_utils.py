@@ -28,10 +28,6 @@ def test_pyinstaller_datas():
 
     expected_datas = [
         (
-            f"{site_packages}/dateparser/data/dateparser_tz_cache.pkl",
-            "dateparser/data",
-        ),
-        (
             f"{site_packages}/fastmcp/../fastmcp-2.12.5.dist-info/INSTALLER",
             "fastmcp/../fastmcp-2.12.5.dist-info",
         ),
@@ -65,7 +61,6 @@ def test_pyinstaller_datas():
         ),
         ("src/kimi_cli/agents/default/agent.yaml", "kimi_cli/agents/default"),
         ("src/kimi_cli/agents/default/system.md", "kimi_cli/agents/default"),
-        ("src/kimi_cli/agents/okabe/agent.yaml", "kimi_cli/agents/okabe"),
         ("src/kimi_cli/prompts/compact.md", "kimi_cli/prompts"),
         ("src/kimi_cli/prompts/init.md", "kimi_cli/prompts"),
         (
@@ -94,10 +89,6 @@ def test_pyinstaller_datas():
             "kimi_cli/tools/context",
         ),
         (
-            "src/kimi_cli/tools/dmail/dmail.md",
-            "kimi_cli/tools/dmail",
-        ),
-        (
             "src/kimi_cli/tools/file/edit.md",
             "kimi_cli/tools/file",
         ),
@@ -121,9 +112,6 @@ def test_pyinstaller_datas():
             "src/kimi_cli/tools/file/write.md",
             "kimi_cli/tools/file",
         ),
-        ("src/kimi_cli/tools/plan/description.md", "kimi_cli/tools/plan"),
-        ("src/kimi_cli/tools/plan/enter_description.md", "kimi_cli/tools/plan"),
-        ("src/kimi_cli/tools/plan/enter_description_yolo.md", "kimi_cli/tools/plan"),
         ("src/kimi_cli/tools/shell/bash.md", "kimi_cli/tools/shell"),
         ("src/kimi_cli/tools/shell/powershell.md", "kimi_cli/tools/shell"),
         (
@@ -147,10 +135,6 @@ def test_pyinstaller_datas():
         expected_datas.append((f"src/kimi_cli/deps/bin/{rg_binary}", "kimi_cli/deps/bin"))
 
     assert sorted(datas) == snapshot([
-    (
-        ".venv/lib/python3.14/site-packages/dateparser/data/dateparser_tz_cache.pkl",
-        "dateparser/data",
-    ),
     (
         ".venv/lib/python3.14/site-packages/fastmcp/../fastmcp-2.12.5.dist-info/INSTALLER",
         "fastmcp/../fastmcp-2.12.5.dist-info",
@@ -182,7 +166,6 @@ def test_pyinstaller_datas():
     ("src/kimi_cli/CHANGELOG.md", "kimi_cli"),
     ("src/kimi_cli/agents/default/agent.yaml", "kimi_cli/agents/default"),
     ("src/kimi_cli/agents/default/system.md", "kimi_cli/agents/default"),
-    ("src/kimi_cli/agents/okabe/agent.yaml", "kimi_cli/agents/okabe"),
     ("src/kimi_cli/prompts/compact.md", "kimi_cli/prompts"),
     ("src/kimi_cli/prompts/init.md", "kimi_cli/prompts"),
     ("src/kimi_cli/prompts/skill_recommender.md", "kimi_cli/prompts"),
@@ -199,16 +182,12 @@ def test_pyinstaller_datas():
     ("src/kimi_cli/tools/background/stop.md", "kimi_cli/tools/background"),
     ("src/kimi_cli/tools/background/write.md", "kimi_cli/tools/background"),
     ("src/kimi_cli/tools/context/description.md", "kimi_cli/tools/context"),
-    ("src/kimi_cli/tools/dmail/dmail.md", "kimi_cli/tools/dmail"),
     ("src/kimi_cli/tools/file/edit.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/glob.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/grep.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/read.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/read_media.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/file/write.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/plan/description.md", "kimi_cli/tools/plan"),
-    ("src/kimi_cli/tools/plan/enter_description.md", "kimi_cli/tools/plan"),
-    ("src/kimi_cli/tools/plan/enter_description_yolo.md", "kimi_cli/tools/plan"),
     ("src/kimi_cli/tools/shell/bash.md", "kimi_cli/tools/shell"),
     ("src/kimi_cli/tools/shell/powershell.md", "kimi_cli/tools/shell"),
     ("src/kimi_cli/tools/think/think.md", "kimi_cli/tools/think"),
@@ -229,7 +208,6 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.tools.context",
             "kimi_cli.tools.context.recall_compacted",
             "kimi_cli.tools.display",
-            "kimi_cli.tools.dmail",
             "kimi_cli.tools.file",
             "kimi_cli.tools.file.glob",
             "kimi_cli.tools.file.grep_local",
@@ -239,9 +217,6 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.tools.file.rg_path",
             "kimi_cli.tools.file.utils",
             "kimi_cli.tools.file.write",
-            "kimi_cli.tools.plan",
-            "kimi_cli.tools.plan.enter",
-            "kimi_cli.tools.plan.naming",
             "kimi_cli.tools.shell",
             "kimi_cli.tools.test",
             "kimi_cli.tools.think",

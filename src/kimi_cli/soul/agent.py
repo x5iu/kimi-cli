@@ -8,13 +8,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pydantic
-from jinja2 import BaseLoader, Environment as JinjaEnvironment
-from jinja2 import FileSystemLoader, StrictUndefined, TemplateError, TemplateNotFound, UndefinedError
+from jinja2 import (
+    BaseLoader,
+    FileSystemLoader,
+    StrictUndefined,
+    TemplateError,
+    TemplateNotFound,
+    UndefinedError,
+)
+from jinja2 import Environment as JinjaEnvironment
 from kaos.path import KaosPath
 from kosong.tooling import Toolset
 
 from kimi_cli.agentspec import load_agent_spec
-from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config
 from kimi_cli.exception import MCPConfigError, SystemPromptTemplateError
@@ -24,7 +30,6 @@ from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from kimi_cli.skill import Skill, discover_skills_from_roots, index_skills, resolve_skills_roots
 from kimi_cli.soul.approval import Approval, ApprovalState
-from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.utils.environment import Environment
 from kimi_cli.utils.logging import logger
@@ -115,11 +120,9 @@ class Runtime:
     """Agent runtime."""
 
     config: Config
-    oauth: OAuthManager
     llm: LLM | None  # we do not freeze the `Runtime` dataclass because LLM can be changed
     session: Session
     builtin_args: BuiltinSystemPromptArgs
-    denwa_renji: DenwaRenji
     approval: Approval
     environment: Environment
     notifications: NotificationManager
@@ -142,7 +145,6 @@ class Runtime:
     @staticmethod
     async def create(
         config: Config,
-        oauth: OAuthManager,
         llm: LLM | None,
         session: Session,
         yolo: bool,
@@ -243,7 +245,6 @@ class Runtime:
 
         return Runtime(
             config=config,
-            oauth=oauth,
             llm=llm,
             session=session,
             builtin_args=BuiltinSystemPromptArgs(
@@ -256,7 +257,6 @@ class Runtime:
                 KIMI_OS=environment.os_kind,
                 KIMI_SHELL=f"{environment.shell_name} (`{environment.shell_path}`)",
             ),
-            denwa_renji=DenwaRenji(),
             approval=Approval(state=approval_state),
             environment=environment,
             notifications=notifications,
@@ -323,7 +323,6 @@ async def load_agent(
         Config: runtime.config,
         BuiltinSystemPromptArgs: runtime.builtin_args,
         Session: runtime.session,
-        DenwaRenji: runtime.denwa_renji,
         Approval: runtime.approval,
         Environment: runtime.environment,
     }

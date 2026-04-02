@@ -6,9 +6,9 @@ from typing import Any, NamedTuple, cast
 import aiohttp
 from pydantic import BaseModel
 
-from kimi_cli.auth import KIMI_CODE_PLATFORM_ID
 from kimi_cli.config import Config, LLMModel, load_config, save_config
 from kimi_cli.llm import ModelCapability
+from kimi_cli.platforms import KIMI_CODE_PLATFORM_ID
 from kimi_cli.utils.aiohttp import new_client_session
 from kimi_cli.utils.logging import logger
 
@@ -140,12 +140,6 @@ async def refresh_managed_models(config: Config) -> bool:
             continue
 
         api_key = provider.api_key.get_secret_value()
-        if not api_key and provider.oauth:
-            from kimi_cli.auth.oauth import load_tokens
-
-            token = load_tokens(provider.oauth)
-            if token:
-                api_key = token.access_token
         if not api_key:
             logger.warning(
                 "Missing API key for managed provider: {provider}",

@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 type NotificationCategory = Literal["task", "agent", "system"]
 type NotificationSeverity = Literal["info", "success", "warning", "error"]
-type NotificationSink = Literal["llm", "shell", "wire"]
+type NotificationSink = Literal["llm", "shell"]
 type NotificationDeliveryStatus = Literal["pending", "claimed", "acked"]
 
 

@@ -16,7 +16,6 @@ from kosong.chat_provider.mock import MockChatProvider
 from pydantic import SecretStr
 
 from kaos import get_current_kaos, reset_current_kaos, set_current_kaos
-from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
 from kimi_cli.llm import ALL_MODEL_CAPABILITIES, LLM
@@ -26,11 +25,9 @@ from kimi_cli.session import Session
 from kimi_cli.session_state import SessionState
 from kimi_cli.soul.agent import Agent, BuiltinSystemPromptArgs, Runtime
 from kimi_cli.soul.approval import Approval
-from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop, TaskWrite
 from kimi_cli.tools.context import RecallCompactedContext
-from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
@@ -105,12 +102,6 @@ def builtin_args(temp_work_dir: KaosPath) -> BuiltinSystemPromptArgs:
 
 
 @pytest.fixture
-def denwa_renji() -> DenwaRenji:
-    """Create a DenwaRenji instance."""
-    return DenwaRenji()
-
-
-@pytest.fixture
 def session(temp_work_dir: KaosPath, temp_share_dir: Path) -> Session:
     """Create a Session instance."""
     return Session(
@@ -157,7 +148,6 @@ def runtime(
     config: Config,
     llm: LLM,
     builtin_args: BuiltinSystemPromptArgs,
-    denwa_renji: DenwaRenji,
     session: Session,
     approval: Approval,
     environment: Environment,
@@ -171,7 +161,6 @@ def runtime(
         config=config,
         llm=llm,
         builtin_args=builtin_args,
-        denwa_renji=denwa_renji,
         session=session,
         approval=approval,
         environment=environment,
@@ -182,7 +171,6 @@ def runtime(
             notifications=notifications,
         ),
         skills={},
-        oauth=OAuthManager(config),
         additional_dirs=[],
         skills_dirs=[],
         agents_md="",
@@ -208,12 +196,6 @@ def tool_call_context(tool_name: str) -> Generator[None]:
         yield
     finally:
         current_tool_call.reset(token)
-
-
-@pytest.fixture
-def send_dmail_tool(denwa_renji: DenwaRenji) -> SendDMail:
-    """Create a SendDMail tool instance."""
-    return SendDMail(denwa_renji)
 
 
 @pytest.fixture

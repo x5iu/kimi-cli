@@ -32,8 +32,6 @@ async def test_default_agent(runtime: Runtime):
         "Edit",
         "SearchWeb",
         "FetchURL",
-        "ExitPlanMode",
-        "EnterPlanMode",
     ]
     assert isinstance(agent.toolset, KimiToolset)
     assert isinstance(agent.toolset.find("Edit"), EditTool)

@@ -14,7 +14,7 @@ If running tools directly, use `uv run ...`.
 ## Project overview
 
 Kimi Code CLI is a Python CLI agent for software engineering workflows. It supports an interactive
-shell UI, print/wire execution modes, and MCP tool loading.
+shell UI, print execution mode, and MCP tool loading.
 
 ## Tech stack
 
@@ -43,7 +43,7 @@ shell UI, print/wire execution modes, and MCP tool loading.
   the project root AGENTS file.
 - **Tooling**: `src/kimi_cli/soul/toolset.py` loads tools by import path, injects dependencies,
   and runs tool calls. Built-in tools live in `src/kimi_cli/tools/` (shell, background task
-  management, file, web, todo, dmail, think, context recall). MCP tools are loaded
+  management, file, web, todo, think, context recall). MCP tools are loaded
   via `fastmcp`; CLI management is in `src/kimi_cli/mcp.py` and stored in the share dir.
 - **Sub-agent delegation**: Instead of a built-in subagent runtime, Kimi Code CLI ships a
   `kimi-code-worker` skill (`src/kimi_cli/skills/kimi-code-worker/`) that spawns
@@ -60,7 +60,7 @@ shell UI, print/wire execution modes, and MCP tool loading.
   soul forwards approval requests over `Wire` for UI handling.
 - **UI/Wire**: `src/kimi_cli/soul/run_soul` connects `KimiSoul` to a `Wire`
   (`src/kimi_cli/wire/`) so UI loops can stream events. Interactive frontends live in
-  `src/kimi_cli/ui/` (shell/print), and Wire stdio serving lives under `src/kimi_cli/wire/`.
+  `src/kimi_cli/ui/` (shell/print).
 - **Shell UI**: `src/kimi_cli/ui/shell/` handles interactive TUI input, shell command mode,
   slash command autocomplete, background-task toasts, and the persistent bottom input box.
   During an active turn, the shell now switches into a single prompt_toolkit Application that
@@ -77,8 +77,7 @@ shell UI, print/wire execution modes, and MCP tool loading.
 - **Slash commands**: Soul-level commands live in `src/kimi_cli/soul/slash.py`; shell-level
   commands live in `src/kimi_cli/ui/shell/slash.py`. The shell UI exposes both and dispatches
   based on the registry. `/task` lists current background tasks for the active session.
-  Standard skills register `/skill:<skill-name>` and load `SKILL.md` as a user prompt; flow
-  skills register `/flow:<skill-name>` and execute the embedded flow.
+  Standard skills register `/skill:<skill-name>` and load `SKILL.md` as a user prompt.
 
 ## Major modules and interfaces
 
@@ -88,15 +87,14 @@ shell UI, print/wire execution modes, and MCP tool loading.
   background tasks), `Agent` (system prompt + toolset).
 - `src/kimi_cli/soul/kimisoul.py`: `KimiSoul.run(...)` is the loop boundary; it emits Wire
   messages, injects task notifications, and executes tools via `KimiToolset`.
-- `src/kimi_cli/soul/context.py`: conversation history + checkpoints; used by DMail for
-  checkpointed replies.
+- `src/kimi_cli/soul/context.py`: conversation history + checkpoints.
 - `src/kimi_cli/soul/toolset.py`: load tools, run tool calls, bridge to MCP tools.
 - `src/kimi_cli/ui/*`: shell/print frontends; they consume `Wire` messages.
-- `src/kimi_cli/wire/*`: event types and transport used between soul and UI.
+- `src/kimi_cli/wire/*`: event types used between soul and UI (internal bus only).
 
 ## Repo map
 
-- `src/kimi_cli/agents/`: built-in agent YAML specs and prompts (no subagent specs)
+- `src/kimi_cli/agents/`: built-in agent YAML specs and prompts
 - `src/kimi_cli/prompts/`: shared prompt templates
 - `src/kimi_cli/soul/`: core runtime/loop, context, compaction, compaction archives, approvals
 - `src/kimi_cli/background/`: background bash task models, store (with sidecar ``LineIndex``
@@ -105,7 +103,7 @@ shell UI, print/wire execution modes, and MCP tool loading.
 - `src/kimi_cli/tools/`: built-in tools, including compacted-context recall and background task
   tools (no built-in subagent/Task tool — use `kimi-code-worker` skill instead)
 - `src/kimi_cli/ui/`: UI frontends (shell/print)
-- `src/kimi_cli/wire/`: Wire protocol and stdio server
+- `src/kimi_cli/wire/`: Wire event types (internal message bus between soul and UI)
 - `packages/kosong/`, `packages/kaos/`: workspace deps
   + Kosong is an LLM abstraction layer designed for modern AI agent applications.
     It unifies message structures, asynchronous tool orchestration, and pluggable

@@ -31,7 +31,7 @@ LLM friendly version: https://moonshotai.github.io/kimi-cli/llms.txt""",
     help="Kimi, your next CLI agent.",
 )
 
-UIMode = Literal["shell", "print", "wire"]
+UIMode = Literal["shell", "print"]
 
 class ExitCode:
     SUCCESS = 0
@@ -183,13 +183,6 @@ def kimi(
             ),
         ),
     ] = False,
-    wire_mode: Annotated[
-        bool,
-        typer.Option(
-            "--wire",
-            help="Run as Wire server (experimental).",
-        ),
-    ] = False,
     input_format: Annotated[
         InputFormat | None,
         typer.Option(
@@ -224,7 +217,7 @@ def kimi(
     ] = False,
     # Customization
     agent: Annotated[
-        Literal["default", "okabe"] | None,
+        Literal["default"] | None,
         typer.Option(
             "--agent",
             help="Builtin agent specification to use. Default: builtin default agent.",
@@ -321,7 +314,7 @@ def kimi(
 
     from kaos.path import KaosPath
 
-    from kimi_cli.agentspec import DEFAULT_AGENT_FILE, OKABE_AGENT_FILE
+    from kimi_cli.agentspec import DEFAULT_AGENT_FILE
     from kimi_cli.app import KimiCLI, enable_logging
     from kimi_cli.config import Config, load_config_from_string
     from kimi_cli.exception import ConfigError
@@ -352,11 +345,6 @@ def kimi(
             raise typer.BadParameter("Session ID cannot be empty", param_hint="--session")
 
     if quiet:
-        if wire_mode:
-            raise typer.BadParameter(
-                "Quiet mode cannot be combined with Wire UI",
-                param_hint="--quiet",
-            )
         if output_format not in (None, "text"):
             raise typer.BadParameter(
                 "Quiet mode implies `--output-format text`",
@@ -369,7 +357,6 @@ def kimi(
     conflict_option_sets = [
         {
             "--print": print_mode,
-            "--wire": wire_mode,
         },
         {
             "--agent": agent is not None,
@@ -396,14 +383,10 @@ def kimi(
         match agent:
             case "default":
                 agent_file = DEFAULT_AGENT_FILE
-            case "okabe":
-                agent_file = OKABE_AGENT_FILE
 
     ui: UIMode = "shell"
     if print_mode:
         ui = "print"
-    elif wire_mode:
-        ui = "wire"
 
     if prompt is not None:
         prompt = prompt.strip()
@@ -546,11 +529,6 @@ def kimi(
                         final_only=final_message_only,
                     )
                     succeeded = exit_code == ExitCode.SUCCESS
-                case "wire":
-                    if prompt is not None:
-                        logger.warning("Wire server ignores prompt argument")
-                    await instance.run_wire_stdio()
-                    succeeded = True
         except Reload as e:
             if e.session_id is None:
                 raise Reload(session_id=session.id) from e
@@ -627,105 +605,6 @@ def kimi(
 
 
 cli.add_typer(info_cli, name="info")
-
-
-@cli.command()
-def login(
-    json: bool = typer.Option(
-        False,
-        "--json",
-        help="Emit OAuth events as JSON lines.",
-    ),
-) -> None:
-    """Login to your Kimi account."""
-    from rich.console import Console
-    from rich.status import Status
-
-    from kimi_cli.auth.oauth import login_kimi_code
-    from kimi_cli.config import load_config
-
-    async def _run() -> bool:
-        if json:
-            ok = True
-            async for event in login_kimi_code(load_config()):
-                typer.echo(event.json)
-                if event.type == "error":
-                    ok = False
-            return ok
-
-        console = Console()
-        ok = True
-        status: Status | None = None
-        try:
-            async for event in login_kimi_code(load_config()):
-                if event.type == "waiting":
-                    if status is None:
-                        status = console.status("Waiting for user authorization...")
-                        status.start()
-                    continue
-                if status is not None:
-                    status.stop()
-                    status = None
-                match event.type:
-                    case "error":
-                        style = "red"
-                    case "success":
-                        style = "green"
-                    case _:
-                        style = None
-                console.print(event.message, markup=False, style=style)
-                if event.type == "error":
-                    ok = False
-        finally:
-            if status is not None:
-                status.stop()
-        return ok
-
-    ok = asyncio.run(_run())
-    if not ok:
-        raise typer.Exit(code=1)
-
-
-@cli.command()
-def logout(
-    json: bool = typer.Option(
-        False,
-        "--json",
-        help="Emit OAuth events as JSON lines.",
-    ),
-) -> None:
-    """Logout from your Kimi account."""
-    from rich.console import Console
-
-    from kimi_cli.auth.oauth import logout_kimi_code
-    from kimi_cli.config import load_config
-
-    async def _run() -> bool:
-        ok = True
-        if json:
-            async for event in logout_kimi_code(load_config()):
-                typer.echo(event.json)
-                if event.type == "error":
-                    ok = False
-            return ok
-
-        console = Console()
-        async for event in logout_kimi_code(load_config()):
-            match event.type:
-                case "error":
-                    style = "red"
-                case "success":
-                    style = "green"
-                case _:
-                    style = None
-            console.print(event.message, markup=False, style=style)
-            if event.type == "error":
-                ok = False
-        return ok
-
-    ok = asyncio.run(_run())
-    if not ok:
-        raise typer.Exit(code=1)
 
 
 @cli.command(name="__background-task-worker", hidden=True)

@@ -6,7 +6,6 @@ from inline_snapshot import snapshot
 
 from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop
 from kimi_cli.tools.shell import Shell
-from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
@@ -18,24 +17,6 @@ from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
-
-
-def test_send_dmail_params_schema(send_dmail_tool: SendDMail):
-    """Test the schema of SendDMail tool parameters."""
-    assert send_dmail_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "message": {"description": "The message to send.", "type": "string"},
-                "checkpoint_id": {
-                    "description": "The checkpoint to send the message back to.",
-                    "minimum": 0,
-                    "type": "integer",
-                },
-            },
-            "required": ["message", "checkpoint_id"],
-            "type": "object",
-        }
-    )
 
 
 def test_think_params_schema(think_tool: Think):

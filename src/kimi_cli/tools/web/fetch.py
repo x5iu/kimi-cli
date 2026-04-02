@@ -1,12 +1,13 @@
 import ipaddress
 import json
+import re
 import socket
 from pathlib import Path
 from typing import override
 from urllib.parse import urlparse
 
 import aiohttp
-import trafilatura
+from bs4 import BeautifulSoup, Tag
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
@@ -103,14 +104,7 @@ class FetchURL(CallableTool2[Params]):
                 brief="Empty response body",
             )
 
-        extracted_text = trafilatura.extract(
-            resp_text,
-            include_comments=True,
-            include_tables=True,
-            include_formatting=False,
-            output_format="txt",
-            with_metadata=True,
-        )
+        extracted_text = _extract_text_from_html(resp_text)
 
         if not extracted_text:
             return builder.error(
@@ -132,9 +126,7 @@ class FetchURL(CallableTool2[Params]):
         assert tool_call is not None, "Tool call is expected to be set"
 
         builder = ToolResultBuilder(max_line_length=None)
-        api_key = self._runtime.oauth.resolve_api_key(
-            self._service_config.api_key, self._service_config.oauth
-        )
+        api_key = self._service_config.api_key.get_secret_value()
         if not api_key:
             return builder.error(
                 "Fetch service is not configured. You may want to try other methods to fetch.",
@@ -145,7 +137,6 @@ class FetchURL(CallableTool2[Params]):
             "Authorization": f"Bearer {api_key}",
             "Accept": "text/markdown",
             "X-Msh-Tool-Call-Id": tool_call.id,
-            **self._runtime.oauth.common_headers(),
             **(self._service_config.custom_headers or {}),
         }
 
@@ -183,6 +174,115 @@ class FetchURL(CallableTool2[Params]):
                 ),
                 brief="Network error when calling fetch service",
             )
+
+
+_REMOVE_TAGS = frozenset(
+    ["script", "style", "noscript", "svg", "iframe", "object", "embed", "head"]
+)
+_MAIN_CONTENT_TAGS = frozenset(["main", "article"])
+_BLOCK_TAGS = frozenset(
+    [
+        "p",
+        "div",
+        "section",
+        "article",
+        "main",
+        "header",
+        "footer",
+        "nav",
+        "aside",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "blockquote",
+        "tr",
+        "dt",
+        "dd",
+        "figcaption",
+        "figure",
+    ]
+)
+_COLLAPSE_NEWLINES_RE = re.compile(r"\n{3,}")
+
+
+def _extract_text_from_html(html: str) -> str:
+    """Extract readable text from HTML using BeautifulSoup.
+
+    Strips boilerplate tags, preserves code blocks and table structure, and
+    collapses excessive whitespace.  Returns empty string when no meaningful
+    content is found.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Remove non-content elements
+    for tag in soup.find_all(_REMOVE_TAGS):
+        tag.decompose()
+
+    # Prefer <main> or <article> when present
+    root: Tag | None = None
+    for name in _MAIN_CONTENT_TAGS:
+        root = soup.find(name)  # type: ignore[assignment]
+        if root is not None:
+            break
+    if root is None:
+        root = soup.body or soup  # type: ignore[assignment]
+    assert root is not None
+
+    parts: list[str] = []
+    _walk(root, parts)
+
+    text = "\n".join(parts)
+    text = _COLLAPSE_NEWLINES_RE.sub("\n\n", text).strip()
+    return text
+
+
+def _walk(element: Tag, parts: list[str]) -> None:
+    """Recursively walk the DOM tree, emitting text lines into *parts*."""
+    tag_name = element.name
+
+    # --- <pre> / <code> blocks: preserve whitespace ---
+    if tag_name in ("pre", "code"):
+        code_text = element.get_text()
+        if code_text.strip():
+            parts.append("")
+            parts.append(code_text.rstrip())
+            parts.append("")
+        return
+
+    # --- <table>: render as simple aligned text ---
+    if tag_name == "table":
+        _render_table(element, parts)
+        return
+
+    # Insert a blank line before block elements for readability
+    if tag_name in _BLOCK_TAGS:
+        parts.append("")
+
+    for child in element.children:
+        if isinstance(child, Tag):
+            _walk(child, parts)
+        else:
+            text = child.get_text()
+            stripped = text.strip()
+            if stripped:
+                parts.append(stripped)
+
+    if tag_name in _BLOCK_TAGS:
+        parts.append("")
+
+
+def _render_table(table: Tag, parts: list[str]) -> None:
+    """Render an HTML <table> as pipe-separated plain text."""
+    parts.append("")
+    for tr in table.find_all("tr"):
+        cells = [(cell.get_text(separator=" ", strip=True)) for cell in tr.find_all(["th", "td"])]
+        if any(cells):
+            parts.append(" | ".join(cells))
+    parts.append("")
 
 
 def _validate_url(url: str) -> str | None:

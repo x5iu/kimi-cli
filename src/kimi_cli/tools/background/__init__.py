@@ -7,7 +7,15 @@ from typing import override
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
-from kimi_cli.background import TaskOutputLineChunk, TaskStatus, TaskView, format_task, format_task_list, is_terminal_status, list_task_views
+from kimi_cli.background import (
+    TaskOutputLineChunk,
+    TaskStatus,
+    TaskView,
+    format_task,
+    format_task_list,
+    is_terminal_status,
+    list_task_views,
+)
 from kimi_cli.background.worker import STDIN_QUEUE_DIR
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
@@ -279,11 +287,6 @@ class TaskStop(CallableTool2[TaskStopParams]):
 
     @override
     async def __call__(self, params: TaskStopParams) -> ToolReturnValue:
-        if self._runtime.session.state.plan_mode:
-            return ToolError(
-                message="TaskStop is not available in plan mode.",
-                brief="Blocked in plan mode",
-            )
         view = self._runtime.background_tasks.get_task(params.task_id)
         if view is None:
             return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")
@@ -328,12 +331,6 @@ class TaskWrite(CallableTool2[TaskWriteParams]):
 
     @override
     async def __call__(self, params: TaskWriteParams) -> ToolReturnValue:
-        if self._runtime.session.state.plan_mode:
-            return ToolError(
-                message="TaskWrite is not available in plan mode.",
-                brief="Blocked in plan mode",
-            )
-
         view = self._runtime.background_tasks.get_task(params.task_id)
         if view is None:
             return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")
@@ -347,13 +344,19 @@ class TaskWrite(CallableTool2[TaskWriteParams]):
 
         if is_terminal_status(view.runtime.status):
             return ToolError(
-                message=f"Task {params.task_id} has already finished (status: {view.runtime.status}).",
+                message=(
+                    f"Task {params.task_id} has already finished "
+                    f"(status: {view.runtime.status})."
+                ),
                 brief="Task finished",
             )
 
         if not view.runtime.stdin_ready:
             return ToolError(
-                message=f"Task {params.task_id} stdin is not ready yet (task may still be starting).",
+                message=(
+                    f"Task {params.task_id} stdin is not ready yet "
+                    "(task may still be starting)."
+                ),
                 brief="Stdin not ready",
             )
 
@@ -385,16 +388,24 @@ class TaskWrite(CallableTool2[TaskWriteParams]):
 
         return ToolReturnValue(
             is_error=False,
-            output="\n".join([
-                f"task_id: {params.task_id}",
-                f"status: {view.runtime.status}",
-                f"bytes_queued: {len(data_bytes)}",
-                "result: input queued for delivery (~200ms)",
-                "",
-                "next_steps:",
-                f'  1. Use TaskOutput(task_id="{params.task_id}", block=false) to check for new output.',
-                f'  2. Use TaskOutput(task_id="{params.task_id}", block=true, timeout=N) to wait for output.',
-            ]),
+            output="\n".join(
+                [
+                    f"task_id: {params.task_id}",
+                    f"status: {view.runtime.status}",
+                    f"bytes_queued: {len(data_bytes)}",
+                    "result: input queued for delivery (~200ms)",
+                    "",
+                    "next_steps:",
+                    (
+                        f'  1. Use TaskOutput(task_id="{params.task_id}", block=false) '
+                        "to check for new output."
+                    ),
+                    (
+                        f'  2. Use TaskOutput(task_id="{params.task_id}", block=true, timeout=N) '
+                        "to wait for output."
+                    ),
+                ]
+            ),
             message="Input written to task stdin.",
             display=[_task_display(self._runtime, params.task_id)],
         )
