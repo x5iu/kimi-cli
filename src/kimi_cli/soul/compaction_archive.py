@@ -25,6 +25,7 @@ _SUMMARY_WIDTH = 280
 
 
 class CompactionArchiveRecord(BaseModel):
+    schema_version: int = 1
     id: str
     archive_file: str
     created_at: str
@@ -96,6 +97,8 @@ def resolve_compaction_archive_path(context_file: Path, record: CompactionArchiv
 def sanitize_archive_text(text: str) -> str:
     sanitized = text.replace("<system-reminder>", "[system-reminder]\n")
     sanitized = sanitized.replace("</system-reminder>", "")
+    sanitized = sanitized.replace("<system-hint>", "[system-hint]\n")
+    sanitized = sanitized.replace("</system-hint>", "")
     sanitized = sanitized.replace("<system>", "[system] ")
     sanitized = sanitized.replace("</system>", "")
     return sanitized.strip()

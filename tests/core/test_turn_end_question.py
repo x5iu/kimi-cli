@@ -911,21 +911,13 @@ async def test_detect_turn_end_question_times_out(
 
 
 def test_turn_end_question_prompt_mentions_continue_in_chinese() -> None:
-    assert '"是否要继续？"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
+    assert '"是否继续？"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
 
 
 def test_turn_end_question_prompt_mentions_soft_permission_phrases() -> None:
-    assert '"是否要按照这个方案继续？"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     assert '"如果你愿意，我可以继续直接做下一轮。"' in (
         kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
-    assert '"如果你想，我可以直接继续改下去。"' in (
-        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
-    )
-    assert '"如果你要，我可以继续直接做下去。"' in (
-        kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
-    )
-    assert '"如果继续，我可以先处理 A。"' in kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     assert (
         'Chinese "是否 + action clause" / "如果你愿意，我可以..." / "如果你想，我可以..." / '
         '"如果你要，我可以..." / "如果继续，我可以..."'
@@ -950,7 +942,7 @@ def test_turn_end_question_prompt_mentions_multiple_suggestions() -> None:
     assert "Do not infer has_question=true from a numbered list alone" in (
         kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
-    assert '"我建议下一轮做：1. 修交互 2. 提性能 3. 收样式。选一个，我继续。"' in (
+    assert '"下一步我建议做 A、B、C，你想先做哪个？"' in (
         kimisoul_module.TURN_END_QUESTION_DETECTOR_PROMPT
     )
     assert (

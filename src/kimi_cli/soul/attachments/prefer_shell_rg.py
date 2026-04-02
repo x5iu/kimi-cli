@@ -34,6 +34,7 @@ class PreferShellRgAttachmentProvider(AttachmentProvider):
             Attachment(
                 type="prefer_shell_rg",
                 content=_reminder_text(rg_path=rg_path, is_powershell=is_powershell),
+                is_hint=True,
             )
         ]
 

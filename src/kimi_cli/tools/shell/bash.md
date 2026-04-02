@@ -26,12 +26,4 @@ ${RG_PREFERENCE_GUIDANCE}
 - After starting a background task, do not guess its outcome. If a live session notification channel is active, rely on that completion notification; otherwise use `TaskOutput` when you need to inspect progress or block until completion.
 - If you need to tell a human shell user how to manage background tasks, only mention `/task`.
 
-**Commands available:**
-- Shell environment: cd, pwd, export, unset, env
-- File system operations: ls, find, mkdir, rm, cp, mv, touch, chmod, chown
-- File viewing/editing: cat, grep, head, tail, diff, patch
-- Text processing: awk, sed, sort, uniq, wc
-- System information/operations: ps, kill, top, df, free, uname, whoami, id, date
-- Network operations: curl, wget, ping, telnet, ssh
-- Archive operations: tar, zip, unzip
-- Other: Other commands available in the shell environment. Check the existence of a command by running `which <command>` before using it.
+- Check the existence of a command by running `which <command>` before using it.

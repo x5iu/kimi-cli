@@ -213,11 +213,11 @@ async def test_ralph_loop_replays_original_prompt(runtime: Runtime, tmp_path: Pa
     content=[
         TextPart(
             text="""\
-<system-reminder>
+<system-hint>
 Prefer Shell with `rg` for file-content search.
 `rg` path: `/opt/homebrew/bin/rg`.
 When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
-</system-reminder>\
+</system-hint>\
 """
         )
     ],
@@ -294,11 +294,11 @@ async def test_ralph_loop_stops_on_choice(runtime: Runtime, tmp_path: Path) -> N
     content=[
         TextPart(
             text="""\
-<system-reminder>
+<system-hint>
 Prefer Shell with `rg` for file-content search.
 `rg` path: `/opt/homebrew/bin/rg`.
 When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
-</system-reminder>\
+</system-hint>\
 """
         )
     ],
@@ -360,11 +360,11 @@ async def test_ralph_loop_stops_on_tool_rejected(runtime: Runtime, tmp_path: Pat
     content=[
         TextPart(
             text="""\
-<system-reminder>
+<system-hint>
 Prefer Shell with `rg` for file-content search.
 `rg` path: `/opt/homebrew/bin/rg`.
 When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
-</system-reminder>\
+</system-hint>\
 """
         )
     ],
@@ -415,11 +415,11 @@ async def test_ralph_loop_disabled_skips_loop_prompt(runtime: Runtime, tmp_path:
     content=[
         TextPart(
             text="""\
-<system-reminder>
+<system-hint>
 Prefer Shell with `rg` for file-content search.
 `rg` path: `/opt/homebrew/bin/rg`.
 When searching file contents, prefer the Shell tool with `/opt/homebrew/bin/rg` instead of the Grep tool.
-</system-reminder>\
+</system-hint>\
 """
         )
     ],

@@ -101,7 +101,7 @@ Read text content from a file.
 - This tool is a tool that you typically want to use in parallel. Always read multiple files in one response when possible.
 - This tool can only read text files. To read images or videos, use other appropriate tools. To list directories, use the Glob tool or `ls` command via the Shell tool. To read other file types, use appropriate commands via the Shell tool.
 - If the file doesn't exist or path is invalid, an error will be returned.
-- If you want to search for a certain content/pattern, prefer Grep tool over ReadFile.
+- If you want to search for a certain content/pattern, prefer Shell with `rg` (or the Grep tool if Shell is unavailable) over ReadFile.
 - Content will be returned with a line number before each line like `cat -n` format.
 - Use `line_offset` and `n_lines` parameters when you only need to read a part of the file.
 - `line_offset` can be negative to count backward from the end of the file. For example, `line_offset=-200` reads the last 200 lines.
@@ -188,11 +188,11 @@ def test_grep_description(grep_tool: Grep):
     """Test the description of Grep tool."""
     assert grep_tool.base.description == snapshot(
         """\
-A powerful search tool based-on ripgrep.
+A structured search tool wrapping ripgrep. Use as a fallback when the Shell tool with `rg` is unavailable or when you prefer a structured interface with built-in pagination.
 
 **Tips:**
-- Prefer Shell with `rg` for file-content search when the Shell tool description or a system reminder gives you an `rg` path.
-- Use this tool as a fallback structured wrapper around ripgrep when shell search is unavailable or inconvenient.
+- When a `<system-hint>` gives you an `rg` path, prefer Shell with `rg` for maximum flexibility.
+- Use this tool when Shell is not available, or for simple searches where structured output (files_with_matches, count_matches) is convenient.
 - Use the ripgrep pattern syntax, not grep syntax. E.g. you need to escape braces like `\\\\{` to search for `{`.
 """
     )
@@ -232,12 +232,27 @@ Edit a text file using structured edit operations.
 def test_search_web_description(search_web_tool: SearchWeb):
     """Test the description of MoonshotSearch tool."""
     assert search_web_tool.base.description == snapshot(
-        "WebSearch tool allows you to search on the internet to get latest information, including news, documents, release notes, blog posts, papers, etc.\n"
+        """\
+Search the internet for latest information including news, documentation, release notes, blog posts, papers, and more.
+
+**Tips:**
+- Use specific, targeted queries — avoid vague or overly broad searches.
+- When results don't contain what you need, refine the query rather than increasing `limit`.
+- Set `include_content=true` only when you need page text; it consumes significant tokens.
+- Prefer this tool over FetchURL when you don't have a specific URL.
+"""
     )
 
 
 def test_fetch_url_description(fetch_url_tool: FetchURL):
     """Test the description of FetchURL tool."""
     assert fetch_url_tool.base.description == snapshot(
-        "Fetch a web page from a URL and extract main text content from it.\n"
+        """\
+Fetch a web page from a URL and extract its main text content.
+
+**Tips:**
+- Use this when you have a specific URL (from search results, documentation links, etc.).
+- The tool extracts main content and strips navigation/ads — you get clean text.
+- For very large pages, the content may be truncated.
+"""
     )

@@ -109,16 +109,37 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
         else:
             base_agent_file = (agent_file.parent / agent_spec.extend).absolute()
         base_agent_spec = _load_agent_spec(base_agent_file)
-        if not isinstance(agent_spec.name, Inherit):
-            base_agent_spec.name = agent_spec.name
-        if not isinstance(agent_spec.system_prompt_path, Inherit):
-            base_agent_spec.system_prompt_path = agent_spec.system_prompt_path
-        for k, v in agent_spec.system_prompt_args.items():
-            # system prompt args should be merged instead of overwritten
-            base_agent_spec.system_prompt_args[k] = v
-        if not isinstance(agent_spec.tools, Inherit):
-            base_agent_spec.tools = agent_spec.tools
-        if not isinstance(agent_spec.exclude_tools, Inherit):
-            base_agent_spec.exclude_tools = agent_spec.exclude_tools
-        agent_spec = base_agent_spec
+
+        # Build merged spec without mutating base
+        merged_args = dict(base_agent_spec.system_prompt_args)
+        merged_args.update(agent_spec.system_prompt_args)
+
+        merged_name = (
+            agent_spec.name
+            if not isinstance(agent_spec.name, Inherit)
+            else base_agent_spec.name
+        )
+        merged_prompt_path = (
+            agent_spec.system_prompt_path
+            if not isinstance(agent_spec.system_prompt_path, Inherit)
+            else base_agent_spec.system_prompt_path
+        )
+        merged_tools = (
+            agent_spec.tools
+            if not isinstance(agent_spec.tools, Inherit)
+            else base_agent_spec.tools
+        )
+        merged_exclude = (
+            agent_spec.exclude_tools
+            if not isinstance(agent_spec.exclude_tools, Inherit)
+            else base_agent_spec.exclude_tools
+        )
+
+        agent_spec = AgentSpec(
+            name=merged_name,
+            system_prompt_path=merged_prompt_path,
+            system_prompt_args=merged_args,
+            tools=merged_tools,
+            exclude_tools=merged_exclude,
+        )
     return agent_spec

@@ -45,7 +45,7 @@ from kimi_cli.soul import (
     wire_send,
 )
 from kimi_cli.soul.agent import Agent, Runtime
-from kimi_cli.soul.attachment import Attachment, AttachmentProvider, normalize_history
+from kimi_cli.soul.attachment import Attachment, AttachmentProvider, IncrementalHistoryNormalizer
 from kimi_cli.soul.attachments.plan_mode import PlanModeAttachmentProvider
 from kimi_cli.soul.attachments.prefer_shell_rg import PreferShellRgAttachmentProvider
 from kimi_cli.soul.compaction import (
@@ -111,89 +111,12 @@ DEFAULT_MAX_FLOW_MOVES = 1000
 MAX_SKILL_RECOMMENDATIONS = 3
 
 TURN_END_QUESTION_DETECTOR_PROMPT = (
-    "You are a background analyzer that inspects an AI assistant's message.\n"
-    "The user will provide the assistant's latest message. Your job is to determine\n"
-    "whether that message ends with a question or decision prompt\n"
-    "asking the user to choose between specific options, make a decision,\n"
-    "or pick from multiple concrete suggestions.\n"
-    "\n"
-    "Examples of choice questions:\n"
-    '- "Do you want me to proceed with option A or option B?"\n'
-    '- "Should I use approach 1, approach 2, or approach 3?"\n'
-    '- "Would you like to continue, start over, or stop?"\n'
-    '- "Which framework do you prefer: React, Vue, or Angular?"\n'
-    '- "请选择 A 还是 B？"\n'
-    '- "Should I proceed?" (yes/no — options: Yes, No)\n'
-    '- "Do you want me to continue?" (yes/no — options: Yes, No)\n'
-    '- "是否继续？" (yes/no — options: Yes, No)\n'
-    '- "是否要继续？" (yes/no — options: Yes, No)\n'
-    '- "是否要按照这个方案继续？" (yes/no — options: Yes, No)\n'
-    '- "是否需要我按上面的步骤直接开始修改？" (yes/no — options: Yes, No)\n'
-    '- "如果你愿意，我可以继续直接做下一轮。" (yes/no — options: Continue, Stop)\n'
-    '- "如果你愿意，我就按这个方案开始处理。" (yes/no — options: Proceed, Don\'t proceed)\n'
-    '- "如果你想，我可以直接继续改下去。" (yes/no — options: Continue, Stop)\n'
-    '- "如果你想，我现在就可以按这个方案开始修改。" (yes/no — options: Proceed, Don\'t proceed)\n'
-    '- "如果你要，我可以继续直接做下去。" (yes/no — options: Continue, Stop)\n'
-    '- "如果你要，我现在就按这个方案开始改。" (yes/no — options: Proceed, Don\'t proceed)\n'
-    '- "如果继续，我可以先处理 A。" (yes/no — options: Continue, Stop)\n'
-    '- "如果要继续，我现在就开始处理。" (yes/no — options: Proceed, Don\'t proceed)\n'
-    '- "下一步我建议做 A、B、C，你想先做哪个？"\n'
-    '- "我有 3 个建议：修交互、提性能、收样式。请选择一个。"\n'
-    '- "接下来有三个建议：A、B、C。请告诉我先做哪个。"\n'
-    '- "下一步可选：修交互 / 提性能 / 收样式，请选一个继续。"\n'
-    '- "我建议下一轮做：1. 修交互 2. 提性能 3. 收样式。选一个，我继续。"\n'
-    '- "Next steps: 1. Fix interactions 2. Improve performance 3. Tidy styling. '
-    'Choose one for me to do first."\n'
-    "\n"
-    "Do NOT consider these as choice questions:\n"
-    "- General clarifying questions without specific options or actionable suggestions\n"
-    '- Rhetorical questions like "Does that make sense?"\n'
-    "- Questions embedded in the middle of the response that were already addressed\n"
-    "- Mere recommendation lists or next-step suggestions "
-    "when the assistant is not asking the user to pick one\n"
-    "- Numbered plans or recommendation lists without a closing choice/decision prompt\n"
-    '- Conditional analysis statements like "如果继续这样做，风险会更高。" '
-    "when the assistant is describing consequences, not asking for permission "
-    "or a decision\n"
-    "\n"
-    "Return strict JSON with this exact shape:\n"
-    '{"has_question": true/false, "questions": '
-    '[{"question": "...", "options": [{"label": "...", "description": "..."}]}]}\n'
-    "- If has_question is false, questions should be an empty array.\n"
-    "- Treat multiple concrete suggestions or recommended next steps as options "
-    "when the user is implicitly or explicitly expected to pick one.\n"
-    "- Do not infer has_question=true from a numbered list alone; "
-    "the ending still needs a pick-one / choose-next / decision prompt.\n"
-    "- This can still count even without a literal question mark "
-    'if the ending is a decision prompt like "please choose one", '
-    '"tell me which to do first", or a soft permission prompt like '
-    'Chinese "是否 + action clause" / "如果你愿意，我可以..." / '
-    '"如果你想，我可以..." / "如果你要，我可以..." / '
-    '"如果继续，我可以...".\n'
-    "- For clear binary permission prompts without explicit options, synthesize "
-    "two concise options that preserve the intent, such as 继续/先别 or "
-    "开始/先不要.\n"
-    "- Each question should have 2-4 options, extracted from the message "
-    "when explicit, or synthesized for clear binary permission prompts "
-    "when implicit.\n"
-    "- Option labels should be concise (1-5 words).\n"
-    "- Option descriptions should briefly explain the trade-offs if mentioned.\n"
-    "- Do not include markdown or any extra text.\n"
-)
+    Path(__file__).parent.parent / "prompts" / "turn_end_question_detector.md"
+).read_text(encoding="utf-8").strip()
+
 SKILL_RECOMMENDER_PROMPT = (
-    "You are a background skill recommender for Kimi Code CLI.\n"
-    "Given the ongoing conversation and the available skills below, decide whether "
-    "the main agent should be reminded about any skill right now.\n"
-    "Only recommend skills that are clearly relevant to the current task. "
-    "Prefer precision over recall.\n"
-    "Return strict JSON with this exact shape:\n"
-    '{"skills":[{"name":"exact skill name","reason":"short reason"}]}\n'
-    "- Use exact skill names from the catalog.\n"
-    "- Return at most 3 skills.\n"
-    '- If none are useful, return {"skills":[]}.\n'
-    "- Do not include markdown or any extra text.\n\n"
-    "Available skills:\n"
-)
+    Path(__file__).parent.parent / "prompts" / "skill_recommender.md"
+).read_text(encoding="utf-8").strip()
 
 
 type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
@@ -320,6 +243,7 @@ class KimiSoul:
             PlanModeAttachmentProvider(),
             PreferShellRgAttachmentProvider(),
         ]
+        self._history_normalizer = IncrementalHistoryNormalizer()
 
         self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
 
@@ -1006,7 +930,20 @@ class KimiSoul:
     def _start_skill_reminder_task(self) -> SkillReminderState | None:
         if self._runtime.llm is None or not self._runtime.skills:
             return None
-        history = list(self._context.history)
+        full_history = list(self._context.history)
+        if len(full_history) > 11:
+            # Find first user message
+            first_user_idx = next(
+                (i for i, m in enumerate(full_history) if m.role == "user"), 0
+            )
+            tail_start = len(full_history) - 10
+            if first_user_idx >= tail_start:
+                # First user message is already in the tail — no need to prepend
+                history = full_history[-10:]
+            else:
+                history = [full_history[first_user_idx]] + full_history[-10:]
+        else:
+            history = full_history
         task = asyncio.create_task(self._request_skill_recommendation(history))
         return SkillReminderState(task=task)
 
@@ -1722,12 +1659,17 @@ class KimiSoul:
         attachments = await self._collect_attachments()
         if attachments:
             combined = "\n".join(
-                f"<system-reminder>\n{att.content}\n</system-reminder>" for att in attachments
+                (
+                    f"<{'system-hint' if att.is_hint else 'system-reminder'}>\n"
+                    f"{att.content}\n"
+                    f"</{'system-hint' if att.is_hint else 'system-reminder'}>"
+                )
+                for att in attachments
             )
             await self._context.append_message(internal_user_message([TextPart(text=combined)]))
 
         # Normalize: merge adjacent user messages for clean API input
-        effective_history = normalize_history(self._context.history)
+        effective_history = self._history_normalizer.normalize(self._context.history)
 
         async def _run_step_once() -> StepResult:
             # run an LLM step (may be interrupted)

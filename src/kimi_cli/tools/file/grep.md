@@ -1,6 +1,6 @@
-A powerful search tool based-on ripgrep.
+A structured search tool wrapping ripgrep. Use as a fallback when the Shell tool with `rg` is unavailable or when you prefer a structured interface with built-in pagination.
 
 **Tips:**
-- Prefer Shell with `rg` for file-content search when the Shell tool description or a system reminder gives you an `rg` path.
-- Use this tool as a fallback structured wrapper around ripgrep when shell search is unavailable or inconvenient.
+- When a `<system-hint>` gives you an `rg` path, prefer Shell with `rg` for maximum flexibility.
+- Use this tool when Shell is not available, or for simple searches where structured output (files_with_matches, count_matches) is convenient.
 - Use the ripgrep pattern syntax, not grep syntax. E.g. you need to escape braces like `\\{` to search for `{`.
