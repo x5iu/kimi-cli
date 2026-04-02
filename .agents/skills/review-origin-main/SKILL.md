@@ -45,7 +45,6 @@ description: Review new commits on `origin/main` for the current branch using a 
 创建或移动 tag 前，必须先用 `AskUserQuestion` 确认：
 - tag 名称
 - 指向哪个 commit
-- 只创建本地 tag，还是也要推远端
 
 ## 推荐流程
 
@@ -251,12 +250,6 @@ git tag -fa "$TAG" "$TARGET" \
 
 ```bash
 git show --no-patch --decorate "$TAG"
-```
-
-如果用户还要求推到远端，再执行：
-
-```bash
-git push origin -f "refs/tags/${TAG}"
 ```
 
 ## 下次 review 的起点
