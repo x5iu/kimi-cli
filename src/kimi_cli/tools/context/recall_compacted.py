@@ -23,7 +23,7 @@ from kimi_cli.utils.logging import logger
 
 MAX_RESULTS = 5
 OUTPUT_MAX_CHARS = 12_000
-EXCERPT_WINDOW = 1
+EXCERPT_MAX_CHARS = 4000
 _TOKEN_RE = re.compile(r"[\w./:-]+|[\u4e00-\u9fff]+")
 
 
@@ -147,10 +147,17 @@ class RecallCompactedContext(CallableTool2[Params]):
         query: str,
         messages_cache: dict[str, list[Message]],
     ) -> list[SearchHit]:
+        query_lc = query.lower().strip()
+        tokens = self._query_tokens(query_lc)
+        summary_boosts: dict[str, int] = {}
+        for record in records:
+            s = self._score_text(record.summary, query_lc, tokens)
+            if s > 0:
+                summary_boosts[record.id] = s
         tasks = [
             asyncio.to_thread(
                 self._search_single_archive, record, context_file, query,
-                messages_cache,
+                messages_cache, summary_boosts.get(record.id, 0),
             )
             for record in records
         ]
@@ -165,6 +172,7 @@ class RecallCompactedContext(CallableTool2[Params]):
         context_file: Path,
         query: str,
         messages_cache: dict[str, list[Message]],
+        summary_boost: int = 0,
     ) -> list[SearchHit]:
         archive_path = resolve_compaction_archive_path(context_file, record)
         if not archive_path.exists():
@@ -177,14 +185,15 @@ class RecallCompactedContext(CallableTool2[Params]):
 
         query_lc = query.lower()
         tokens = self._query_tokens(query_lc)
+        tokens = self._normalize_tokens(tokens)
         raw_hits: list[tuple[int, int, int, int]] = []
         for index, message in enumerate(messages):
             text = stringify_message_for_archive(message)
             score = self._score_text(text, query_lc, tokens)
             if score <= 0:
                 continue
-            start = max(0, index - EXCERPT_WINDOW)
-            end = min(len(messages), index + EXCERPT_WINDOW + 1)
+            score += summary_boost
+            start, end = self._expand_to_turn_boundary(index, messages)
             raw_hits.append((score, start, end, index))
 
         raw_hits.sort(key=lambda item: (-item[0], item[1], item[3]))
@@ -213,6 +222,64 @@ class RecallCompactedContext(CallableTool2[Params]):
         return list(dict.fromkeys(tokens))
 
     @staticmethod
+    def _normalize_tokens(tokens: list[str]) -> list[str]:
+        """Add simple suffix-stripped variants for fuzzy matching."""
+        expanded: list[str] = list(tokens)
+        for token in tokens:
+            if token.endswith("s") and len(token) > 3:
+                expanded.append(token[:-1])
+            if token.endswith("ed") and len(token) > 4:
+                expanded.append(token[:-2])
+            if token.endswith("ing") and len(token) > 5:
+                expanded.append(token[:-3])
+        return list(dict.fromkeys(expanded))
+
+    @staticmethod
+    def _expand_to_turn_boundary(
+        match_index: int, messages: Sequence[Message]
+    ) -> tuple[int, int]:
+        """Expand around *match_index* to the nearest turn boundaries.
+
+        Guarantees at least ±1 message (the old EXCERPT_WINDOW behaviour), then
+        walks backward (up to 3 messages) to find a ``user`` role start, and
+        forward (up to 5 messages) to include the full assistant response and
+        tool results, capped by ``EXCERPT_MAX_CHARS``.
+        """
+        n = len(messages)
+
+        # Minimum ±1 window (backward)
+        start = max(0, match_index - 1)
+        # Try to expand further back to a user-role turn boundary
+        for i in range(start - 1, max(-1, match_index - 4), -1):
+            if i < 0:
+                break
+            if messages[i].role == "user" and (i == 0 or messages[i - 1].role != "tool"):
+                start = i
+                break
+            start = i
+
+        # Minimum ±1 window (forward)
+        end = min(n, match_index + 2)
+        # Try to expand further forward to include full response + tool results
+        limit = min(n, match_index + 6)
+        for i in range(end, limit):
+            if messages[i].role == "user" and messages[i - 1].role != "tool":
+                break
+            end = i + 1
+
+        # Enforce char budget
+        total_chars = 0
+        budget_end = start
+        for i in range(start, end):
+            text = stringify_message_for_archive(messages[i])
+            total_chars += len(text)
+            if total_chars > EXCERPT_MAX_CHARS and i > match_index:
+                break
+            budget_end = i + 1
+
+        return start, budget_end
+
+    @staticmethod
     def _score_text(text: str, query: str, tokens: Sequence[str]) -> int:
         lowered = text.lower()
         if not lowered.strip():
@@ -226,6 +293,9 @@ class RecallCompactedContext(CallableTool2[Params]):
             ):
                 score += 2
         score += sum(1 for token in tokens if token in lowered)
+        # Length normalization: gently penalize very long messages
+        if score > 0 and len(lowered) > 500:
+            score = max(1, score - (len(lowered) // 2000))
         return score
 
     @staticmethod
@@ -237,6 +307,8 @@ class RecallCompactedContext(CallableTool2[Params]):
             line = f"- {record.id} | {record.created_at} | {record.message_count} messages"
             if record.summary:
                 line += f" | {record.summary}"
+            if record.keywords:
+                line += f"\n  Topics: {', '.join(record.keywords[:8])}"
             builder.write(line + "\n")
 
     @staticmethod

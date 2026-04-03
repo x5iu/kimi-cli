@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +33,7 @@ class CompactionArchiveRecord(BaseModel):
     created_at: str
     message_count: int
     summary: str = ""
+    keywords: list[str] = []
 
 
 class ArchiveRegistrationResult(BaseModel):
@@ -67,17 +70,20 @@ def register_compaction_archive(
     context_file: Path,
     archive_file: Path,
     *,
+    messages: Sequence[Message] = (),
     message_count: int,
     summary: str,
 ) -> ArchiveRegistrationResult:
     records = load_compaction_archives(context_file)
     max_id = max((int(r.id[1:]) for r in records), default=0)
+    keywords = extract_archive_keywords(messages)
     record = CompactionArchiveRecord(
         id=f"c{max_id + 1:03d}",
         archive_file=archive_file.name,
         created_at=datetime.now().astimezone().isoformat(),
         message_count=message_count,
         summary=shorten(summary.strip(), width=_SUMMARY_WIDTH, placeholder="…") if summary else "",
+        keywords=keywords,
     )
 
     # NOTE: Assumes single-writer — concurrent compactions on the same trajectory
@@ -164,6 +170,38 @@ def build_compaction_summary(messages: Sequence[Message]) -> str:
         if text:
             return text
     return ""
+
+
+_KEYWORD_RE = re.compile(
+    r"(?:[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)+)"  # dotted identifiers (paths, modules)
+    r"|(?:[\w./:-]{2,}/[\w./:-]+)"  # file paths with slashes
+    r"|(?:[A-Z][a-zA-Z0-9]+(?:Error|Exception|Warning))"  # error class names
+    r"|(?:[a-z_][a-z0-9_]{2,}\.[a-z_]+)"  # module.attribute patterns
+    r"|(?:[A-Z][a-z]+(?:[A-Z][a-z]+)+)",  # CamelCase identifiers
+    re.ASCII,
+)
+
+_STOP_KEYWORDS = frozenset({
+    "true", "false", "none", "null", "self", "return", "import",
+    "from", "class", "async", "await", "with", "that", "this",
+    "tool", "call", "type", "text", "content", "message", "role",
+    "user", "assistant", "system", "function", "the",
+})
+
+_MAX_KEYWORDS = 10
+
+
+def extract_archive_keywords(messages: Sequence[Message]) -> list[str]:
+    """Extract top distinctive keywords from archived messages."""
+    counts: Counter[str] = Counter()
+    for message in messages:
+        text = stringify_message_for_archive(message)
+        candidates = _KEYWORD_RE.findall(text)
+        for candidate in candidates:
+            lowered = candidate.lower()
+            if len(lowered) >= 3 and lowered not in _STOP_KEYWORDS:
+                counts[lowered] += 1
+    return [kw for kw, _ in counts.most_common(_MAX_KEYWORDS)]
 
 
 def is_checkpoint_message(message: Message) -> bool:

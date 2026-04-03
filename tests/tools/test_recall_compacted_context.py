@@ -88,7 +88,7 @@ async def test_search_returns_matching_excerpt_and_sanitizes_tags(
     assert "private chain of thought" not in result.output
     assert result.output == snapshot(
         """\
-Excerpt 1 | c001 | score 6 | messages 1-2
+Excerpt 1 | c001 | score 12 | messages 1-3
 Summary: foo.py EACCES troubleshooting
 [1] user [internal]
 [system] Previous note about foo.py
@@ -96,6 +96,9 @@ Keep this
 
 [2] user
 Please inspect foo.py for the EACCES error
+
+[3] assistant
+The shell command failed with EACCES
 
 """
     )

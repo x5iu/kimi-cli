@@ -1503,6 +1503,7 @@ class KimiAgentLoop:
         try:
             original_message_count = len(self._context.history)
             compaction_result = await _compact_with_retry()
+            pre_compaction_messages = list(self._context.history)
             rotated_path = await self._context.clear()
 
             final_messages = list(compaction_result.messages)
@@ -1510,9 +1511,16 @@ class KimiAgentLoop:
                 registration = register_compaction_archive(
                     self._context.file_backend,
                     rotated_path,
+                    messages=pre_compaction_messages,
                     message_count=original_message_count,
                     summary=build_compaction_summary(compaction_result.messages),
                 )
+                keywords_info = ""
+                if registration.record.keywords:
+                    keywords_info = (
+                        f" Key topics: "
+                        f"{', '.join(registration.record.keywords[:8])}."
+                    )
                 final_messages.append(
                     internal_user_message(
                         [
@@ -1524,10 +1532,15 @@ class KimiAgentLoop:
                                 "the pre-compaction history. "
                                 f"There are now "
                                 f"{registration.total_archives} compacted "
-                                "archive(s) available. Use targeted keywords "
-                                "if the compaction summary is not sufficient, "
-                                "and prefer this tool over reading raw archive "
-                                "files directly."
+                                "archive(s) available."
+                                f"{keywords_info} "
+                                "Use RecallCompactedContext with targeted "
+                                "keywords when you need specific details "
+                                "from earlier context — exact error messages, "
+                                "file paths, code snippets, function names, "
+                                "or design decisions. Prefer this tool over "
+                                "guessing or asking the user to repeat "
+                                "themselves."
                             )
                         ]
                     )
