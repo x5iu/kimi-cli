@@ -337,4 +337,4 @@ def test_tail_read_output_lines_pagination_metadata(runtime):
     assert chunk.has_before is False
     assert chunk.has_after is False
     assert chunk.next_offset is None
-    assert "a\nb\nc\nd\ne" == chunk.text
+    assert chunk.text == "a\nb\nc\nd\ne"

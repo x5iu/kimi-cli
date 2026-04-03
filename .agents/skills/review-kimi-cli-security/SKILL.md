@@ -50,7 +50,7 @@ description: Review Kimi Code CLI branches, PRs, or commits for security issues.
 
 审查时优先看这些目录和模块：
 
-- `src/kimi_cli/soul/`
+- `src/kimi_cli/loop/`
   - `approval.py`：审批、auto approve、yolo
   - `agent.py`：runtime、AGENTS.md、skills、subagents
   - `kimisoul.py`：主循环、context 注入、tool 结果回灌、slash/skill/flow
@@ -60,11 +60,11 @@ description: Review Kimi Code CLI branches, PRs, or commits for security issues.
   - `web/`：搜索、抓取、service fallback、错误体
   - 文件工具：工作目录边界、绝对路径、写文件/替换
   - `multiagent/`：Task / subagent 边界
-- `src/kimi_cli/ui/` 与 `src/kimi_cli/wire/`
+- `src/kimi_cli/ui/` 与 `src/kimi_cli/eventbus/`
   - 是否把敏感参数、token、错误体、完整命令暴露到终端/UI/IDE
 - `src/kimi_cli/agents/`、`AGENTS.md`、`.agents/skills/`
   - 提示词、instructions、skills、slash command
-- `packages/kosong/`
+- `packages/llmkit/`
   - provider 适配层，尤其是 `system` / `developer` / `instructions` / tool conversion
 - `src/kimi_cli/mcp.py`、MCP 加载相关逻辑
   - 外部工具加载、配置来源、信任边界

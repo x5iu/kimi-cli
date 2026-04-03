@@ -3,12 +3,12 @@ from __future__ import annotations
 import importlib
 
 import pytest
-from kosong.message import Message
+from llmkit.message import Message
 from rich.console import Console
 
-from kimi_cli.soul.message import internal_user_message, system
+from kimi_cli.eventbus.types import ImageURLPart, StepBegin, TextPart
+from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.ui.shell.replay import _build_replay_turns_from_history, replay_recent_history
-from kimi_cli.wire.types import ImageURLPart, StepBegin, TextPart
 
 
 def test_replay_ignores_internal_user_reminders() -> None:

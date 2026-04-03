@@ -81,7 +81,7 @@ Kimi Code CLI 使用此文件在 `--continue` 或 `--session` 时恢复会话上
 
 ### `wire.jsonl`
 
-Wire 消息记录文件，以 JSONL 格式存储会话中的 Wire 事件。用于会话回放和提取会话标题。
+EventBus 消息记录文件，以 JSONL 格式存储会话中的 EventBus 事件。用于会话回放和提取会话标题。
 
 ### `state.json`
 

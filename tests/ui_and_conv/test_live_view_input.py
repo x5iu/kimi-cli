@@ -3,12 +3,9 @@ from __future__ import annotations
 import importlib
 
 import pytest
-from kosong.tooling import ToolError, ToolOk
+from llmkit.tooling import ToolError, ToolOk
 
-from kimi_cli.ui.shell.keyboard import KeyEvent
-from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl
-from kimi_cli.ui.shell.visualize import LiveView
-from kimi_cli.wire.types import (
+from kimi_cli.eventbus.types import (
     ApprovalRequest,
     FollowUpInput,
     QuestionItem,
@@ -25,6 +22,9 @@ from kimi_cli.wire.types import (
     TurnBegin,
     TurnEnd,
 )
+from kimi_cli.ui.shell.keyboard import KeyEvent
+from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl
+from kimi_cli.ui.shell.visualize import LiveView
 
 
 def test_live_view_renders_shell_output_tail_and_keeps_it_after_finish() -> None:

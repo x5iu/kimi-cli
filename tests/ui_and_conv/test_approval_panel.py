@@ -4,9 +4,9 @@ from io import StringIO
 
 from rich.console import Console
 
+from kimi_cli.eventbus.types import ApprovalRequest, DiffDisplayBlock
 from kimi_cli.ui.shell import panels
 from kimi_cli.ui.shell.panels import _ApprovalRequestPanel
-from kimi_cli.wire.types import ApprovalRequest, DiffDisplayBlock
 
 
 def _render_to_str(panel: _ApprovalRequestPanel) -> str:

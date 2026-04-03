@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from html import escape
 
-from kimi_cli.wire.types import ContentPart, TextPart
+from kimi_cli.eventbus.types import ContentPart, TextPart
 
 
 def _format_tag(tag: str, attrs: Mapping[str, str | None] | None = None) -> str:

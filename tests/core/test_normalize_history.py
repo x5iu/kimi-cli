@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from kosong.message import ContentPart, Message, TextPart
+from llmkit.message import ContentPart, Message, TextPart
 
-from kimi_cli.soul.attachment import normalize_history
+from kimi_cli.loop.attachment import normalize_history
 
 
 def _text(part: ContentPart) -> str:

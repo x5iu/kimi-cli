@@ -5,21 +5,21 @@ import time
 from pathlib import Path
 
 import pytest
-from kosong.message import Message, TextPart
-from kosong.tooling.empty import EmptyToolset
+from llmkit.message import Message, TextPart
+from llmkit.tooling.empty import EmptyToolset
 
 from kimi_cli.background import TaskRuntime, TaskSpec
 from kimi_cli.config import NotificationConfig
+from kimi_cli.eventbus import EventBus
 from kimi_cli.llm import LLM
+from kimi_cli.loop import run_agent_loop
+from kimi_cli.loop.agent import Agent, Runtime
+from kimi_cli.loop.context import Context
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.notifications import NotificationEvent, NotificationManager
 from kimi_cli.notifications.llm import build_notification_message, render_notification_text
 from kimi_cli.notifications.models import NotificationDelivery, NotificationView
-from kimi_cli.soul import run_soul
-from kimi_cli.soul.agent import Agent, Runtime
-from kimi_cli.soul.context import Context
-from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.utils.aioqueue import QueueShutDown
-from kimi_cli.wire import Wire
 
 
 class _StaticProvider:
@@ -79,7 +79,7 @@ def _runtime_with_llm(runtime: Runtime, llm: LLM) -> Runtime:
     )
 
 
-def _make_soul(runtime: Runtime, tmp_path: Path) -> tuple[KimiSoul, Context]:
+def _make_soul(runtime: Runtime, tmp_path: Path) -> tuple[KimiAgentLoop, Context]:
     llm = LLM(
         chat_provider=_StaticProvider(),
         max_context_size=100_000,
@@ -92,7 +92,7 @@ def _make_soul(runtime: Runtime, tmp_path: Path) -> tuple[KimiSoul, Context]:
         runtime=_runtime_with_llm(runtime, llm),
     )
     context = Context(file_backend=tmp_path / "history.jsonl")
-    return KimiSoul(agent, context=context), context
+    return KimiAgentLoop(agent, context=context), context
 
 
 def _write_completed_task(runtime: Runtime, task_id: str) -> None:
@@ -152,7 +152,7 @@ async def test_kimisoul_appends_notification_message(runtime: Runtime, tmp_path:
 
     soul, context = _make_soul(runtime, tmp_path)
 
-    async def _drain_ui(wire: Wire) -> None:
+    async def _drain_ui(wire: EventBus) -> None:
         wire_ui = wire.ui_side(merge=True)
         while True:
             try:
@@ -160,7 +160,7 @@ async def test_kimisoul_appends_notification_message(runtime: Runtime, tmp_path:
             except QueueShutDown:
                 return
 
-    await run_soul(soul, "check status", _drain_ui, asyncio.Event())
+    await run_agent_loop(soul, "check status", _drain_ui, asyncio.Event())
 
     notification_texts = [
         message.extract_text("\n")

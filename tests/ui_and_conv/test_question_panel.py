@@ -6,9 +6,9 @@ from io import StringIO
 
 from rich.console import Console
 
+from kimi_cli.eventbus.types import QuestionItem, QuestionOption, QuestionRequest
 from kimi_cli.ui.shell import panels
 from kimi_cli.ui.shell.panels import QuestionRequestPanel
-from kimi_cli.wire.types import QuestionItem, QuestionOption, QuestionRequest
 
 
 def _render_to_str(panel: QuestionRequestPanel) -> str:

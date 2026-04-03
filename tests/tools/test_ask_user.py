@@ -7,11 +7,11 @@ import json
 
 import pytest
 
-from kimi_cli.soul import _current_wire
-from kimi_cli.soul.toolset import current_tool_call
+from kimi_cli.eventbus import EventBus
+from kimi_cli.eventbus.types import QuestionNotSupported, QuestionRequest, ToolCall
+from kimi_cli.loop import _current_event_bus
+from kimi_cli.loop.toolset import current_tool_call
 from kimi_cli.tools.ask_user import AskUserQuestion, Params, QuestionOptionParam, QuestionParam
-from kimi_cli.wire import Wire
-from kimi_cli.wire.types import QuestionNotSupported, QuestionRequest, ToolCall
 
 
 @pytest.fixture
@@ -40,8 +40,8 @@ def _make_params(
 
 async def test_ask_user_basic(ask_user_tool: AskUserQuestion):
     """Test normal question-answer flow."""
-    wire = Wire()
-    wire_token = _current_wire.set(wire)
+    wire = EventBus()
+    bus_token = _current_event_bus.set(wire)
     tool_call = ToolCall(
         id="tc-ask-1",
         function=ToolCall.FunctionBody(name="AskUserQuestion", arguments=None),
@@ -75,13 +75,13 @@ async def test_ask_user_basic(ask_user_tool: AskUserQuestion):
     finally:
         wire.shutdown()
         current_tool_call.reset(tc_token)
-        _current_wire.reset(wire_token)
+        _current_event_bus.reset(bus_token)
 
 
 async def test_ask_user_dismissed(ask_user_tool: AskUserQuestion):
     """Test that user dismiss returns a non-error result with dismiss note."""
-    wire = Wire()
-    wire_token = _current_wire.set(wire)
+    wire = EventBus()
+    bus_token = _current_event_bus.set(wire)
     tool_call = ToolCall(
         id="tc-ask-dismiss",
         function=ToolCall.FunctionBody(name="AskUserQuestion", arguments=None),
@@ -108,13 +108,13 @@ async def test_ask_user_dismissed(ask_user_tool: AskUserQuestion):
     finally:
         wire.shutdown()
         current_tool_call.reset(tc_token)
-        _current_wire.reset(wire_token)
+        _current_event_bus.reset(bus_token)
 
 
 async def test_ask_user_client_unsupported(ask_user_tool: AskUserQuestion):
     """Test that QuestionNotSupported returns a hard error telling LLM not to retry."""
-    wire = Wire()
-    wire_token = _current_wire.set(wire)
+    wire = EventBus()
+    bus_token = _current_event_bus.set(wire)
     tool_call = ToolCall(
         id="tc-ask-unsupported",
         function=ToolCall.FunctionBody(name="AskUserQuestion", arguments=None),
@@ -139,13 +139,13 @@ async def test_ask_user_client_unsupported(ask_user_tool: AskUserQuestion):
     finally:
         wire.shutdown()
         current_tool_call.reset(tc_token)
-        _current_wire.reset(wire_token)
+        _current_event_bus.reset(bus_token)
 
 
 async def test_ask_user_no_wire(ask_user_tool: AskUserQuestion):
-    """Test that the tool returns an error when Wire is not available."""
+    """Test that the tool returns an error when EventBus is not available."""
     # Ensure no wire is set
-    wire_token = _current_wire.set(None)
+    bus_token = _current_event_bus.set(None)
     tool_call = ToolCall(
         id="tc-ask-2",
         function=ToolCall.FunctionBody(name="AskUserQuestion", arguments=None),
@@ -156,16 +156,16 @@ async def test_ask_user_no_wire(ask_user_tool: AskUserQuestion):
         params = _make_params()
         result = await ask_user_tool(params)
         assert result.is_error
-        assert "Wire" in result.message
+        assert "EventBus" in result.message
     finally:
         current_tool_call.reset(tc_token)
-        _current_wire.reset(wire_token)
+        _current_event_bus.reset(bus_token)
 
 
 async def test_ask_user_no_tool_call(ask_user_tool: AskUserQuestion):
     """Test that the tool returns an error when no tool_call context is set."""
-    wire = Wire()
-    wire_token = _current_wire.set(wire)
+    wire = EventBus()
+    bus_token = _current_event_bus.set(wire)
     # Do NOT set current_tool_call
 
     try:
@@ -175,7 +175,7 @@ async def test_ask_user_no_tool_call(ask_user_tool: AskUserQuestion):
         assert "tool call" in result.message.lower() or "context" in result.message.lower()
     finally:
         wire.shutdown()
-        _current_wire.reset(wire_token)
+        _current_event_bus.reset(bus_token)
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ async def test_yolo_no_wire_auto_dismisses(ask_user_tool: AskUserQuestion):
     ask_user_tool.bind_approval(lambda: True)
 
     # Ensure no wire is set (default ContextVar value is None)
-    wire_token = _current_wire.set(None)
+    bus_token = _current_event_bus.set(None)
     try:
         params = _make_params()
         result = await ask_user_tool(params)
@@ -199,15 +199,15 @@ async def test_yolo_no_wire_auto_dismisses(ask_user_tool: AskUserQuestion):
         assert "yolo" in result.output.lower() or "non-interactive" in result.output.lower()
         assert result.message == "Non-interactive mode, auto-dismissed."
     finally:
-        _current_wire.reset(wire_token)
+        _current_event_bus.reset(bus_token)
 
 
-async def test_yolo_with_wire_sends_question(ask_user_tool: AskUserQuestion):
+async def test_yolo_with_bus_sends_question(ask_user_tool: AskUserQuestion):
     """yolo=True + wire present -> NOT auto-dismissed, sends QuestionRequest."""
     ask_user_tool.bind_approval(lambda: True)
 
-    wire = Wire()
-    wire_token = _current_wire.set(wire)
+    wire = EventBus()
+    bus_token = _current_event_bus.set(wire)
     tool_call = ToolCall(
         id="tc-yolo-wire",
         function=ToolCall.FunctionBody(name="AskUserQuestion", arguments=None),
@@ -234,4 +234,4 @@ async def test_yolo_with_wire_sends_question(ask_user_tool: AskUserQuestion):
     finally:
         wire.shutdown()
         current_tool_call.reset(tc_token)
-        _current_wire.reset(wire_token)
+        _current_event_bus.reset(bus_token)

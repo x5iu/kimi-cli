@@ -8,8 +8,8 @@ from typing import Protocol
 
 from PIL import Image
 
+from kimi_cli.eventbus.types import ContentPart, TextPart
 from kimi_cli.utils.envvar import get_env_int
-from kimi_cli.wire.types import ContentPart, TextPart
 
 from .placeholder_cache import AttachmentCache, parse_attachment_kind
 

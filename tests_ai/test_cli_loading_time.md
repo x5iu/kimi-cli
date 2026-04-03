@@ -18,7 +18,7 @@ The `src/kimi_cli/__init__.py` file must be empty, containing no code or imports
 
 **Requirements**
 
-The `src/kimi_cli/cli.py` file must not import any modules from `kimi_cli` or `kosong`, except for `kimi_cli.constant`, at the top level.
+The `src/kimi_cli/cli.py` file must not import any modules from `kimi_cli` or `llmkit`, except for `kimi_cli.constant`, at the top level.
 
 ## As-needed imports in `src/kimi_cli/app.py`
 

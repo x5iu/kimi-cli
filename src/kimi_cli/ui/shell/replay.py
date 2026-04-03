@@ -7,9 +7,22 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from kosong.message import ContentPart, Message
-from kosong.tooling import ToolError, ToolOk
+from llmkit.message import ContentPart, Message
+from llmkit.tooling import ToolError, ToolOk
 
+from kimi_cli.eventbus import EventBus
+from kimi_cli.eventbus.log import EventLog
+from kimi_cli.eventbus.types import (
+    BusMessage,
+    FollowUpInput,
+    QuestionRequest,
+    StatusUpdate,
+    StepBegin,
+    TextPart,
+    ToolResult,
+    TurnBegin,
+    is_event,
+)
 from kimi_cli.notifications.llm import is_notification_message
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.visualize import render_user_prompt_block, visualize
@@ -18,19 +31,6 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.slashcmd import parse_slash_command_call
 from kimi_cli.utils.turns import is_real_user_turn_start_message
-from kimi_cli.wire import Wire
-from kimi_cli.wire.file import WireFile
-from kimi_cli.wire.types import (
-    FollowUpInput,
-    QuestionRequest,
-    StatusUpdate,
-    StepBegin,
-    TextPart,
-    ToolResult,
-    TurnBegin,
-    WireMessage,
-    is_event,
-)
 
 MAX_REPLAY_TURNS = 5
 
@@ -38,14 +38,14 @@ MAX_REPLAY_TURNS = 5
 @dataclass(slots=True)
 class _ReplayTurn:
     user_message: Message
-    events: list[WireMessage]
+    events: list[BusMessage]
     n_steps: int = 0
 
 
 async def replay_recent_history(
     history: Sequence[Message],
     *,
-    wire_file: WireFile | None = None,
+    event_log: EventLog | None = None,
 ) -> None:
     """
     Replay the most recent user-initiated turns from the provided message history or wire file.
@@ -55,7 +55,7 @@ async def replay_recent_history(
         # or the context has been cleared
         return
 
-    turns = await _build_replay_turns_from_wire(wire_file)
+    turns = await _build_replay_turns_from_wire(event_log)
     if not turns:
         start_idx = _find_replay_start(history)
         if start_idx is None:
@@ -65,28 +65,28 @@ async def replay_recent_history(
         return
 
     for turn in turns:
-        wire = Wire()
+        wire = EventBus()
         console.print(render_user_prompt_block(message_stringify(turn.user_message)))
         ui_task = asyncio.create_task(
             visualize(wire.ui_side(merge=False), initial_status=StatusUpdate())
         )
         for event in turn.events:
-            wire.soul_side.send(event)
+            wire.producer_side.send(event)
             await asyncio.sleep(0)  # yield to UI loop
         wire.shutdown()
         with contextlib.suppress(QueueShutDown):
             await ui_task
 
 
-async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_ReplayTurn]:
-    if wire_file is None or not wire_file.path.exists():
+async def _build_replay_turns_from_wire(event_log: EventLog | None) -> list[_ReplayTurn]:
+    if event_log is None or not event_log.path.exists():
         return []
 
-    size = wire_file.path.stat().st_size
+    size = event_log.path.stat().st_size
     if size > 20 * 1024 * 1024:
         logger.info(
-            "Wire file too large for replay, skipping: {file} ({size} bytes)",
-            file=wire_file.path,
+            "EventBus file too large for replay, skipping: {file} ({size} bytes)",
+            file=event_log.path,
             size=size,
         )
         return []
@@ -95,7 +95,7 @@ async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_Rep
     pending_questions: dict[str, QuestionRequest] = {}
     _skip_turn_events = False
     try:
-        async for record in wire_file.iter_records():
+        async for record in event_log.iter_records():
             wire_msg = record.to_wire_message()
 
             if isinstance(wire_msg, TurnBegin):
@@ -156,7 +156,7 @@ async def _build_replay_turns_from_wire(wire_file: WireFile | None) -> list[_Rep
                 current_turn.n_steps = wire_msg.n
             current_turn.events.append(wire_msg)
     except Exception:
-        logger.exception("Failed to build replay turns from wire file {file}:", file=wire_file.path)
+        logger.exception("Failed to build replay turns from wire file {file}:", file=event_log.path)
         return []
     return list(turns)
 

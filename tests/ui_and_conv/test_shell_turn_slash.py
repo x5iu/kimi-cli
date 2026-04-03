@@ -6,21 +6,21 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from kosong.chat_provider import APIStatusError
-from kosong.tooling.empty import EmptyToolset
+from llmkit.chat_provider import APIStatusError
+from llmkit.tooling.empty import EmptyToolset
 from rich.console import Console
 
-from kimi_cli.soul import Soul
-from kimi_cli.soul.agent import Agent, Runtime
-from kimi_cli.soul.context import Context
-from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.eventbus.types import ContentPart, ImageURLPart, TextPart
+from kimi_cli.loop import AgentLoop
+from kimi_cli.loop.agent import Agent, Runtime
+from kimi_cli.loop.context import Context
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.ui.shell import Shell
 from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, TurnSubmitResult, UserInput
 from kimi_cli.utils.slashcmd import parse_slash_command_call
-from kimi_cli.wire.types import ContentPart, ImageURLPart, TextPart
 
 
-def _fake_soul(**overrides: Any) -> Soul:
+def _fake_soul(**overrides: Any) -> AgentLoop:
     base: dict[str, Any] = {
         "name": "Test",
         "model_name": None,
@@ -31,7 +31,7 @@ def _fake_soul(**overrides: Any) -> Soul:
         "run": None,
     }
     base.update(overrides)
-    return cast(Soul, SimpleNamespace(**base))
+    return cast(AgentLoop, SimpleNamespace(**base))
 
 
 def _fake_prompt_session(**overrides: Any) -> CustomPromptSession:
@@ -45,7 +45,7 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Shell Test Agent",
             system_prompt="Test system prompt.",
@@ -71,7 +71,7 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
         assert "╭" in rendered
         assert "/help" in rendered
 
-    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -85,7 +85,7 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
         recorded.append(content)
 
     shell_module = importlib.import_module("kimi_cli.ui.shell")
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
     monkeypatch.setattr(soul, "steer", fake_steer)
 
     prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
@@ -101,7 +101,7 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Shell Test Agent",
             system_prompt="Test system prompt.",
@@ -134,7 +134,7 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
         assert "[image]" in rendered
         assert "<image" not in rendered
 
-    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -148,7 +148,7 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
         recorded.append(content)
 
     shell_module = importlib.import_module("kimi_cli.ui.shell")
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
     monkeypatch.setattr(soul, "steer", fake_steer)
 
     prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
@@ -165,7 +165,7 @@ async def test_reminder_submitted_during_turn_rejects_when_llm_not_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime.llm = None
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Shell Test Agent",
             system_prompt="Test system prompt.",
@@ -191,7 +191,7 @@ async def test_reminder_submitted_during_turn_rejects_when_llm_not_set(
             )
         )
 
-    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -200,7 +200,7 @@ async def test_reminder_submitted_during_turn_rejects_when_llm_not_set(
         await ui_loop_fn(_FakeWire())
 
     shell_module = importlib.import_module("kimi_cli.ui.shell")
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
     monkeypatch.setattr(soul, "steer", lambda content: recorded.append(content))
 
     prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
@@ -219,7 +219,7 @@ async def test_image_reminder_submitted_during_turn_rejects_when_model_lacks_cap
 ) -> None:
     assert runtime.llm is not None
     runtime.llm.capabilities = set()
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Shell Test Agent",
             system_prompt="Test system prompt.",
@@ -248,7 +248,7 @@ async def test_image_reminder_submitted_during_turn_rejects_when_model_lacks_cap
             )
         )
 
-    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -257,7 +257,7 @@ async def test_image_reminder_submitted_during_turn_rejects_when_model_lacks_cap
         await ui_loop_fn(_FakeWire())
 
     shell_module = importlib.import_module("kimi_cli.ui.shell")
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
     monkeypatch.setattr(soul, "steer", lambda content: recorded.append(content))
 
     prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
@@ -372,10 +372,10 @@ async def test_interactive_turn_keeps_shell_alive_on_provider_error(
         )
     )
 
-    async def fake_run_soul(*args, **kwargs) -> None:
+    async def fake_run_agent_loop(*args, **kwargs) -> None:
         raise APIStatusError(503, "Service unavailable.")
 
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
 
     keep_running = await shell._run_interactive_turn(_fake_prompt_session(), "hello")
 
@@ -399,11 +399,11 @@ async def test_run_slash_command_accepts_soul_alias(
     )
     calls: list[str | list[object]] = []
 
-    async def fake_run_soul_command(user_input: str | list[object]) -> bool:
+    async def fake_run_agent_loop_command(user_input: str | list[object]) -> bool:
         calls.append(user_input)
         return True
 
-    cast(Any, shell).run_soul_command = fake_run_soul_command
+    cast(Any, shell).run_agent_loop_command = fake_run_agent_loop_command
 
     command_call = parse_slash_command_call("/reset")
     assert command_call is not None
@@ -419,7 +419,7 @@ async def test_turn_allowed_command_dispatches_to_shell_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A /task command during a turn should run synchronously and echo output."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Shell Test Agent",
             system_prompt="Test system prompt.",
@@ -443,7 +443,7 @@ async def test_turn_allowed_command_dispatches_to_shell_registry(
         )
         captured_results.append(result)
 
-    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -452,7 +452,7 @@ async def test_turn_allowed_command_dispatches_to_shell_registry(
         await ui_loop_fn(_FakeWire())
 
     shell_module = importlib.import_module("kimi_cli.ui.shell")
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
 
     prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
     keep_running = await shell._run_interactive_turn(prompt_session, "hello")
@@ -469,7 +469,7 @@ async def test_skill_command_during_turn_queues_and_cancels(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """/skill:xxx during a turn should queue the input and cancel the turn."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Shell Test Agent",
             system_prompt="Test system prompt.",
@@ -494,7 +494,7 @@ async def test_skill_command_during_turn_queues_and_cancels(
         )
         captured_results.append(result)
 
-    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
         nonlocal cancel_was_set
 
         class _FakeWire:
@@ -505,7 +505,7 @@ async def test_skill_command_during_turn_queues_and_cancels(
         await ui_loop_fn(_FakeWire())
         cancel_was_set = cancel_event.is_set()
         if cancel_event.is_set():
-            from kimi_cli.soul import RunCancelled
+            from kimi_cli.loop import RunCancelled
 
             raise RunCancelled()
 
@@ -519,7 +519,7 @@ async def test_skill_command_during_turn_queues_and_cancels(
     monkeypatch.setattr(shell, "_handle_agent_input", fake_handle)
 
     shell_module = importlib.import_module("kimi_cli.ui.shell")
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
 
     prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
     keep_running = await shell._run_interactive_turn(prompt_session, "hello")
@@ -539,7 +539,7 @@ async def test_async_turn_command_is_guarded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If a turn-allowed command returns a coroutine, it should be closed with an error."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Shell Test Agent",
             system_prompt="Test system prompt.",
@@ -583,7 +583,7 @@ async def test_async_turn_command_is_guarded(
         )
         captured_results.append(result)
 
-    async def fake_run_soul(soul_obj, user_input, ui_loop_fn, cancel_event, wire_file) -> None:
+    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -591,7 +591,7 @@ async def test_async_turn_command_is_guarded(
 
         await ui_loop_fn(_FakeWire())
 
-    monkeypatch.setattr(shell_module, "run_soul", fake_run_soul)
+    monkeypatch.setattr(shell_module, "run_agent_loop", fake_run_agent_loop)
 
     prompt_session = _fake_prompt_session(run_turn_ui=fake_run_turn_ui)
     await shell._run_interactive_turn(prompt_session, "hello")

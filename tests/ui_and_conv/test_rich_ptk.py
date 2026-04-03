@@ -4,11 +4,11 @@ from prompt_toolkit.data_structures import Point
 from rich.style import Style
 from rich.text import Text
 
+from kimi_cli.eventbus.types import DiffDisplayBlock, QuestionItem, QuestionOption, QuestionRequest
 from kimi_cli.ui.shell.panels import QuestionRequestPanel
 from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl, _StackedRichRenderableControl
 from kimi_cli.utils.rich.diff import render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
-from kimi_cli.wire.types import DiffDisplayBlock, QuestionItem, QuestionOption, QuestionRequest
 
 
 def _section(text: str) -> _RichRenderableControl:

@@ -1,4 +1,4 @@
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 
 

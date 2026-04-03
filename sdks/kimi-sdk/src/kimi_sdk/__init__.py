@@ -70,8 +70,8 @@ asyncio.run(agent_loop())
 
 from __future__ import annotations
 
-from kosong import GenerateResult, StepResult, generate, step
-from kosong.chat_provider import (
+from llmkit import GenerateResult, StepResult, generate, step
+from llmkit.chat_provider import (
     APIConnectionError,
     APIEmptyResponseError,
     APIStatusError,
@@ -81,8 +81,8 @@ from kosong.chat_provider import (
     ThinkingEffort,
     TokenUsage,
 )
-from kosong.chat_provider.kimi import Kimi, KimiFiles, KimiStreamedMessage
-from kosong.message import (
+from llmkit.chat_provider.kimi import Kimi, KimiFiles, KimiStreamedMessage
+from llmkit.message import (
     AudioURLPart,
     ContentPart,
     ImageURLPart,
@@ -94,7 +94,7 @@ from kosong.message import (
     ToolCallPart,
     VideoURLPart,
 )
-from kosong.tooling import (
+from llmkit.tooling import (
     BriefDisplayBlock,
     CallableTool,
     CallableTool2,
@@ -108,7 +108,7 @@ from kosong.tooling import (
     Toolset,
     UnknownDisplayBlock,
 )
-from kosong.tooling.simple import SimpleToolset
+from llmkit.tooling.simple import SimpleToolset
 
 __all__ = [
     # providers

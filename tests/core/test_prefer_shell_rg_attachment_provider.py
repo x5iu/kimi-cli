@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from kosong.message import Message, TextPart
+from llmkit.message import Message, TextPart
 
-import kimi_cli.soul.attachments.prefer_shell_rg as prefer_shell_rg_module
-from kimi_cli.soul.attachments.prefer_shell_rg import (
+import kimi_cli.loop.attachments.prefer_shell_rg as prefer_shell_rg_module
+from kimi_cli.loop.attachments.prefer_shell_rg import (
     _REMINDER_PREFIX,
     PreferShellRgAttachmentProvider,
 )

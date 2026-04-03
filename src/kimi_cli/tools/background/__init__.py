@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from typing import override
 
-from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.background import (
@@ -17,8 +17,8 @@ from kimi_cli.background import (
     list_task_views,
 )
 from kimi_cli.background.worker import STDIN_QUEUE_DIR
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.approval import Approval
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.approval import Approval
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 

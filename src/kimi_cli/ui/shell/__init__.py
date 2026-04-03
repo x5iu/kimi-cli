@@ -7,19 +7,27 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from kosong.chat_provider import APIStatusError, ChatProviderError
-from kosong.message import Message
+from llmkit.chat_provider import APIStatusError, ChatProviderError
+from llmkit.message import Message
 from loguru import logger
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from kimi_cli.eventbus.types import ContentPart, StatusUpdate
+from kimi_cli.loop import (
+    AgentLoop,
+    LLMNotSet,
+    LLMNotSupported,
+    MaxStepsReached,
+    RunCancelled,
+    run_agent_loop,
+)
+from kimi_cli.loop.input_validation import validate_live_user_input
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.notifications import NotificationWatcher
 from kimi_cli.skill import normalize_skill_name
-from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
-from kimi_cli.soul.input_validation import validate_live_user_input
-from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.prompt import (
     CustomPromptSession,
@@ -40,12 +48,11 @@ from kimi_cli.utils.signals import install_sigint_handler
 from kimi_cli.utils.slashcmd import SlashCommand, SlashCommandCall, parse_slash_command_call
 from kimi_cli.utils.subprocess_env import get_clean_env
 from kimi_cli.utils.term import ensure_new_line, ensure_tty_sane
-from kimi_cli.wire.types import ContentPart, StatusUpdate
 
 
 class Shell:
-    def __init__(self, soul: Soul, welcome_info: list[WelcomeInfoItem] | None = None):
-        self.soul = soul
+    def __init__(self, soul: AgentLoop, welcome_info: list[WelcomeInfoItem] | None = None):
+        self.agent_loop = soul
         self._welcome_info = list(welcome_info or [])
         self._background_tasks: set[asyncio.Task[Any]] = set()
         commands = [*soul.available_slash_commands, *shell_slash_registry.list_commands()]
@@ -77,15 +84,15 @@ class Shell:
         if command is not None:
             # run single command and exit
             logger.info("Running agent with command: {command}", command=command)
-            return await self.run_soul_command(command)
+            return await self.run_agent_loop_command(command)
 
-        _print_welcome_info(self.soul.name or "Kimi Code CLI", self._welcome_info)
+        _print_welcome_info(self.agent_loop.name or "Kimi Code CLI", self._welcome_info)
 
-        if isinstance(self.soul, KimiSoul):
+        if isinstance(self.agent_loop, KimiAgentLoop):
             watcher = NotificationWatcher(
-                self.soul.runtime.notifications,
+                self.agent_loop.runtime.notifications,
                 sink="shell",
-                before_poll=self.soul.runtime.background_tasks.reconcile,
+                before_poll=self.agent_loop.runtime.background_tasks.reconcile,
                 on_notification=lambda notification: toast(
                     f"[{notification.event.type}] {notification.event.title}",
                     topic="notification",
@@ -94,28 +101,30 @@ class Shell:
             )
             self._start_background_task(watcher.run_forever())
 
-        if isinstance(self.soul, KimiSoul):
+        if isinstance(self.agent_loop, KimiAgentLoop):
             await replay_recent_history(
-                self.soul.context.history,
-                wire_file=self.soul.wire_file,
+                self.agent_loop.context.history,
+                event_log=self.agent_loop.event_log,
             )
 
         async def _redraw() -> None:
-            if isinstance(self.soul, KimiSoul):
+            if isinstance(self.agent_loop, KimiAgentLoop):
                 await replay_recent_history(
-                    self.soul.context.history,
-                    wire_file=self.soul.wire_file,
+                    self.agent_loop.context.history,
+                    event_log=self.agent_loop.event_log,
                 )
 
         with CustomPromptSession(
-            status_provider=lambda: self.soul.status,
-            model_capabilities=self.soul.model_capabilities or set(),
-            model_name=self.soul.model_name,
-            thinking=self.soul.thinking or False,
+            status_provider=lambda: self.agent_loop.status,
+            model_capabilities=self.agent_loop.model_capabilities or set(),
+            model_name=self.agent_loop.model_name,
+            thinking=self.agent_loop.thinking or False,
             agent_mode_slash_commands=list(self._available_slash_commands.values()),
             shell_mode_slash_commands=shell_mode_registry.list_commands(),
             editor_command_provider=lambda: (
-                self.soul.runtime.config.default_editor if isinstance(self.soul, KimiSoul) else ""
+                self.agent_loop.runtime.config.default_editor
+                if isinstance(self.agent_loop, KimiAgentLoop)
+                else ""
             ),
             working_dir_provider=self._working_dir_text,
             redraw_callback=_redraw,
@@ -129,15 +138,15 @@ class Shell:
                     # Auto-trigger: check for pending LLM notifications from
                     # completed background tasks before showing the prompt.
                     if (
-                        isinstance(self.soul, KimiSoul)
+                        isinstance(self.agent_loop, KimiAgentLoop)
                         and bg_auto_failures < _MAX_BG_AUTO_TRIGGER_FAILURES
                     ):
-                        self.soul.runtime.background_tasks.reconcile()
-                        if self.soul.runtime.notifications.has_pending_for_sink("llm"):
+                        self.agent_loop.runtime.background_tasks.reconcile()
+                        if self.agent_loop.runtime.notifications.has_pending_for_sink("llm"):
                             logger.info(
                                 "Background task completed while idle, auto-triggering agent"
                             )
-                            ok = await self.run_soul_command(
+                            ok = await self.run_agent_loop_command(
                                 "<system-reminder>"
                                 "Background tasks completed while you were idle."
                                 "</system-reminder>"
@@ -259,24 +268,24 @@ class Shell:
             pre_rendered_echo = self._pre_render_user_echo(self._display_user_input(user_input))
 
         if slash_cmd_call is not None and slash_cmd_call.name in self._slash_command_lookup:
-            soul_input: str | list[ContentPart] = slash_cmd_call.raw_input
+            agent_loop_input: str | list[ContentPart] = slash_cmd_call.raw_input
         else:
-            soul_input: str | list[ContentPart] = user_input.content
+            agent_loop_input: str | list[ContentPart] = user_input.content
         keep_running = await self._run_interactive_turn(
             prompt_session,
-            soul_input,
+            agent_loop_input,
             pre_rendered_echo=pre_rendered_echo,
         )
         console.print()
         return keep_running
 
     def _working_dir_text(self) -> str:
-        if isinstance(self.soul, KimiSoul):
-            return str(self.soul.runtime.session.work_dir)
+        if isinstance(self.agent_loop, KimiAgentLoop):
+            return str(self.agent_loop.runtime.session.work_dir)
         return "."
 
     def _initial_status_update(self) -> StatusUpdate:
-        snap = self.soul.status
+        snap = self.agent_loop.status
         return StatusUpdate(
             context_usage=snap.context_usage,
             context_tokens=snap.context_tokens,
@@ -345,9 +354,9 @@ class Shell:
             if slash_call is not None and slash_call.name.startswith(_SKILL_PREFIX):
                 # During a turn, inject skill content via steer so the
                 # model can perceive the skill within the current turn.
-                if isinstance(self.soul, KimiSoul):
+                if isinstance(self.agent_loop, KimiAgentLoop):
                     skill_name = normalize_skill_name(slash_call.name[len(_SKILL_PREFIX) :])
-                    skill = self.soul.runtime.skills.get(skill_name)
+                    skill = self.agent_loop.runtime.skills.get(skill_name)
                     if skill is not None:
                         from pathlib import Path
 
@@ -358,7 +367,7 @@ class Shell:
                             extra = slash_call.args.strip()
                             if extra:
                                 skill_text = f"{skill_text}\n\nUser request:\n{extra}"
-                            self.soul.steer(skill_text, is_skill=True)
+                            self.agent_loop.steer(skill_text, is_skill=True)
                             live_view.echo_reminder(self._display_user_input(turn_input))
                             return TurnSubmitResult.accept(persist_history=True)
                         except OSError:
@@ -368,15 +377,15 @@ class Shell:
                 queued_input = turn_input
                 cancel_event.set()
                 return TurnSubmitResult.accept()
-            if not isinstance(self.soul, KimiSoul):
+            if not isinstance(self.agent_loop, KimiAgentLoop):
                 return TurnSubmitResult.reject()
             try:
-                validate_live_user_input(self.soul.runtime.llm, turn_input.content)
+                validate_live_user_input(self.agent_loop.runtime.llm, turn_input.content)
             except LLMNotSet:
                 return TurnSubmitResult.reject('LLM not set, send "/setup" to configure')
             except LLMNotSupported as e:
                 return TurnSubmitResult.reject(str(e))
-            self.soul.steer(turn_input.content)
+            self.agent_loop.steer(turn_input.content)
             live_view.echo_reminder(self._display_user_input(turn_input))
             return TurnSubmitResult.accept(persist_history=True)
 
@@ -385,8 +394,8 @@ class Shell:
 
         keep_running = True
         try:
-            await run_soul(
-                self.soul,
+            await run_agent_loop(
+                self.agent_loop,
                 user_input,
                 lambda wire: prompt_session.run_turn_ui(
                     wire=wire.ui_side(merge=False),
@@ -397,7 +406,7 @@ class Shell:
                     pre_rendered_echo=pre_rendered_echo,
                 ),
                 cancel_event,
-                self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,
+                self.agent_loop.event_log if isinstance(self.agent_loop, KimiAgentLoop) else None,
             )
         except LLMNotSet:
             logger.exception("LLM not set:")
@@ -442,7 +451,7 @@ class Shell:
     def _build_live_view(self, cancel_event: asyncio.Event) -> LiveView:
         return LiveView(self._initial_status_update(), cancel_event=cancel_event)
 
-    async def _run_soul_command_with_ui(
+    async def _run_agent_loop_command_with_ui(
         self,
         user_input: str | list[ContentPart],
         *,
@@ -452,8 +461,8 @@ class Shell:
         logger.info("Running soul with user input: {user_input}", user_input=user_input)
 
         try:
-            await run_soul(
-                self.soul,
+            await run_agent_loop(
+                self.agent_loop,
                 user_input,
                 lambda wire: visualize(
                     wire.ui_side(merge=False),
@@ -462,7 +471,7 @@ class Shell:
                     live_view=live_view,
                 ),
                 cancel_event,
-                self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,
+                self.agent_loop.event_log if isinstance(self.agent_loop, KimiAgentLoop) else None,
             )
             return True
         except LLMNotSet:
@@ -589,7 +598,7 @@ class Shell:
         command = shell_slash_registry.find_command(command_call.name)
         if command is None:
             # the input is a soul-level slash command call
-            await self.run_soul_command(command_call.raw_input)
+            await self.run_agent_loop_command(command_call.raw_input)
             return
 
         logger.debug(
@@ -614,7 +623,7 @@ class Shell:
             console.print(f"[red]Unknown error: {e}[/red]")
             raise  # re-raise unknown error
 
-    async def run_soul_command(self, user_input: str | list[ContentPart]) -> bool:
+    async def run_agent_loop_command(self, user_input: str | list[ContentPart]) -> bool:
         """
         Run the soul and handle any known exceptions.
 
@@ -631,7 +640,7 @@ class Shell:
         loop = asyncio.get_running_loop()
         remove_sigint = install_sigint_handler(loop, _handler)
         try:
-            return await self._run_soul_command_with_ui(
+            return await self._run_agent_loop_command_with_ui(
                 user_input,
                 cancel_event=cancel_event,
                 live_view=live_view,

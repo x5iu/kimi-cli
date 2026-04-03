@@ -35,8 +35,8 @@ from prompt_toolkit.widgets import Frame, TextArea
 from rich.style import Style as _RichStyle
 
 from kimi_cli.llm import ModelCapability
+from kimi_cli.loop import StatusSnapshot
 from kimi_cli.share import get_share_dir
-from kimi_cli.soul import StatusSnapshot
 from kimi_cli.ui.shell import placeholders as prompt_placeholders
 from kimi_cli.ui.shell.completion import (
     LocalFileMentionCompleter,

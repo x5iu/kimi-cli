@@ -8,31 +8,31 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from kosong.message import ImageURLPart, Message
-from kosong.message import TextPart as KosongTextPart
-from kosong.message import ThinkPart as KosongThinkPart
-from kosong.tooling.empty import EmptyToolset
+from llmkit.message import ImageURLPart, Message
+from llmkit.message import TextPart as KosongTextPart
+from llmkit.message import ThinkPart as KosongThinkPart
+from llmkit.tooling.empty import EmptyToolset
 
-import kimi_cli.soul as soul_module
-import kimi_cli.soul.kimisoul as kimisoul_module
-from kimi_cli.soul.agent import Agent, Runtime
-from kimi_cli.soul.context import Context
-from kimi_cli.soul.kimisoul import (
-    KimiSoul,
+import kimi_cli.loop as soul_module
+import kimi_cli.loop.kimi_agent_loop as kimisoul_module
+from kimi_cli.eventbus import EventBus
+from kimi_cli.eventbus.types import FollowUpInput, QuestionRequest
+from kimi_cli.loop.agent import Agent, Runtime
+from kimi_cli.loop.context import Context
+from kimi_cli.loop.kimi_agent_loop import (
+    KimiAgentLoop,
     TurnEndQuestionDetection,
     TurnEndQuestionItem,
     TurnEndQuestionOption,
     TurnOutcome,
 )
-from kimi_cli.wire import Wire
-from kimi_cli.wire.types import FollowUpInput, QuestionRequest
 
 # -- Payload parsing tests --
 
 
 class TestParseTurnEndQuestionPayload:
-    def _make_soul(self, runtime: Runtime, tmp_path: Path) -> KimiSoul:
-        return KimiSoul(
+    def _make_soul(self, runtime: Runtime, tmp_path: Path) -> KimiAgentLoop:
+        return KimiAgentLoop(
             Agent(
                 name="Test",
                 system_prompt="Test",
@@ -106,7 +106,7 @@ async def test_detect_turn_end_question_calls_generate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -133,7 +133,7 @@ async def test_detect_turn_end_question_calls_generate(
             )
         )
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(role="assistant", content="Should I do A or B?")
     result = await soul._detect_turn_end_question(assistant_msg)
@@ -159,7 +159,7 @@ async def test_detect_turn_end_question_includes_recent_three_turns_of_context(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -193,7 +193,7 @@ async def test_detect_turn_end_question_includes_recent_three_turns_of_context(
             )
         )
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(role="assistant", content="Should I continue?")
     await soul._detect_turn_end_question(assistant_msg)
@@ -218,7 +218,7 @@ async def test_detect_turn_end_question_trims_recent_context_and_latest_message(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -252,7 +252,7 @@ async def test_recent_turn_end_detection_context_does_not_reuse_old_text_for_non
     runtime: Runtime,
     tmp_path: Path,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -289,7 +289,7 @@ async def test_detect_turn_end_question_strips_thinking_parts(
 ) -> None:
     """Thinking/reasoning parts should be stripped before sending to the
     side-channel LLM; only text content should be included."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -311,7 +311,7 @@ async def test_detect_turn_end_question_strips_thinking_parts(
             )
         )
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     # Build a message with both ThinkPart and TextPart
     assistant_msg = Message(
@@ -341,7 +341,7 @@ async def test_maybe_ask_turn_end_question_no_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When detection says no question, _maybe_ask_turn_end_question returns None."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -354,7 +354,7 @@ async def test_maybe_ask_turn_end_question_no_question(
     async def fake_detect(self, msg):
         return TurnEndQuestionDetection(has_question=False, questions=())
 
-    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+    monkeypatch.setattr(KimiAgentLoop, "_detect_turn_end_question", fake_detect)
 
     outcome = TurnOutcome(
         stop_reason="no_tool_calls",
@@ -372,7 +372,7 @@ async def test_maybe_ask_turn_end_question_tool_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the turn stopped due to tool rejection, skip detection."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -389,7 +389,7 @@ async def test_maybe_ask_turn_end_question_tool_rejected(
         detect_called = True
         return TurnEndQuestionDetection(has_question=False, questions=())
 
-    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+    monkeypatch.setattr(KimiAgentLoop, "_detect_turn_end_question", fake_detect)
 
     outcome = TurnOutcome(
         stop_reason="tool_rejected",
@@ -409,7 +409,7 @@ async def test_maybe_ask_turn_end_question_sends_question_request(
 ) -> None:
     """When a question is detected, a QuestionRequest is sent via wire
     and user answer is returned."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -433,21 +433,21 @@ async def test_maybe_ask_turn_end_question_sends_question_request(
             ),
         )
 
-    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+    monkeypatch.setattr(KimiAgentLoop, "_detect_turn_end_question", fake_detect)
 
     sent_messages: list[object] = []
 
-    def capturing_wire_send(msg):
+    def capturing_bus_send(msg):
         sent_messages.append(msg)
         # Auto-resolve question requests with an answer
         if isinstance(msg, QuestionRequest):
             msg.resolve({"Pick A or B?": "A"})
 
-    monkeypatch.setattr(kimisoul_module, "wire_send", capturing_wire_send)
+    monkeypatch.setattr(kimisoul_module, "bus_send", capturing_bus_send)
 
-    # Set up wire context so get_wire_or_none() returns a wire
-    wire = Wire()
-    token = soul_module._current_wire.set(wire)
+    # Set up wire context so get_event_bus_or_none() returns a wire
+    wire = EventBus()
+    token = soul_module._current_event_bus.set(wire)
     try:
         outcome = TurnOutcome(
             stop_reason="no_tool_calls",
@@ -456,7 +456,7 @@ async def test_maybe_ask_turn_end_question_sends_question_request(
         )
         result = await soul._maybe_ask_turn_end_question(outcome)
     finally:
-        soul_module._current_wire.reset(token)
+        soul_module._current_event_bus.reset(token)
 
     assert result == "A"
     question_requests = [m for m in sent_messages if isinstance(m, QuestionRequest)]
@@ -472,7 +472,7 @@ async def test_maybe_ask_turn_end_question_dismissed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the user dismisses the question, returns None."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -496,17 +496,17 @@ async def test_maybe_ask_turn_end_question_dismissed(
             ),
         )
 
-    monkeypatch.setattr(KimiSoul, "_detect_turn_end_question", fake_detect)
+    monkeypatch.setattr(KimiAgentLoop, "_detect_turn_end_question", fake_detect)
 
-    def capturing_wire_send(msg):
+    def capturing_bus_send(msg):
         if isinstance(msg, QuestionRequest):
             # Resolve with empty answers = dismissed
             msg.resolve({})
 
-    monkeypatch.setattr(kimisoul_module, "wire_send", capturing_wire_send)
+    monkeypatch.setattr(kimisoul_module, "bus_send", capturing_bus_send)
 
-    wire = Wire()
-    token = soul_module._current_wire.set(wire)
+    wire = EventBus()
+    token = soul_module._current_event_bus.set(wire)
     try:
         outcome = TurnOutcome(
             stop_reason="no_tool_calls",
@@ -515,7 +515,7 @@ async def test_maybe_ask_turn_end_question_dismissed(
         )
         result = await soul._maybe_ask_turn_end_question(outcome)
     finally:
-        soul_module._current_wire.reset(token)
+        soul_module._current_event_bus.reset(token)
 
     assert result is None
 
@@ -532,7 +532,7 @@ async def test_run_skips_detection_when_disabled(
     """When turn_end_question_detection is disabled, _maybe_ask_turn_end_question is not called."""
     runtime.config.loop_control.turn_end_question_detection = False
 
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -556,9 +556,9 @@ async def test_run_skips_detection_when_disabled(
             step_count=1,
         )
 
-    monkeypatch.setattr(KimiSoul, "_turn", fake_turn)
-    monkeypatch.setattr(KimiSoul, "_maybe_ask_turn_end_question", fake_maybe_ask)
-    monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: None)
+    monkeypatch.setattr(KimiAgentLoop, "_turn", fake_turn)
+    monkeypatch.setattr(KimiAgentLoop, "_maybe_ask_turn_end_question", fake_maybe_ask)
+    monkeypatch.setattr(kimisoul_module, "bus_send", lambda msg: None)
 
     await soul.run("hello")
 
@@ -573,7 +573,7 @@ async def test_run_sends_follow_up_input_on_user_choice(
 ) -> None:
     """When the user selects an option from a turn-end question, a FollowUpInput
     message is sent via wire so the TUI can display the user's choice."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -599,9 +599,9 @@ async def test_run_sends_follow_up_input_on_user_choice(
 
     sent_messages: list[object] = []
 
-    monkeypatch.setattr(KimiSoul, "_turn", fake_turn)
-    monkeypatch.setattr(KimiSoul, "_maybe_ask_turn_end_question", fake_maybe_ask)
-    monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: sent_messages.append(msg))
+    monkeypatch.setattr(KimiAgentLoop, "_turn", fake_turn)
+    monkeypatch.setattr(KimiAgentLoop, "_maybe_ask_turn_end_question", fake_maybe_ask)
+    monkeypatch.setattr(kimisoul_module, "bus_send", lambda msg: sent_messages.append(msg))
 
     await soul.run("hello")
 
@@ -624,7 +624,7 @@ async def test_detect_turn_end_question_retries_on_bad_json(
 ) -> None:
     """When the first LLM response is not valid JSON, the detector retries
     and succeeds on the second attempt."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -653,7 +653,7 @@ async def test_detect_turn_end_question_retries_on_bad_json(
             )
         )
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(role="assistant", content="Pick A or B?")
     result = await soul._detect_turn_end_question(assistant_msg)
@@ -670,7 +670,7 @@ async def test_detect_turn_end_question_gives_up_after_max_attempts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When all retry attempts return unparseable output, detection returns None."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -687,7 +687,7 @@ async def test_detect_turn_end_question_gives_up_after_max_attempts(
         call_count += 1
         return SimpleNamespace(message=Message(role="assistant", content="I don't know"))
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(role="assistant", content="Pick A or B?")
     result = await soul._detect_turn_end_question(assistant_msg)
@@ -702,7 +702,7 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_you_want_continue(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -715,7 +715,7 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_you_want_continue(
     async def fake_generate(*, chat_provider, system_prompt, tools, history):
         raise RuntimeError("detector unavailable")
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(
         role="assistant",
@@ -736,7 +736,7 @@ async def test_detect_turn_end_question_does_not_override_detector_false_with_he
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -751,7 +751,7 @@ async def test_detect_turn_end_question_does_not_override_detector_false_with_he
             message=Message(role="assistant", content='{"has_question": false, "questions": []}')
         )
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(role="assistant", content="如果你要，我可以继续直接做下去。")
     result = await soul._detect_turn_end_question(assistant_msg)
@@ -766,7 +766,7 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_continue(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -779,7 +779,7 @@ async def test_detect_turn_end_question_uses_heuristic_for_if_continue(
     async def fake_generate(*, chat_provider, system_prompt, tools, history):
         raise RuntimeError("detector unavailable")
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(role="assistant", content="如果继续，我可以先处理 A。")
     result = await soul._detect_turn_end_question(assistant_msg)
@@ -795,7 +795,7 @@ def test_heuristic_turn_end_question_ignores_quoted_example(
     runtime: Runtime,
     tmp_path: Path,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -818,7 +818,7 @@ async def test_detect_turn_end_question_ignores_conditional_analysis_statement(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -833,7 +833,7 @@ async def test_detect_turn_end_question_ignores_conditional_analysis_statement(
             message=Message(role="assistant", content='{"has_question": false, "questions": []}')
         )
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", fake_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", fake_generate)
 
     assistant_msg = Message(role="assistant", content="如果继续这样做，风险会更高。")
     result = await soul._detect_turn_end_question(assistant_msg)
@@ -846,8 +846,8 @@ async def test_detect_turn_end_question_ignores_conditional_analysis_statement(
 
 
 class TestParseYesNoQuestion:
-    def _make_soul(self, runtime: Runtime, tmp_path: Path) -> KimiSoul:
-        return KimiSoul(
+    def _make_soul(self, runtime: Runtime, tmp_path: Path) -> KimiAgentLoop:
+        return KimiAgentLoop(
             Agent(
                 name="Test",
                 system_prompt="Test",
@@ -883,7 +883,7 @@ async def test_detect_turn_end_question_times_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the side-channel LLM call exceeds the timeout, returns None."""
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test",
             system_prompt="Test",
@@ -894,7 +894,7 @@ async def test_detect_turn_end_question_times_out(
     )
 
     # Use a very short timeout for testing
-    monkeypatch.setattr(KimiSoul, "_TURN_END_DETECT_TIMEOUT", 0.1)
+    monkeypatch.setattr(KimiAgentLoop, "_TURN_END_DETECT_TIMEOUT", 0.1)
 
     async def slow_generate(*, chat_provider, system_prompt, tools, history):
         await asyncio.sleep(10)  # much longer than the timeout
@@ -902,7 +902,7 @@ async def test_detect_turn_end_question_times_out(
             message=Message(role="assistant", content='{"has_question": false, "questions": []}')
         )
 
-    monkeypatch.setattr(kimisoul_module.kosong, "generate", slow_generate)
+    monkeypatch.setattr(kimisoul_module.llmkit, "generate", slow_generate)
 
     assistant_msg = Message(role="assistant", content="Should I do A or B?")
     result = await soul._detect_turn_end_question(assistant_msg)

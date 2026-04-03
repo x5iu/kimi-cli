@@ -4,12 +4,12 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from kosong.message import Message, TextPart
+from llmkit.message import Message, TextPart
 
 from .models import NotificationView
 
 if TYPE_CHECKING:
-    from kimi_cli.soul.agent import Runtime
+    from kimi_cli.loop.agent import Runtime
 
 _NOTIFICATION_ID_RE = re.compile(r'<notification id="([^"]+)"')
 

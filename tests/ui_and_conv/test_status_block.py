@@ -1,7 +1,7 @@
 """Tests for _StatusBlock partial-update logic."""
 
+from kimi_cli.eventbus.types import StatusUpdate
 from kimi_cli.ui.shell.blocks import StatusBlock
-from kimi_cli.wire.types import StatusUpdate
 
 
 def test_full_initial_status():

@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 from aiohttp import web
 from inline_snapshot import snapshot
-from kosong.tooling import ToolReturnValue
+from llmkit.tooling import ToolReturnValue
 
 from kimi_cli.tools.web.fetch import FetchURL, Params
 
@@ -239,8 +239,8 @@ async def test_fetch_url_with_service(runtime) -> None:
         fetch_tool = FetchURL(config=config, runtime=runtime)
 
         # Execute fetch with tool call context
-        from kimi_cli.wire.types import ToolCall
-        from kimi_cli.soul.toolset import current_tool_call
+        from kimi_cli.eventbus.types import ToolCall
+        from kimi_cli.loop.toolset import current_tool_call
 
         token = current_tool_call.set(
             ToolCall(
@@ -301,8 +301,8 @@ async def test_fetch_url_service_includes_http_error_body(runtime) -> None:
         )
         fetch_tool = FetchURL(config=config, runtime=runtime)
 
-        from kimi_cli.wire.types import ToolCall
-        from kimi_cli.soul.toolset import current_tool_call
+        from kimi_cli.eventbus.types import ToolCall
+        from kimi_cli.loop.toolset import current_tool_call
 
         token = current_tool_call.set(
             ToolCall(

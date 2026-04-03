@@ -81,7 +81,7 @@ kimi mcp add --transport http context7 https://mcp.context7.com/mcp --header "CO
 kimi mcp add --transport http context7 https://mcp.context7.com/mcp --header "CONTEXT7_API_KEY=your-key"
 ```
 
-## Print/Wire mode issues
+## Print/EventBus mode issues
 
 ### Invalid JSONL input format
 

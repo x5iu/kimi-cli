@@ -9,12 +9,7 @@ from rich.padding import Padding
 from rich.panel import Panel
 from rich.text import Text
 
-from kimi_cli.ui.shell.console import console
-from kimi_cli.utils.diff import format_unified_diff
-from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
-from kimi_cli.utils.rich.markdown import Markdown
-from kimi_cli.utils.rich.syntax import KimiSyntax
-from kimi_cli.wire.types import (
+from kimi_cli.eventbus.types import (
     ApprovalRequest,
     ApprovalResponse,
     BriefDisplayBlock,
@@ -22,6 +17,11 @@ from kimi_cli.wire.types import (
     QuestionRequest,
     ShellDisplayBlock,
 )
+from kimi_cli.ui.shell.console import console
+from kimi_cli.utils.diff import format_unified_diff
+from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
+from kimi_cli.utils.rich.markdown import Markdown
+from kimi_cli.utils.rich.syntax import KimiSyntax
 
 MAX_PREVIEW_LINES = 4
 QUESTION_BODY_PREVIEW_LINES = 3

@@ -1,0 +1,15 @@
+orphan: true
+
+repos:
+  - repo: local
+    hooks:
+      - id: make-format-llmkit
+        name: make format-llmkit
+        entry: make -C ../.. format-llmkit
+        language: system
+        pass_filenames: false
+      - id: make-check-llmkit
+        name: make check-llmkit
+        entry: make -C ../.. check-llmkit
+        language: system
+        pass_filenames: false

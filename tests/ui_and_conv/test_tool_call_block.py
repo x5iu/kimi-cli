@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from io import StringIO
 
-from kosong.tooling import ToolError, ToolReturnValue
+from llmkit.tooling import ToolError, ToolReturnValue
 from rich.console import Console
 
-from kimi_cli.ui.shell.blocks import MAX_TOOL_ERROR_OUTPUT_LINES, ToolCallBlock
-from kimi_cli.wire.types import (
+from kimi_cli.eventbus.types import (
     DiffDisplayBlock,
     TodoDisplayBlock,
     TodoDisplayItem,
     ToolCall,
 )
+from kimi_cli.ui.shell.blocks import MAX_TOOL_ERROR_OUTPUT_LINES, ToolCallBlock
 
 
 def _render_to_str(block: ToolCallBlock) -> str:

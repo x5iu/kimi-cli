@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 from kaos.path import KaosPath
-from kosong.message import Message
+from llmkit.message import Message
 
+from kimi_cli.eventbus.log import BUS_PROTOCOL_VERSION, BusMessageRecord, EventLogMetadata
+from kimi_cli.eventbus.types import TextPart, TurnBegin
 from kimi_cli.session import Session
-from kimi_cli.wire.file import WIRE_PROTOCOL_VERSION, WireFileMetadata, WireMessageRecord
-from kimi_cli.wire.types import TextPart, TurnBegin
 
 
 @pytest.fixture
@@ -38,23 +38,23 @@ def work_dir(tmp_path: Path) -> KaosPath:
 
 
 def _write_wire_turn(session_dir: Path, text: str):
-    wire_file = session_dir / "wire.jsonl"
-    wire_file.parent.mkdir(parents=True, exist_ok=True)
-    metadata = WireFileMetadata(protocol_version=WIRE_PROTOCOL_VERSION)
-    record = WireMessageRecord.from_wire_message(
+    event_log = session_dir / "wire.jsonl"
+    event_log.parent.mkdir(parents=True, exist_ok=True)
+    metadata = EventLogMetadata(protocol_version=BUS_PROTOCOL_VERSION)
+    record = BusMessageRecord.from_wire_message(
         TurnBegin(user_input=[TextPart(text=text)]),
         timestamp=time.time(),
     )
-    with wire_file.open("w", encoding="utf-8") as f:
+    with event_log.open("w", encoding="utf-8") as f:
         f.write(json.dumps(metadata.model_dump(mode="json")) + "\n")
         f.write(json.dumps(record.model_dump(mode="json")) + "\n")
 
 
 def _write_wire_metadata(session_dir: Path):
-    wire_file = session_dir / "wire.jsonl"
-    wire_file.parent.mkdir(parents=True, exist_ok=True)
-    metadata = WireFileMetadata(protocol_version=WIRE_PROTOCOL_VERSION)
-    wire_file.write_text(
+    event_log = session_dir / "wire.jsonl"
+    event_log.parent.mkdir(parents=True, exist_ok=True)
+    metadata = EventLogMetadata(protocol_version=BUS_PROTOCOL_VERSION)
+    event_log.write_text(
         json.dumps(metadata.model_dump(mode="json")) + "\n",
         encoding="utf-8",
     )

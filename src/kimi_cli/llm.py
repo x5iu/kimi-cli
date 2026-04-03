@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast, get_args
 
-from kosong.chat_provider import ChatProvider
+from llmkit.chat_provider import ChatProvider
 from pydantic import SecretStr
 
 from kimi_cli.constant import USER_AGENT
@@ -125,7 +125,7 @@ def create_llm(
 
     match provider.type:
         case "kimi":
-            from kosong.chat_provider.kimi import Kimi
+            from llmkit.chat_provider.kimi import Kimi
 
             chat_provider = Kimi(
                 model=model.model,
@@ -162,7 +162,7 @@ def create_llm(
             if gen_kwargs:
                 chat_provider = chat_provider.with_generation_kwargs(**gen_kwargs)
         case "openai_legacy":
-            from kosong.contrib.chat_provider.openai_legacy import OpenAILegacy
+            from llmkit.contrib.chat_provider.openai_legacy import OpenAILegacy
 
             chat_provider = OpenAILegacy(
                 model=model.model,
@@ -170,7 +170,7 @@ def create_llm(
                 api_key=resolved_api_key,
             )
         case "openai_responses":
-            from kosong.contrib.chat_provider.openai_responses import OpenAIResponses
+            from llmkit.contrib.chat_provider.openai_responses import OpenAIResponses
 
             chat_provider = OpenAIResponses(
                 model=model.model,
@@ -178,7 +178,7 @@ def create_llm(
                 api_key=resolved_api_key,
             )
         case "anthropic":
-            from kosong.contrib.chat_provider.anthropic import Anthropic
+            from llmkit.contrib.chat_provider.anthropic import Anthropic
 
             chat_provider = Anthropic(
                 model=model.model,
@@ -188,7 +188,7 @@ def create_llm(
                 metadata={"user_id": session_id} if session_id else None,
             )
         case "google_genai" | "gemini":
-            from kosong.contrib.chat_provider.google_genai import GoogleGenAI
+            from llmkit.contrib.chat_provider.google_genai import GoogleGenAI
 
             chat_provider = GoogleGenAI(
                 model=model.model,
@@ -196,7 +196,7 @@ def create_llm(
                 api_key=resolved_api_key,
             )
         case "vertexai":
-            from kosong.contrib.chat_provider.google_genai import GoogleGenAI
+            from llmkit.contrib.chat_provider.google_genai import GoogleGenAI
 
             os.environ.update(provider.env or {})
             chat_provider = GoogleGenAI(
@@ -206,11 +206,11 @@ def create_llm(
                 vertexai=True,
             )
         case "_echo":
-            from kosong.chat_provider.echo import EchoChatProvider
+            from llmkit.chat_provider.echo import EchoChatProvider
 
             chat_provider = EchoChatProvider()
         case "_scripted_echo":
-            from kosong.chat_provider.echo import ScriptedEchoChatProvider
+            from llmkit.chat_provider.echo import ScriptedEchoChatProvider
 
             if provider.env:
                 os.environ.update(provider.env)
@@ -219,8 +219,8 @@ def create_llm(
             trace = trace_value.strip().lower() in {"1", "true", "yes", "on"}
             chat_provider = ScriptedEchoChatProvider(scripts, trace=trace)
         case "_chaos":
-            from kosong.chat_provider.chaos import ChaosChatProvider, ChaosConfig
-            from kosong.chat_provider.kimi import Kimi
+            from llmkit.chat_provider.chaos import ChaosChatProvider, ChaosConfig
+            from llmkit.chat_provider.kimi import Kimi
 
             chat_provider = ChaosChatProvider(
                 provider=Kimi(

@@ -61,11 +61,11 @@ git diff --stat main...HEAD
 
 重点目录：
 - `src/kimi_cli/agents/`
-- `src/kimi_cli/soul/agent.py`
-- `src/kimi_cli/soul/kimisoul.py`
+- `src/kimi_cli/loop/agent.py`
+- `src/kimi_cli/loop/kimi_agent_loop.py`
 - `AGENTS.md`
 - `.agents/skills/`
-- `packages/kosong/src/kosong/contrib/chat_provider/`
+- `packages/llmkit/src/llmkit/contrib/chat_provider/`
 
 优先看：
 - `system` / `developer` / `instructions`
@@ -76,11 +76,11 @@ git diff --stat main...HEAD
 ### B. 审批 / 执行面
 
 重点目录：
-- `src/kimi_cli/soul/approval.py`
+- `src/kimi_cli/loop/approval.py`
 - `src/kimi_cli/tools/shell/`
 - `src/kimi_cli/tools/`
 - `src/kimi_cli/tools/multiagent/`
-- `src/kimi_cli/soul/kimisoul.py`
+- `src/kimi_cli/loop/kimi_agent_loop.py`
 
 优先看：
 - 是否新增未经审批的 Shell / 写文件 / 网络调用
@@ -92,8 +92,8 @@ git diff --stat main...HEAD
 重点目录：
 - `src/kimi_cli/tools/file*`
 - `src/kimi_cli/tools/__init__.py`
-- `src/kimi_cli/soul/agent.py`
-- `src/kimi_cli/soul/slash.py`
+- `src/kimi_cli/loop/agent.py`
+- `src/kimi_cli/loop/slash.py`
 
 优先看：
 - 是否新增工作目录外访问
@@ -105,7 +105,7 @@ git diff --stat main...HEAD
 重点目录：
 - `src/kimi_cli/tools/web/`
 - `src/kimi_cli/mcp.py`
-- `packages/kosong/`
+- `packages/llmkit/`
 
 优先看：
 - 是否新增 URL 抓取、service fallback、SSRF 面
@@ -116,7 +116,7 @@ git diff --stat main...HEAD
 
 重点目录：
 - `src/kimi_cli/ui/`
-- `src/kimi_cli/wire/`
+- `src/kimi_cli/eventbus/`
 - `src/kimi_cli/tools/__init__.py`
 
 优先看：

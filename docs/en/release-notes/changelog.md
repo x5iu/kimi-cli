@@ -40,7 +40,7 @@ This page documents the changes in each Kimi Code CLI release.
 - Shell: Add `Ctrl-O` keyboard shortcut to open the current input in an external editor (`$VISUAL`/`$EDITOR`), with auto-detection fallback to VS Code, Vim, Vi, or Nano
 - Shell: Add `/editor` slash command to configure and switch the default external editor, with interactive selection and persistent config storage
 - Shell: Add `/new` slash command to create and switch to a new session without restarting Kimi Code CLI
-- Wire: Auto-hide `AskUserQuestion` tool when the client does not support the `supports_question` capability, preventing the LLM from invoking unsupported interactions
+- EventBus: Auto-hide `AskUserQuestion` tool when the client does not support the `supports_question` capability, preventing the LLM from invoking unsupported interactions
 - Core: Estimate context token count after compaction so context usage percentage is not reported as 0%
 - Web: Show context usage percentage with one decimal place for better precision
 
@@ -58,12 +58,12 @@ This page documents the changes in each Kimi Code CLI release.
 
 - Shell: Make FetchURL tool's URL parameter a clickable hyperlink in the terminal
 - Tool: Add `AskUserQuestion` tool for presenting structured questions with predefined options during execution, supporting single-select, multi-select, and custom text input
-- Wire: Add `QuestionRequest` / `QuestionResponse` message types and capability negotiation for structured question interactions
+- EventBus: Add `QuestionRequest` / `QuestionResponse` message types and capability negotiation for structured question interactions
 - Shell: Add interactive question panel for `AskUserQuestion` with keyboard-driven option selection
 - Web: Add `QuestionDialog` component for answering structured questions inline, replacing the prompt composer when a question is pending
 - Core: Persist session state across sessions — approval decisions (YOLO mode, auto-approved actions) and dynamic subagents are now saved and restored when resuming a session
 - Core: Use atomic JSON writes for metadata and session state files to prevent data corruption on crash
-- Wire: Add `steer` request to inject user messages into an active agent turn (protocol version 1.4)
+- EventBus: Add `steer` request to inject user messages into an active agent turn (protocol version 1.4)
 - Web: Allow Cmd/Ctrl+Click on FetchURL tool's URL parameter to open the link in a new browser tab, with platform-appropriate tooltip hint
 
 ## 1.13.0 (2026-02-24)
@@ -81,8 +81,8 @@ This page documents the changes in each Kimi Code CLI release.
 - Web: Enhance session creation dialog with command value handling
 - Web: Support tilde (`~`) expansion in session work directory paths
 - Web: Fix assistant message content overflow clipping
-- Wire: Fix deadlock when multiple subagents run concurrently by not blocking the UI loop on approval and tool-call requests
-- Wire: Clean up stale pending requests after agent turn ends
+- EventBus: Fix deadlock when multiple subagents run concurrently by not blocking the UI loop on approval and tool-call requests
+- EventBus: Clean up stale pending requests after agent turn ends
 - Web: Show placeholder text in prompt input with hints for slash commands and file mentions
 - Web: Fix Ctrl+C not working in uvicorn web server by restoring default SIGINT handler and terminal state after shell mode exits
 - Web: Improve session stop handling with proper async cleanup and timeout
@@ -114,7 +114,7 @@ This page documents the changes in each Kimi Code CLI release.
 
 - Config: Add `default_yolo` config option to enable YOLO (auto-approve) mode by default
 - Config: Accept both `max_steps_per_turn` and `max_steps_per_run` as aliases for the loop control setting
-- Wire: Add `replay` request to stream recorded Wire events (protocol version 1.3)
+- EventBus: Add `replay` request to stream recorded EventBus events (protocol version 1.3)
 - Web: Add session fork feature to branch off a new session from any assistant response
 - Web: Add session archive feature with auto-archive for sessions older than 15 days
 - Web: Add multi-select mode for bulk archive, unarchive, and delete operations
@@ -160,7 +160,7 @@ This page documents the changes in each Kimi Code CLI release.
 - Web: Fix WebSocket disconnect when creating new sessions
 - Web: Increase maximum image dimension from 1024 to 4096 pixels
 - Web: Improve UI responsiveness with enhanced hover effects and better layout handling
-- Wire: Add `TurnEnd` event to signal the completion of an agent turn (protocol version 1.2)
+- EventBus: Add `TurnEnd` event to signal the completion of an agent turn (protocol version 1.2)
 - Core: Fix custom agent prompt files containing `$` causing silent startup failure
 
 ## 1.5 (2026-01-30)
@@ -225,7 +225,7 @@ This page documents the changes in each Kimi Code CLI release.
 - Shell: Handle Ctrl-C during slash command execution
 - Shell: Fix shlex parsing error in shell mode when input contains invalid shell syntax
 - Shell: Fix stderr output from MCP servers and third-party libraries polluting shell UI
-- Wire: Graceful shutdown with proper cleanup of pending requests when connection closes or Ctrl-C is received
+- EventBus: Graceful shutdown with proper cleanup of pending requests when connection closes or Ctrl-C is received
 
 ## 0.84 (2026-01-22)
 
@@ -255,9 +255,9 @@ This page documents the changes in each Kimi Code CLI release.
 
 ## 0.80 (2026-01-20)
 
-- Wire: Add `initialize` method for exchanging client/server info, external tools registration and slash commands advertisement
-- Wire: Support external tool calls via Wire protocol
-- Wire: Rename `ApprovalRequestResolved` to `ApprovalResponse` (backwards-compatible)
+- EventBus: Add `initialize` method for exchanging client/server info, external tools registration and slash commands advertisement
+- EventBus: Support external tool calls via EventBus protocol
+- EventBus: Rename `ApprovalRequestResolved` to `ApprovalResponse` (backwards-compatible)
 
 ## 0.79 (2026-01-19)
 
@@ -265,9 +265,9 @@ This page documents the changes in each Kimi Code CLI release.
 - Skills: Unified skills discovery with layered loading (builtin → user → project); user-level skills now prefer `~/.config/agents/skills/`
 - Shell: Support fuzzy matching for slash command autocomplete
 - Shell: Enhanced approval request preview with shell command and diff content display, use `Ctrl-E` to expand full content
-- Wire: Add `ShellDisplayBlock` type for shell command display in approval requests
+- EventBus: Add `ShellDisplayBlock` type for shell command display in approval requests
 - Shell: Reorder `/help` to show keyboard shortcuts before slash commands
-- Wire: Return proper JSON-RPC 2.0 error responses for invalid requests
+- EventBus: Return proper JSON-RPC 2.0 error responses for invalid requests
 
 ## 0.78 (2026-01-16)
 
@@ -280,7 +280,7 @@ This page documents the changes in each Kimi Code CLI release.
 - Config: Add `default_thinking` config option (need to run `/model` to select thinking mode after upgrade)
 - LLM: Add `always_thinking` capability for models that always use thinking mode
 - CLI: Rename `--command`/`-c` to `--prompt`/`-p`, keep `--command`/`-c` as alias, remove `--query`/`-q`
-- Wire: Fix approval requests not responding properly in Wire mode
+- EventBus: Fix approval requests not responding properly in EventBus mode
 - CLI: Add `--prompt-flow` option to load a Mermaid flowchart file as a Prompt Flow
 - Core: Add `/begin` slash command if a Prompt Flow is loaded to start the flow
 - Core: Replace Ralph Loop with Prompt Flow-based implementation
@@ -312,9 +312,9 @@ This page documents the changes in each Kimi Code CLI release.
 - Skills: Add built-in skill-creator skill shipped with the package
 - Tool: Expand `~` to the home directory in `ReadFile` paths
 - MCP: Ensure MCP tools finish loading before starting the agent loop
-- Wire: Fix Wire mode failing to accept valid `cancel` requests
+- EventBus: Fix EventBus mode failing to accept valid `cancel` requests
 - Setup: Allow `/model` to switch between all available models for the selected provider
-- Lib: Re-export all Wire message types from `kimi_cli.wire.types`, as a replacement of `kimi_cli.wire.message`
+- Lib: Re-export all EventBus message types from `kimi_cli.eventbus.types`, as a replacement of `kimi_cli.eventbus.message`
 - Loop: Add `max_ralph_iterations` loop control config to limit extra Ralph iterations
 - Config: Rename `max_steps_per_run` to `max_steps_per_turn` in loop control config (backward-compatible)
 - CLI: Add `--max-steps-per-turn`, `--max-retries-per-step` and `--max-ralph-iterations` options to override loop control config
@@ -352,7 +352,7 @@ This page documents the changes in each Kimi Code CLI release.
 - CLI: Add `--config` and `--config-file` options to pass in config JSON/TOML
 - Core: Allow `Config` in addition to `Path` for the `config` parameter of `KimiCLI.create`
 - Tool: Include diff display blocks in `WriteFile` and `StrReplaceFile` approvals/results
-- Wire: Add display blocks to approval requests (including diffs) with backward-compatible defaults
+- EventBus: Add display blocks to approval requests (including diffs) with backward-compatible defaults
 - ACP: Show file diff previews in tool results and approval prompts
 - ACP: Connect to MCP servers managed by ACP clients
 - ACP: Run shell commands in ACP client terminal if supported
@@ -369,10 +369,10 @@ This page documents the changes in each Kimi Code CLI release.
 
 ## 0.66 (2025-12-19)
 
-- Lib: Provide `token_usage` and `message_id` in `StatusUpdate` Wire message
+- Lib: Provide `token_usage` and `message_id` in `StatusUpdate` EventBus message
 - Lib: Add `KimiToolset.load_tools` method to load tools with dependency injection
 - Lib: Add `KimiToolset.load_mcp_tools` method to load MCP tools
-- Lib: Move `MCPTool` from `kimi_cli.tools.mcp` to `kimi_cli.soul.toolset`
+- Lib: Move `MCPTool` from `kimi_cli.tools.mcp` to `kimi_cli.loop.toolset`
 - Lib: Add `InvalidToolError`, `MCPConfigError` and `MCPRuntimeError`
 - Lib: Make the detailed Kimi Code CLI exception classes extend `ValueError` or `RuntimeError`
 - Lib: Allow passing validated `list[fastmcp.mcp_config.MCPConfig]` as `mcp_configs` for `KimiCLI.create` and `load_agent`
@@ -382,8 +382,8 @@ This page documents the changes in each Kimi Code CLI release.
 - Config: Migrate config file from JSON to TOML
 - MCP: Connect to MCP servers in background and parallel to reduce startup time
 - MCP: Add `mcp-session-id` HTTP header when connecting to MCP servers
-- Lib: Split slash commands (prev "meta commands") into two groups: Shell-level and KimiSoul-level
-- Lib: Add `available_slash_commands` property to `Soul` protocol
+- Lib: Split slash commands (prev "meta commands") into two groups: Shell-level and KimiAgentLoop-level
+- Lib: Add `available_slash_commands` property to `AgentLoop` protocol
 - ACP: Advertise slash commands `/init`, `/compact` and `/yolo` to ACP clients
 - SlashCmd: Add `/mcp` slash command to display MCP server and tool status
 
@@ -436,20 +436,20 @@ This page documents the changes in each Kimi Code CLI release.
 ## 0.59 (2025-11-28)
 
 - Core: Move context file location to `.kimi/sessions/{workdir_md5}/{session_id}/context.jsonl`
-- Lib: Move `WireMessage` type alias to `kimi_cli.wire.message`
-- Lib: Add `kimi_cli.wire.message.Request` type alias request messages (which currently only includes `ApprovalRequest`)
-- Lib: Add `kimi_cli.wire.message.is_event`, `is_request` and `is_wire_message` utility functions to check the type of wire messages
-- Lib: Add `kimi_cli.wire.serde` module for serialization and deserialization of wire messages
-- Lib: Change `StatusUpdate` Wire message to not using `kimi_cli.soul.StatusSnapshot`
-- Core: Record Wire messages to a JSONL file in session directory
-- Core: Introduce `TurnBegin` Wire message to mark the beginning of each agent turn
+- Lib: Move `BusMessage` type alias to `kimi_cli.eventbus.message`
+- Lib: Add `kimi_cli.eventbus.message.Request` type alias request messages (which currently only includes `ApprovalRequest`)
+- Lib: Add `kimi_cli.eventbus.message.is_event`, `is_request` and `is_bus_message` utility functions to check the type of wire messages
+- Lib: Add `kimi_cli.eventbus.serde` module for serialization and deserialization of wire messages
+- Lib: Change `StatusUpdate` EventBus message to not using `kimi_cli.loop.StatusSnapshot`
+- Core: Record EventBus messages to a JSONL file in session directory
+- Core: Introduce `TurnBegin` EventBus message to mark the beginning of each agent turn
 - UI: Print user input again with a panel in shell mode
 - Lib: Add `Session.dir` property to get the session directory path
 - UI: Improve "Approve for session" experience when there are multiple parallel subagents
-- Wire: Reimplement Wire server mode (which is enabled with `--wire` option)
+- EventBus: Reimplement EventBus server mode (which is enabled with `--wire` option)
 - Lib: Rename `ShellApp` to `Shell`, `PrintApp` to `Print`, `ACPServer` to `ACP` and `WireServer` to `WireOverStdio` for better consistency
 - Lib: Rename `KimiCLI.run_shell_mode` to `run_shell`, `run_print_mode` to `run_print`, `run_acp_server` to `run_acp`, and `run_wire_server` to `run_wire_stdio` for better consistency
-- Lib: Add `KimiCLI.run` method to run a turn with given user input and yield Wire messages
+- Lib: Add `KimiCLI.run` method to run a turn with given user input and yield EventBus messages
 - Print: Fix stream-json print mode not flushing output properly
 - LLM: Improve compatibility with some OpenAI and Anthropic API providers
 - Core: Fix chat provider error after compaction when using Anthropic API
@@ -487,7 +487,7 @@ This page documents the changes in each Kimi Code CLI release.
 
 ## 0.54 (2025-11-13)
 
-- Lib: Move `WireMessage` from `kimi_cli.wire.message` to `kimi_cli.wire`
+- Lib: Move `BusMessage` from `kimi_cli.eventbus.message` to `kimi_cli.eventbus`
 - Print: Fix `stream-json` output format missing the last assistant message
 - UI: Add warning when API key is overridden by `KIMI_API_KEY` environment variable
 - UI: Make a bell sound when there's an approval request
@@ -514,13 +514,13 @@ This page documents the changes in each Kimi Code CLI release.
 
 ## 0.51 (2025-11-08)
 
-- Lib: Rename `Soul.model` to `Soul.model_name`
+- Lib: Rename `AgentLoop.model` to `AgentLoop.model_name`
 - Lib: Rename `LLMModelCapability` to `ModelCapability` and move to `kimi_cli.llm`
 - Lib: Add `"thinking"` to `ModelCapability`
 - Lib: Remove `LLM.supports_image_in` property
-- Lib: Add required `Soul.model_capabilities` property
-- Lib: Rename `KimiSoul.set_thinking_mode` to `KimiSoul.set_thinking`
-- Lib: Add `KimiSoul.thinking` property
+- Lib: Add required `AgentLoop.model_capabilities` property
+- Lib: Rename `KimiAgentLoop.set_thinking_mode` to `KimiAgentLoop.set_thinking`
+- Lib: Add `KimiAgentLoop.thinking` property
 - UI: Better checks and notices for LLM model capabilities
 - UI: Clear the screen for `/clear` meta command
 - Tool: Support auto-downloading ripgrep on Windows
@@ -547,7 +547,7 @@ This page documents the changes in each Kimi Code CLI release.
 
 ## 0.46 (2025-11-03)
 
-- Introduce Wire over stdio for local IPC (experimental, subject to change)
+- Introduce EventBus over stdio for local IPC (experimental, subject to change)
 - Support Anthropic provider type
 
 - Fix binary packed by PyInstaller not working due to wrong entrypoint
@@ -693,8 +693,8 @@ This page documents the changes in each Kimi Code CLI release.
 
 - Rename package name `ensoul` to `kimi-cli`
 - Rename `ENSOUL_*` builtin system prompt arguments to `KIMI_*`
-- Further decouple `App` with `Soul`
-- Split `Soul` protocol and `KimiSoul` implementation for better modularity
+- Further decouple `App` with `AgentLoop`
+- Split `AgentLoop` protocol and `KimiAgentLoop` implementation for better modularity
 
 ## 0.24 (2025-10-10)
 

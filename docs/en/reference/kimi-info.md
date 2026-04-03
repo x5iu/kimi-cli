@@ -18,7 +18,7 @@ kimi info [--json]
 |-------|-------------|
 | `kimi_cli_version` | Kimi Code CLI version number |
 | `agent_spec_versions` | List of supported agent spec versions |
-| `wire_protocol_version` | Wire protocol version |
+| `wire_protocol_version` | EventBus protocol version |
 | `python_version` | Python runtime version |
 
 ## Examples

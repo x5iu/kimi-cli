@@ -8,7 +8,7 @@ import pytest
 from inline_snapshot import snapshot
 
 from kimi_cli.llm import ModelCapability
-from kimi_cli.soul.agent import Runtime
+from kimi_cli.loop.agent import Runtime
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.file.read_media import ReadMediaFile
 

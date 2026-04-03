@@ -8,8 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from kimi_cli.eventbus.types import ContentPart
 from kimi_cli.utils.logging import logger
-from kimi_cli.wire.types import ContentPart
 
 
 class _HistoryEntry(BaseModel):

@@ -12,20 +12,21 @@ from pathlib import Path
 import pytest
 from kaos.local import LocalKaos
 from kaos.path import KaosPath
-from kosong.chat_provider.mock import MockChatProvider
+from llmkit.chat_provider.mock import MockChatProvider
 from pydantic import SecretStr
 
 from kaos import get_current_kaos, reset_current_kaos, set_current_kaos
 from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
+from kimi_cli.eventbus.log import EventLog
 from kimi_cli.llm import ALL_MODEL_CAPABILITIES, LLM
+from kimi_cli.loop.agent import BuiltinSystemPromptArgs, Runtime
+from kimi_cli.loop.approval import Approval
+from kimi_cli.loop.toolset import KimiToolset
 from kimi_cli.metadata import WorkDirMeta
 from kimi_cli.notifications import NotificationManager
 from kimi_cli.session import Session
 from kimi_cli.session_state import SessionState
-from kimi_cli.soul.agent import Agent, BuiltinSystemPromptArgs, Runtime
-from kimi_cli.soul.approval import Approval
-from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop, TaskWrite
 from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.glob import Glob
@@ -40,7 +41,6 @@ from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 from kimi_cli.utils.environment import Environment
-from kimi_cli.wire.file import WireFile
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ def session(temp_work_dir: KaosPath, temp_share_dir: Path) -> Session:
         work_dir=temp_work_dir,
         work_dir_meta=WorkDirMeta(path=str(temp_work_dir), kaos=get_current_kaos().name),
         context_file=temp_share_dir / "context.jsonl",
-        wire_file=WireFile(path=temp_share_dir / "wire.jsonl"),
+        event_log=EventLog(path=temp_share_dir / "wire.jsonl"),
         state=SessionState(),
         title="Test Session",
         updated_at=0.0,
@@ -186,8 +186,8 @@ def toolset() -> KimiToolset:
 @contextmanager
 def tool_call_context(tool_name: str) -> Generator[None]:
     """Create a tool call context."""
-    from kimi_cli.soul.toolset import current_tool_call
-    from kimi_cli.wire.types import ToolCall
+    from kimi_cli.eventbus.types import ToolCall
+    from kimi_cli.loop.toolset import current_tool_call
 
     token = current_tool_call.set(
         ToolCall(id="test", function=ToolCall.FunctionBody(name=tool_name, arguments=None))

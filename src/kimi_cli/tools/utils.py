@@ -2,8 +2,8 @@ import re
 from pathlib import Path
 
 from jinja2 import Environment, Undefined
-from kosong.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
-from kosong.utils.typing import JsonType
+from llmkit.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
+from llmkit.utils.typing import JsonType
 
 
 class _KeepPlaceholderUndefined(Undefined):

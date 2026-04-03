@@ -15,20 +15,20 @@ import kaos
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.cli import InputFormat, OutputFormat
 from kimi_cli.config import Config, LLMModel, LLMProvider, load_config
+from kimi_cli.eventbus import EventBus, EventBusConsumer
+from kimi_cli.eventbus.types import BusMessage, ContentPart
 from kimi_cli.exception import ConfigError
 from kimi_cli.llm import augment_provider_with_env_vars, create_llm, model_display_name
+from kimi_cli.loop import run_agent_loop
+from kimi_cli.loop.agent import Runtime, load_agent
+from kimi_cli.loop.context import Context
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.notifications import NotificationSink
 from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
-from kimi_cli.soul import run_soul
-from kimi_cli.soul.agent import Runtime, load_agent
-from kimi_cli.soul.context import Context
-from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.logging import logger, redirect_stderr_to_logger
 from kimi_cli.utils.path import shorten_home
-from kimi_cli.wire import Wire, WireUISide
-from kimi_cli.wire.types import ContentPart, WireMessage
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
@@ -41,7 +41,7 @@ def enable_logging(debug: bool = False, *, redirect_stderr: bool = True) -> None
     logger.remove()  # Remove default stderr handler
     logger.enable("kimi_cli")
     if debug:
-        logger.enable("kosong")
+        logger.enable("llmkit")
     logger.add(
         get_share_dir() / "logs" / "kimi.log",
         # FIXME: configure level for different modules
@@ -175,23 +175,23 @@ class KimiCLI:
         context = Context(session.context_file)
         await context.restore()
 
-        soul = KimiSoul(agent, context=context)
+        soul = KimiAgentLoop(agent, context=context)
         return KimiCLI(soul, runtime, env_overrides)
 
     def __init__(
         self,
-        _soul: KimiSoul,
+        _soul: KimiAgentLoop,
         _runtime: Runtime,
         _env_overrides: dict[str, str],
     ) -> None:
-        self._soul = _soul
+        self._agent_loop = _soul
         self._runtime = _runtime
         self._env_overrides = _env_overrides
 
     @property
-    def soul(self) -> KimiSoul:
-        """Get the KimiSoul instance."""
-        return self._soul
+    def soul(self) -> KimiAgentLoop:
+        """Get the KimiAgentLoop instance."""
+        return self._agent_loop
 
     @property
     def session(self) -> Session:
@@ -232,17 +232,17 @@ class KimiCLI:
         user_input: str | list[ContentPart],
         cancel_event: asyncio.Event,
         merge_wire_messages: bool = False,
-    ) -> AsyncGenerator[WireMessage]:
+    ) -> AsyncGenerator[BusMessage]:
         """
-        Run the Kimi Code CLI instance without any UI and yield Wire messages directly.
+        Run the Kimi Code CLI instance without any UI and yield EventBus messages directly.
 
         Args:
             user_input (str | list[ContentPart]): The user input to the agent.
             cancel_event (asyncio.Event): An event to cancel the run.
-            merge_wire_messages (bool): Whether to merge Wire messages as much as possible.
+            merge_wire_messages (bool): Whether to merge EventBus messages as much as possible.
 
         Yields:
-            WireMessage: The Wire messages from the `KimiSoul`.
+            BusMessage: The EventBus messages from the `KimiAgentLoop`.
 
         Raises:
             LLMNotSet: When the LLM is not set.
@@ -252,15 +252,15 @@ class KimiCLI:
             RunCancelled: When the run is cancelled by the cancel event.
         """
         async with self._env():
-            wire_future = asyncio.Future[WireUISide]()
+            wire_future = asyncio.Future[EventBusConsumer]()
             stop_ui_loop = asyncio.Event()
 
-            async def _ui_loop_fn(wire: Wire) -> None:
+            async def _ui_loop_fn(wire: EventBus) -> None:
                 wire_future.set_result(wire.ui_side(merge=merge_wire_messages))
                 await stop_ui_loop.wait()
 
-            soul_task = asyncio.create_task(
-                run_soul(self.soul, user_input, _ui_loop_fn, cancel_event)
+            loop_task = asyncio.create_task(
+                run_agent_loop(self.agent_loop, user_input, _ui_loop_fn, cancel_event)
             )
 
             try:
@@ -271,10 +271,10 @@ class KimiCLI:
             except QueueShutDown:
                 pass
             finally:
-                # stop consuming Wire messages
+                # stop consuming EventBus messages
                 stop_ui_loop.set()
                 # wait for the soul task to finish, or raise
-                await soul_task
+                await loop_task
 
     async def run_shell(self, command: str | None = None) -> bool:
         """Run the Kimi Code CLI instance with shell UI."""
@@ -316,7 +316,7 @@ class KimiCLI:
             welcome_info.append(
                 WelcomeInfoItem(
                     name="Model",
-                    value=f"{self._soul.model_name} (from KIMI_MODEL_NAME)",
+                    value=f"{self._agent_loop.model_name} (from KIMI_MODEL_NAME)",
                     level=WelcomeInfoItem.Level.WARN,
                 )
             )
@@ -324,7 +324,7 @@ class KimiCLI:
             welcome_info.append(
                 WelcomeInfoItem(
                     name="Model",
-                    value=model_display_name(self._soul.model_name),
+                    value=model_display_name(self._agent_loop.model_name),
                     level=WelcomeInfoItem.Level.INFO,
                 )
             )
@@ -333,7 +333,7 @@ class KimiCLI:
         )
         async with self._env():
             with self._background_notification_targets(*notification_targets):
-                shell = Shell(self._soul, welcome_info=welcome_info)
+                shell = Shell(self._agent_loop, welcome_info=welcome_info)
                 return await shell.run(command)
 
     async def run_print(
@@ -349,7 +349,7 @@ class KimiCLI:
 
         async with self._env():
             print_ = Print(
-                self._soul,
+                self._agent_loop,
                 input_format,
                 output_format,
                 self._runtime.session.context_file,

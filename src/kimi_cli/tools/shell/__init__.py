@@ -4,22 +4,22 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, Self, override
 
-from kosong.tooling import CallableTool2, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
 
 import kaos
 from kaos import AsyncReadable
 from kimi_cli.background import TaskView, format_task
-from kimi_cli.soul import get_wire_or_none, wire_send
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.approval import Approval
-from kimi_cli.soul.toolset import get_current_tool_call_or_none
+from kimi_cli.eventbus.types import ToolCallOutput
+from kimi_cli.loop import bus_send, get_event_bus_or_none
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.approval import Approval
+from kimi_cli.loop.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock, ShellDisplayBlock
 from kimi_cli.tools.file.rg_path import find_existing_rg, format_rg_command
 from kimi_cli.tools.utils import ToolRejectedError, ToolResultBuilder, load_desc
 from kimi_cli.utils.environment import Environment
 from kimi_cli.utils.subprocess_env import get_noninteractive_env
-from kimi_cli.wire.types import ToolCallOutput
 
 MAX_FOREGROUND_TIMEOUT = 5 * 60
 MAX_BACKGROUND_TIMEOUT = 24 * 60 * 60
@@ -140,11 +140,11 @@ class Shell(CallableTool2[Params]):
             return ToolRejectedError()
 
         tool_call = get_current_tool_call_or_none()
-        has_live_output = tool_call is not None and get_wire_or_none() is not None
+        has_live_output = tool_call is not None and get_event_bus_or_none() is not None
 
         def output_cb(text: str, stream: Literal["stdout", "stderr"]) -> None:
             if has_live_output and tool_call is not None and text:
-                wire_send(ToolCallOutput(tool_call_id=tool_call.id, text=text, stream=stream))
+                bus_send(ToolCallOutput(tool_call_id=tool_call.id, text=text, stream=stream))
 
         def stdout_cb(line: bytes):
             line_str = line.decode(encoding="utf-8", errors="replace")

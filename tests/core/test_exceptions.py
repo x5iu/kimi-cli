@@ -4,7 +4,7 @@ from kimi_cli.llm import LLM
 
 
 def test_soul_exceptions(llm: LLM):
-    from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached
+    from kimi_cli.loop import LLMNotSet, LLMNotSupported, MaxStepsReached
 
     try:
         raise LLMNotSet()

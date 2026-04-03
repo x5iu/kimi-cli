@@ -2,11 +2,11 @@ from pathlib import Path
 from typing import Literal, override
 
 from kaos.path import KaosPath
-from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.approval import Approval
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.approval import Approval
 from kimi_cli.tools.display import DisplayBlock
 from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.utils import ToolRejectedError, load_desc

@@ -1,7 +1,7 @@
 import asyncio
 from typing import override
 
-from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolOk, ToolReturnValue
 from pydantic import BaseModel
 
 

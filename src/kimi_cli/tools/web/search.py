@@ -3,13 +3,13 @@ from pathlib import Path
 from typing import override
 
 import aiohttp
-from kosong.tooling import CallableTool2, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field, ValidationError
 
 from kimi_cli.config import Config
 from kimi_cli.constant import USER_AGENT
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.toolset import get_current_tool_call_or_none
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.toolset import get_current_tool_call_or_none
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.aiohttp import new_client_session

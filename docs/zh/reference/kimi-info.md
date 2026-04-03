@@ -18,7 +18,7 @@ kimi info [--json]
 |------|------|
 | `kimi_cli_version` | Kimi Code CLI 版本号 |
 | `agent_spec_versions` | 支持的 Agent 规格版本列表 |
-| `wire_protocol_version` | Wire 协议版本 |
+| `wire_protocol_version` | EventBus 协议版本 |
 | `python_version` | Python 运行时版本 |
 
 ## 示例

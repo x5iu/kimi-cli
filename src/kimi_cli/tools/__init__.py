@@ -3,7 +3,7 @@ from typing import Any, TypedDict, cast
 
 import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 from kaos.path import KaosPath
-from kosong.utils.typing import JsonType
+from llmkit.utils.typing import JsonType
 
 from kimi_cli.tools.todo_text import todo_label
 

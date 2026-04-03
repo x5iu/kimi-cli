@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import cast
 
 from kimi_cli.app import KimiCLI
-from kimi_cli.soul.agent import Runtime
+from kimi_cli.loop.agent import Runtime
 
 
 def test_shutdown_background_tasks_skips_kill_when_keep_alive_enabled() -> None:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from inline_snapshot import snapshot
 
+from kimi_cli.eventbus.types import DiffDisplayBlock
 from kimi_cli.utils.diff import build_diff_blocks, format_unified_diff
-from kimi_cli.wire.types import DiffDisplayBlock
 
 
 async def test_build_diff_blocks_simple_change() -> None:

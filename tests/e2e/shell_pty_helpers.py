@@ -18,10 +18,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tests_e2e.wire_helpers import TRACE_ENV, make_env, repo_root
-from tests_e2e.wire_helpers import make_home_dir as _make_home_dir
-from tests_e2e.wire_helpers import make_work_dir as _make_work_dir
-from tests_e2e.wire_helpers import write_scripted_config as write_scripted_config
+from tests_e2e.eventbus_helpers import TRACE_ENV, make_env, repo_root
+from tests_e2e.eventbus_helpers import make_home_dir as _make_home_dir
+from tests_e2e.eventbus_helpers import make_work_dir as _make_work_dir
+from tests_e2e.eventbus_helpers import write_scripted_config as write_scripted_config
 
 DEFAULT_TIMEOUT = 10.0
 PROMPT_SYMBOL = "✨"

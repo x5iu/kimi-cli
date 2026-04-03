@@ -12,7 +12,7 @@ from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.utils import get_cwidth
 
 import kimi_cli.ui.shell.completion as completion_mod
-from kimi_cli.soul import StatusSnapshot
+from kimi_cli.loop import StatusSnapshot
 from kimi_cli.ui.shell.completion import find_prompt_float_container, wrap_to_width
 from kimi_cli.ui.shell.prompt import (
     CustomPromptSession,

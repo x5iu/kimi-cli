@@ -19,7 +19,7 @@ from tests.e2e.shell_pty_helpers import (
     wait_for_wire_message_count,
     write_scripted_config,
 )
-from tests_e2e.wire_helpers import build_ask_user_tool_call, build_shell_tool_call
+from tests_e2e.eventbus_helpers import build_ask_user_tool_call, build_shell_tool_call
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32",

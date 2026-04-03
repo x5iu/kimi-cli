@@ -2,12 +2,12 @@ import asyncio
 from pathlib import Path
 from typing import Literal, override
 
-from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kimi_cli.loop.agent import Runtime
 from kimi_cli.session import Session
 from kimi_cli.session_state import TodoStateItem
-from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
 from kimi_cli.tools.todo_text import todo_label
 from kimi_cli.tools.utils import load_desc

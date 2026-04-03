@@ -3,10 +3,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-from kosong.message import Message, ToolCall
+from llmkit.message import Message, ToolCall
 
-from kimi_cli.soul.compaction_archive import (
+from kimi_cli.eventbus.types import (
+    AudioURLPart,
+    ImageURLPart,
+    TextPart,
+    ThinkPart,
+    VideoURLPart,
+)
+from kimi_cli.loop.compaction_archive import (
     CompactionArchiveRecord,
     archive_role_label,
     build_compaction_summary,
@@ -21,15 +27,7 @@ from kimi_cli.soul.compaction_archive import (
     stringify_message_for_archive,
     stringify_tool_calls,
 )
-from kimi_cli.soul.message import INTERNAL_USER_NAME
-from kimi_cli.wire.types import (
-    AudioURLPart,
-    ImageURLPart,
-    TextPart,
-    ThinkPart,
-    VideoURLPart,
-)
-
+from kimi_cli.loop.message import INTERNAL_USER_NAME
 
 # ---------------------------------------------------------------------------
 # sanitize_archive_text

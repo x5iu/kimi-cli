@@ -18,14 +18,7 @@ try:
 except ImportError:  # pragma: no cover
     _HAS_MARKDOWN_IT = False
 
-from kimi_cli.soul import format_context_status
-from kimi_cli.tools import extract_key_argument
-from kimi_cli.tools.todo_text import todo_label
-from kimi_cli.tools.utils import truncate_line
-from kimi_cli.utils.rich.columns import BulletColumns
-from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
-from kimi_cli.utils.rich.markdown import Markdown
-from kimi_cli.wire.types import (
+from kimi_cli.eventbus.types import (
     BackgroundTaskDisplayBlock,
     BriefDisplayBlock,
     ContentPart,
@@ -37,6 +30,13 @@ from kimi_cli.wire.types import (
     ToolCall,
     ToolReturnValue,
 )
+from kimi_cli.loop import format_context_status
+from kimi_cli.tools import extract_key_argument
+from kimi_cli.tools.todo_text import todo_label
+from kimi_cli.tools.utils import truncate_line
+from kimi_cli.utils.rich.columns import BulletColumns
+from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
+from kimi_cli.utils.rich.markdown import Markdown
 
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000

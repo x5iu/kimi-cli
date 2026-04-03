@@ -18,12 +18,12 @@ class InfoData(TypedDict):
 
 def _collect_info() -> InfoData:
     from kimi_cli.agentspec import SUPPORTED_AGENT_SPEC_VERSIONS
-    from kimi_cli.wire.file import WIRE_PROTOCOL_VERSION
+    from kimi_cli.eventbus.log import BUS_PROTOCOL_VERSION
 
     return {
         "kimi_cli_version": VERSION,
         "agent_spec_versions": [str(version) for version in SUPPORTED_AGENT_SPEC_VERSIONS],
-        "wire_protocol_version": WIRE_PROTOCOL_VERSION,
+        "wire_protocol_version": BUS_PROTOCOL_VERSION,
         "python_version": platform.python_version(),
     }
 

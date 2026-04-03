@@ -9,10 +9,10 @@ import pytest
 from inline_snapshot import snapshot
 from kaos.path import KaosPath
 
+from kimi_cli.eventbus.types import ImageURLPart, TextPart, VideoURLPart
 from kimi_cli.llm import ModelCapability
-from kimi_cli.soul.agent import Runtime
+from kimi_cli.loop.agent import Runtime
 from kimi_cli.tools.file.read_media import Params, ReadMediaFile
-from kimi_cli.wire.types import ImageURLPart, TextPart, VideoURLPart
 
 
 async def test_read_image_file(read_media_file_tool: ReadMediaFile, temp_work_dir: KaosPath):

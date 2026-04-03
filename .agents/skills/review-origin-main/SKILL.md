@@ -63,11 +63,11 @@ description: Review new commits on `origin/main` for the current branch using a 
 
 如果用户只关心 shell/core，优先过滤这些路径：
 - `src/kimi_cli/ui/shell`
-- `src/kimi_cli/soul`
-- `src/kimi_cli/wire`
+- `src/kimi_cli/loop`
+- `src/kimi_cli/eventbus`
 - `src/kimi_cli/app.py`
 - `src/kimi_cli/cli.py`
-- `packages/kosong/src/kosong/contrib/chat_provider/openai_responses.py`
+- `packages/llmkit/src/llmkit/contrib/chat_provider/openai_responses.py`
 - 对应测试目录
 
 ### 2. 拉取最新 `origin/main`
@@ -119,11 +119,11 @@ git log --reverse --no-merges --format='%H%x09%s' "$BASE..origin/main"
 ```bash
 git log --reverse --no-merges --format='%H%x09%s' "$BASE..origin/main" -- \
   src/kimi_cli/ui/shell \
-  src/kimi_cli/soul \
-  src/kimi_cli/wire \
+  src/kimi_cli/loop \
+  src/kimi_cli/eventbus \
   src/kimi_cli/app.py \
   src/kimi_cli/cli.py \
-  packages/kosong/src/kosong/contrib/chat_provider/openai_responses.py
+  packages/llmkit/src/llmkit/contrib/chat_provider/openai_responses.py
 ```
 
 ### 5. 先按 commit 和文件做粗分组
@@ -264,7 +264,7 @@ git log --oneline "$TAG..origin/main"
 如果要限定路径：
 
 ```bash
-git log --oneline "$TAG..origin/main" -- src/kimi_cli/ui/shell src/kimi_cli/soul
+git log --oneline "$TAG..origin/main" -- src/kimi_cli/ui/shell src/kimi_cli/loop
 ```
 
 ## 最后提醒

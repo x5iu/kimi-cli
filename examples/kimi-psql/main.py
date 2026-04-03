@@ -22,7 +22,7 @@ from typing import LiteralString, cast
 import psycopg
 import typer
 from kaos.path import KaosPath
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
@@ -33,14 +33,14 @@ from rich.panel import Panel
 from rich.text import Text
 
 from kimi_cli.config import LLMModel, LLMProvider
+from kimi_cli.eventbus.types import StatusUpdate
 from kimi_cli.llm import LLM, create_llm
+from kimi_cli.loop import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, run_agent_loop
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.context import Context
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.session import Session
-from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, run_soul
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.context import Context
-from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.visualize import visualize
-from kimi_cli.wire.types import StatusUpdate
 
 
 class ExecuteSqlParams(BaseModel):
@@ -255,18 +255,18 @@ class PsqlMode(Enum):
 
 
 # ============================================================================
-# PsqlSoul: SQL generation specialized Soul
+# PsqlSoul: SQL generation specialized AgentLoop
 # ============================================================================
 
 
-async def create_psql_soul(llm: LLM | None, conninfo: str) -> KimiSoul:
-    """Create a KimiSoul configured for PostgreSQL with ExecuteSql tool
+async def create_psql_soul(llm: LLM | None, conninfo: str) -> KimiAgentLoop:
+    """Create a KimiAgentLoop configured for PostgreSQL with ExecuteSql tool
     and standard kimi-cli tools."""
     from typing import cast
 
     from kimi_cli.config import load_config
-    from kimi_cli.soul.agent import load_agent
-    from kimi_cli.soul.toolset import KimiToolset
+    from kimi_cli.loop.agent import load_agent
+    from kimi_cli.loop.toolset import KimiToolset
 
     config = load_config()
     kaos_work_dir = KaosPath.cwd()
@@ -286,7 +286,7 @@ async def create_psql_soul(llm: LLM | None, conninfo: str) -> KimiSoul:
     cast(KimiToolset, agent.toolset).add(ExecuteSql(conninfo))
 
     context = Context(session.context_file)
-    return KimiSoul(agent, context=context)
+    return KimiAgentLoop(agent, context=context)
 
 
 # ============================================================================
@@ -300,8 +300,8 @@ class PsqlShell:
     PROMPT_SYMBOL_AI = "✨"
     PROMPT_SYMBOL_PSQL = "$"
 
-    def __init__(self, soul: KimiSoul, psql_process: PsqlProcess):
-        self.soul = soul
+    def __init__(self, soul: KimiAgentLoop, psql_process: PsqlProcess):
+        self.agent_loop = soul
         self._psql_process = psql_process
         self._mode = PsqlMode.AI
         self._switch_requested = False
@@ -373,7 +373,7 @@ class PsqlShell:
         console.print(f"[grey50]Current mode: [bold]{self._mode.value.upper()}[/bold][/grey50]\n")
 
     async def _run_ai_mode(self) -> None:
-        """Handle AI assistance mode using prompt_toolkit with run_soul + visualize."""
+        """Handle AI assistance mode using prompt_toolkit with run_agent_loop + visualize."""
         if not self._prompt_session:
             return
 
@@ -405,12 +405,12 @@ class PsqlShell:
         cancel_event = asyncio.Event()
 
         try:
-            await run_soul(
-                self.soul,
+            await run_agent_loop(
+                self.agent_loop,
                 user_input,
                 lambda wire: visualize(
                     wire.ui_side(merge=False),
-                    initial_status=StatusUpdate(context_usage=self.soul.status.context_usage),
+                    initial_status=StatusUpdate(context_usage=self.agent_loop.status.context_usage),
                     cancel_event=cancel_event,
                 ),
                 cancel_event,
@@ -613,7 +613,7 @@ async def _run_async(
     # Create LLM
     llm = create_llm(provider, model)
 
-    # Create Soul with ExecuteSql tool (uses psycopg for read-only queries)
+    # Create AgentLoop with ExecuteSql tool (uses psycopg for read-only queries)
     soul = await create_psql_soul(llm, conninfo_str)
 
     # Start psql process (only for user's PSQL mode)

@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from kimi_cli.ui.shell.blocks import ContentBlock, _find_committed_boundary, _get_md_parser
-
 
 # ── _find_committed_boundary tests ──────────────────────────────────────────
 

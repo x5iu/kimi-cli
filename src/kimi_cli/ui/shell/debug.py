@@ -3,17 +3,14 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from kosong.message import Message
+from llmkit.message import Message
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
 
-from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.ui.shell.console import console
-from kimi_cli.ui.shell.slash import registry
-from kimi_cli.wire.types import (
+from kimi_cli.eventbus.types import (
     AudioURLPart,
     ContentPart,
     ImageURLPart,
@@ -22,6 +19,9 @@ from kimi_cli.wire.types import (
     ToolCall,
     VideoURLPart,
 )
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
+from kimi_cli.ui.shell.console import console
+from kimi_cli.ui.shell.slash import registry
 
 if TYPE_CHECKING:
     from kimi_cli.ui.shell import Shell
@@ -147,7 +147,7 @@ def _format_message(msg: Message, index: int) -> Panel:
 @registry.command
 def debug(app: Shell, args: str):
     """Debug the context"""
-    assert isinstance(app.soul, KimiSoul)
+    assert isinstance(app.soul, KimiAgentLoop)
 
     context = app.soul.context
     history = context.history

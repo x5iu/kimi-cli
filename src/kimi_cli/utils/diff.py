@@ -5,7 +5,7 @@ import difflib
 import re
 from difflib import SequenceMatcher
 
-from kosong.tooling import DisplayBlock
+from llmkit.tooling import DisplayBlock
 
 from kimi_cli.tools.display import DiffDisplayBlock
 

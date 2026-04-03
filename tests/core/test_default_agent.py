@@ -5,8 +5,8 @@ import platform
 import pytest
 
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
-from kimi_cli.soul.agent import Runtime, load_agent
-from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.loop.agent import Runtime, load_agent
+from kimi_cli.loop.toolset import KimiToolset
 from kimi_cli.tools.file.replace import EditTool
 
 

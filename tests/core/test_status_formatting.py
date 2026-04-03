@@ -1,4 +1,4 @@
-from kimi_cli.soul import format_context_status, format_token_count
+from kimi_cli.loop import format_context_status, format_token_count
 
 
 def test_format_token_count_drops_trailing_zero():

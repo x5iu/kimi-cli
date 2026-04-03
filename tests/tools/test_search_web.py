@@ -3,9 +3,9 @@ from __future__ import annotations
 from aiohttp import web
 from inline_snapshot import snapshot
 
-from kimi_cli.soul.toolset import current_tool_call
+from kimi_cli.eventbus.types import ToolCall
+from kimi_cli.loop.toolset import current_tool_call
 from kimi_cli.tools.web.search import Params, SearchWeb
-from kimi_cli.wire.types import ToolCall
 
 
 async def test_search_web_includes_http_error_body(config, runtime) -> None:

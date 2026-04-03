@@ -4,15 +4,15 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from kimi_cli.eventbus.serde import deserialize_bus_message
+from kimi_cli.eventbus.types import is_request
 from kimi_cli.utils.turns import is_real_user_turn_start_record
-from kimi_cli.wire.serde import deserialize_wire_message
-from kimi_cli.wire.types import is_request
 
 
-def read_wire_lines(wire_file: Path) -> list[str]:
+def read_bus_lines(event_log: Path) -> list[str]:
     """Read and parse ``wire.jsonl`` into JSON-RPC event strings."""
     result: list[str] = []
-    with open(wire_file, encoding="utf-8") as f:
+    with open(event_log, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -29,7 +29,7 @@ def read_wire_lines(wire_file: Path) -> list[str]:
                 if not isinstance(message_raw, dict):
                     continue
                 message_raw = cast(dict[str, Any], message_raw)
-                message = deserialize_wire_message(message_raw)
+                message = deserialize_bus_message(message_raw)
                 is_req = is_request(message)
                 event_msg: dict[str, Any] = {
                     "jsonrpc": "2.0",

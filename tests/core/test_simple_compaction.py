@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from inline_snapshot import snapshot
-from kosong.chat_provider import TokenUsage
-from kosong.message import Message
+from llmkit.chat_provider import TokenUsage
+from llmkit.message import Message
 
 import kimi_cli.prompts as prompts
-from kimi_cli.soul.compaction import CompactionResult, SimpleCompaction, should_auto_compact
-from kimi_cli.wire.types import TextPart, ThinkPart
+from kimi_cli.eventbus.types import TextPart, ThinkPart
+from kimi_cli.loop.compaction import CompactionResult, SimpleCompaction, should_auto_compact
 
 
 def test_prepare_returns_original_when_not_enough_messages():
@@ -197,7 +197,7 @@ def test_prepare_preserves_complete_turn_with_tool_messages():
     """When the preserved region includes an assistant(tool_calls) followed by
     tool messages, the complete turn (assistant+tool) is kept together in the
     preserved tail. Verify tool messages are included in preserved."""
-    from kosong.message import ToolCall
+    from llmkit.message import ToolCall
 
     tc = ToolCall(
         id="call_abc",
@@ -248,7 +248,7 @@ def test_prepare_preserves_complete_turn_with_tool_messages():
 def test_prepare_includes_tool_calls_in_compact_message():
     """Verify that when an assistant message has tool_calls, the compact_message
     includes the serialized tool calls."""
-    from kosong.message import ToolCall
+    from llmkit.message import ToolCall
 
     tc = ToolCall(
         id="call_xyz",
@@ -286,7 +286,7 @@ def test_prepare_includes_tool_calls_in_compact_message():
 def test_prepare_includes_tool_call_id_for_tool_messages():
     """Verify tool role messages with tool_call_id show
     'tool (call_id: xxx)' in compact_message."""
-    from kosong.message import ToolCall
+    from llmkit.message import ToolCall
 
     tc = ToolCall(
         id="call_123",

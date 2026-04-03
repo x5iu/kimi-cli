@@ -2,13 +2,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import rich
-from kosong.message import Message
+from llmkit.message import Message
 
 from kimi_cli.cli import OutputFormat
-from kimi_cli.soul.message import tool_result_to_message
-from kimi_cli.utils.aioqueue import QueueShutDown
-from kimi_cli.wire import Wire
-from kimi_cli.wire.types import (
+from kimi_cli.eventbus import EventBus
+from kimi_cli.eventbus.types import (
+    BusMessage,
     ContentPart,
     StepBegin,
     StepInterrupted,
@@ -16,12 +15,13 @@ from kimi_cli.wire.types import (
     ToolCallOutput,
     ToolCallPart,
     ToolResult,
-    WireMessage,
 )
+from kimi_cli.loop.message import tool_result_to_message
+from kimi_cli.utils.aioqueue import QueueShutDown
 
 
 class Printer(Protocol):
-    def feed(self, msg: WireMessage) -> None: ...
+    def feed(self, msg: BusMessage) -> None: ...
     def flush(self) -> None: ...
 
 
@@ -31,7 +31,7 @@ def _merge_content(buffer: list[ContentPart], part: ContentPart) -> None:
 
 
 class TextPrinter(Printer):
-    def feed(self, msg: WireMessage) -> None:
+    def feed(self, msg: BusMessage) -> None:
         if isinstance(msg, ToolCallOutput):
             return
         rich.print(msg)
@@ -53,7 +53,7 @@ class JsonPrinter(Printer):
         """The buffer to store tool calls and their results."""
         self._last_tool_call: ToolCall | None = None
 
-    def feed(self, msg: WireMessage) -> None:
+    def feed(self, msg: BusMessage) -> None:
         match msg:
             case StepBegin() | StepInterrupted():
                 self.flush()
@@ -111,7 +111,7 @@ class FinalOnlyTextPrinter(Printer):
     def __init__(self) -> None:
         self._content_buffer: list[ContentPart] = []
 
-    def feed(self, msg: WireMessage) -> None:
+    def feed(self, msg: BusMessage) -> None:
         match msg:
             case StepBegin() | StepInterrupted():
                 self._content_buffer.clear()
@@ -134,7 +134,7 @@ class FinalOnlyJsonPrinter(Printer):
     def __init__(self) -> None:
         self._content_buffer: list[ContentPart] = []
 
-    def feed(self, msg: WireMessage) -> None:
+    def feed(self, msg: BusMessage) -> None:
         match msg:
             case StepBegin() | StepInterrupted():
                 self._content_buffer.clear()
@@ -154,7 +154,7 @@ class FinalOnlyJsonPrinter(Printer):
         self._content_buffer.clear()
 
 
-async def visualize(output_format: OutputFormat, final_only: bool, wire: Wire) -> None:
+async def visualize(output_format: OutputFormat, final_only: bool, wire: EventBus) -> None:
     if final_only:
         match output_format:
             case "text":

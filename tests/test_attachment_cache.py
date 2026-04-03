@@ -4,8 +4,8 @@ import base64
 
 from PIL import Image
 
+from kimi_cli.eventbus.types import ImageURLPart, TextPart
 from kimi_cli.ui.shell.prompt import AttachmentCache, _parse_attachment_kind
-from kimi_cli.wire.types import ImageURLPart, TextPart
 
 
 def _make_image() -> Image.Image:

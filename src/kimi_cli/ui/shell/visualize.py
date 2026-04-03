@@ -7,7 +7,7 @@ from contextlib import suppress
 from io import StringIO
 from typing import Any, cast
 
-from kosong.tooling import ToolError, ToolOk
+from llmkit.tooling import ToolError, ToolOk
 from rich import box
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
@@ -15,21 +15,11 @@ from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
-from kimi_cli.ui.shell.blocks import ContentBlock, StatusBlock, ToolCallBlock
-from kimi_cli.ui.shell.console import RIGHT_PADDING, console
-from kimi_cli.ui.shell.keyboard import KeyEvent
-from kimi_cli.ui.shell.panels import (
-    ApprovalRequestPanel,
-    QuestionRequestPanel,
-    show_approval_in_pager,
-    show_question_body_in_pager,
-)
-from kimi_cli.utils.aioqueue import QueueShutDown
-from kimi_cli.utils.logging import logger
-from kimi_cli.wire import WireUISide
-from kimi_cli.wire.types import (
+from kimi_cli.eventbus import EventBusConsumer
+from kimi_cli.eventbus.types import (
     ApprovalRequest,
     ApprovalResponse,
+    BusMessage,
     CompactionBegin,
     CompactionEnd,
     ContentPart,
@@ -51,8 +41,18 @@ from kimi_cli.wire.types import (
     ToolResult,
     TurnBegin,
     TurnEnd,
-    WireMessage,
 )
+from kimi_cli.ui.shell.blocks import ContentBlock, StatusBlock, ToolCallBlock
+from kimi_cli.ui.shell.console import RIGHT_PADDING, console
+from kimi_cli.ui.shell.keyboard import KeyEvent
+from kimi_cli.ui.shell.panels import (
+    ApprovalRequestPanel,
+    QuestionRequestPanel,
+    show_approval_in_pager,
+    show_question_body_in_pager,
+)
+from kimi_cli.utils.aioqueue import QueueShutDown
+from kimi_cli.utils.logging import logger
 
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000
@@ -68,7 +68,7 @@ def is_significant_for_render(msg: object) -> bool:
 
 
 async def visualize(
-    wire: WireUISide,
+    wire: EventBusConsumer,
     *,
     initial_status: StatusUpdate,
     cancel_event: asyncio.Event | None = None,
@@ -212,7 +212,7 @@ class LiveView:
         # so we reset the private _shape to re-anchor the next refresh.
         cast(Any, live)._live_render._shape = None
 
-    async def visualize_loop(self, wire: WireUISide):
+    async def visualize_loop(self, wire: EventBusConsumer):
         with Live(
             self.compose(),
             console=console,
@@ -904,8 +904,8 @@ class LiveView:
             blocks.append(self._status_block.render())
         return Group(*blocks)
 
-    def dispatch_wire_message(self, msg: WireMessage) -> None:
-        """Dispatch the Wire message to UI components."""
+    def dispatch_wire_message(self, msg: BusMessage) -> None:
+        """Dispatch the EventBus message to UI components."""
         assert not isinstance(msg, StepInterrupted)  # handled in visualize_loop
 
         if isinstance(msg, StepBegin):

@@ -8,13 +8,13 @@ from urllib.parse import urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup, Tag
-from kosong.tooling import CallableTool2, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
 from kimi_cli.constant import USER_AGENT
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.toolset import get_current_tool_call_or_none
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.aiohttp import new_client_session
 from kimi_cli.utils.logging import logger

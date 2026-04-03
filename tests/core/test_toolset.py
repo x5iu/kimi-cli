@@ -6,12 +6,12 @@ import asyncio
 import contextlib
 import json
 
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kosong.tooling.error import ToolNotFoundError as KosongToolNotFoundError
+from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from llmkit.tooling.error import ToolNotFoundError as KosongToolNotFoundError
 from pydantic import BaseModel
 
-from kimi_cli.soul.toolset import KimiToolset
-from kimi_cli.wire.types import ToolCall, ToolResult
+from kimi_cli.eventbus.types import ToolCall, ToolResult
+from kimi_cli.loop.toolset import KimiToolset
 
 
 class DummyParams(BaseModel):

@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from inline_snapshot import snapshot
-from kosong.message import Message
+from llmkit.message import Message
 
-from kimi_cli.soul.compaction_archive import register_compaction_archive
-from kimi_cli.soul.message import internal_user_message, system
+from kimi_cli.eventbus.types import TextPart, ThinkPart
+from kimi_cli.loop.compaction_archive import register_compaction_archive
+from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.tools.context.recall_compacted import Params, RecallCompactedContext
-from kimi_cli.wire.types import TextPart, ThinkPart
 
 
 def _write_archive(archive_file: Path, messages: list[Message]) -> None:

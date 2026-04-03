@@ -9,13 +9,13 @@ from pathlib import Path
 from textwrap import shorten
 
 from kaos.path import KaosPath
-from kosong.message import Message
+from llmkit.message import Message
 
+from kimi_cli.eventbus.log import EventLog
+from kimi_cli.eventbus.types import TurnBegin
 from kimi_cli.metadata import WorkDirMeta, load_metadata, save_metadata
 from kimi_cli.session_state import SessionState, load_session_state, save_session_state
 from kimi_cli.utils.logging import logger
-from kimi_cli.wire.file import WireFile
-from kimi_cli.wire.types import TurnBegin
 
 
 @dataclass(slots=True, kw_only=True)
@@ -31,7 +31,7 @@ class Session:
     """The metadata of the work directory."""
     context_file: Path
     """The absolute path to the file storing the message history."""
-    wire_file: WireFile
+    event_log: EventLog
     """The wire message log file wrapper."""
 
     # session state
@@ -53,7 +53,7 @@ class Session:
 
     def is_empty(self) -> bool:
         """Whether the session has any context history."""
-        if not self.wire_file.is_empty():
+        if not self.event_log.is_empty():
             return False
         try:
             return self.context_file.stat().st_size == 0
@@ -76,7 +76,7 @@ class Session:
         self.updated_at = self.context_file.stat().st_mtime if self.context_file.exists() else 0.0
 
         try:
-            async for record in self.wire_file.iter_records():
+            async for record in self.event_log.iter_records():
                 wire_msg = record.to_wire_message()
                 if isinstance(wire_msg, TurnBegin):
                     title = shorten(
@@ -88,7 +88,7 @@ class Session:
         except Exception:
             logger.exception(
                 "Failed to derive session title from wire file {file}:",
-                file=self.wire_file.path,
+                file=self.event_log.path,
             )
 
     @staticmethod
@@ -137,7 +137,7 @@ class Session:
             work_dir=work_dir,
             work_dir_meta=work_dir_meta,
             context_file=context_file,
-            wire_file=WireFile(path=session_dir / "wire.jsonl"),
+            event_log=EventLog(path=session_dir / "wire.jsonl"),
             state=SessionState(),
             title="",
             updated_at=0.0,
@@ -180,7 +180,7 @@ class Session:
             work_dir=work_dir,
             work_dir_meta=work_dir_meta,
             context_file=context_file,
-            wire_file=WireFile(path=session_dir / "wire.jsonl"),
+            event_log=EventLog(path=session_dir / "wire.jsonl"),
             state=load_session_state(session_dir),
             title="",
             updated_at=0.0,
@@ -224,7 +224,7 @@ class Session:
                 work_dir=work_dir,
                 work_dir_meta=work_dir_meta,
                 context_file=context_file,
-                wire_file=WireFile(path=session_dir / "wire.jsonl"),
+                event_log=EventLog(path=session_dir / "wire.jsonl"),
                 state=load_session_state(session_dir),
                 title="",
                 updated_at=0.0,

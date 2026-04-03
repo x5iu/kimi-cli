@@ -11,11 +11,11 @@ import json
 from pathlib import Path
 
 import pytest
-from kosong.message import Message, Role
+from llmkit.message import Message, Role
 
-from kimi_cli.soul.compaction import estimate_text_tokens, should_auto_compact
-from kimi_cli.soul.context import Context
-from kimi_cli.wire.types import TextPart
+from kimi_cli.eventbus.types import TextPart
+from kimi_cli.loop.compaction import estimate_text_tokens, should_auto_compact
+from kimi_cli.loop.context import Context
 
 
 def _msg(role: Role, text: str) -> Message:

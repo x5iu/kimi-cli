@@ -14,9 +14,9 @@ from rich.table import Table
 from rich.text import Text
 
 from kimi_cli.config import LLMModel
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.platforms import KIMI_CODE_PLATFORM_ID
 from kimi_cli.platforms.registry import get_platform_by_id, parse_managed_provider_key
-from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.slash import registry
 from kimi_cli.utils.aiohttp import new_client_session
@@ -37,7 +37,7 @@ class UsageRow:
 @registry.command(aliases=["/status"])
 async def usage(app: Shell, args: str):
     """Display API usage and quota information"""
-    assert isinstance(app.soul, KimiSoul)
+    assert isinstance(app.soul, KimiAgentLoop)
     if app.soul.runtime.llm is None:
         console.print("[red]LLM not set.[/red]")
         return

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from kaos.path import KaosPath
 
-from kimi_cli.soul.agent import load_agents_md, load_project_agents_md
+from kimi_cli.loop.agent import load_agents_md, load_project_agents_md
 
 
 @pytest.fixture

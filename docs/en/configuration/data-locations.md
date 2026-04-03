@@ -81,7 +81,7 @@ Kimi Code CLI uses this file to restore session context when using `--continue` 
 
 ### `wire.jsonl`
 
-Wire message log file, stores Wire events during the session in JSON Lines (JSONL) format. Used for session replay and extracting session titles.
+EventBus message log file, stores EventBus events during the session in JSON Lines (JSONL) format. Used for session replay and extracting session titles.
 
 ### `state.json`
 

@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kosong.chat_provider import TokenUsage
-from kosong.message import Message
+from llmkit.chat_provider import TokenUsage
+from llmkit.message import Message
 
-from kimi_cli.soul.agent import Agent, Runtime
-from kimi_cli.soul.compaction import CompactionResult
-from kimi_cli.soul.compaction_archive import load_compaction_archives
-from kimi_cli.soul.context import Context
-from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.soul.message import internal_user_message, system
-from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.eventbus.types import TextPart
+from kimi_cli.loop.agent import Agent, Runtime
+from kimi_cli.loop.compaction import CompactionResult
+from kimi_cli.loop.compaction_archive import load_compaction_archives
+from kimi_cli.loop.context import Context
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
+from kimi_cli.loop.message import internal_user_message, system
+from kimi_cli.loop.toolset import KimiToolset
 from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.context.recall_compacted import Params
-from kimi_cli.wire.types import TextPart
 
 
 class FakeCompaction:
@@ -63,9 +63,9 @@ async def test_compaction_registers_archive_and_injects_recall_notice(
         ]
     )
 
-    soul = KimiSoul(agent, context=context)
+    soul = KimiAgentLoop(agent, context=context)
     soul._compaction = FakeCompaction()
-    monkeypatch.setattr("kimi_cli.soul.kimisoul.wire_send", lambda _msg: None)
+    monkeypatch.setattr("kimi_cli.loop.kimi_agent_loop.bus_send", lambda _msg: None)
 
     assert [tool.name for tool in toolset.tools] == []
 
@@ -101,7 +101,7 @@ async def test_recall_tool_is_visible_immediately_when_archives_already_exist(
         + "\n",
         encoding="utf-8",
     )
-    from kimi_cli.soul.compaction_archive import register_compaction_archive
+    from kimi_cli.loop.compaction_archive import register_compaction_archive
 
     register_compaction_archive(
         context.file_backend,
@@ -113,7 +113,7 @@ async def test_recall_tool_is_visible_immediately_when_archives_already_exist(
     recall_tool = RecallCompactedContext(runtime)
     toolset = KimiToolset()
     toolset.add(recall_tool)
-    soul = KimiSoul(
+    soul = KimiAgentLoop(
         Agent(
             name="Test Agent",
             system_prompt="Test system prompt.",

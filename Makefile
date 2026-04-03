@@ -22,16 +22,16 @@ prepare-build: download-deps ## Sync dependencies for releases without workspace
 	@echo "==> Syncing dependencies for release builds (no sources)"
 	@uv sync --all-extras --all-packages --no-sources
 
-.PHONY: format format-kimi-cli format-kosong format-pykaos format-kimi-sdk
-format: format-kimi-cli format-kosong format-pykaos format-kimi-sdk ## Auto-format all workspace packages.
+.PHONY: format format-kimi-cli format-llmkit format-pykaos format-kimi-sdk
+format: format-kimi-cli format-llmkit format-pykaos format-kimi-sdk ## Auto-format all workspace packages.
 format-kimi-cli: ## Auto-format Kimi Code CLI sources with ruff.
 	@echo "==> Formatting Kimi Code CLI sources"
 	@uv run ruff check --fix
 	@uv run ruff format
-format-kosong: ## Auto-format kosong sources with ruff.
-	@echo "==> Formatting kosong sources"
-	@uv run --project packages/kosong --directory packages/kosong ruff check --fix
-	@uv run --project packages/kosong --directory packages/kosong ruff format
+format-llmkit: ## Auto-format llmkit sources with ruff.
+	@echo "==> Formatting llmkit sources"
+	@uv run --project packages/llmkit --directory packages/llmkit ruff check --fix
+	@uv run --project packages/llmkit --directory packages/llmkit ruff format
 format-pykaos: ## Auto-format pykaos sources with ruff.
 	@echo "==> Formatting pykaos sources"
 	@uv run --project packages/kaos --directory packages/kaos ruff check --fix
@@ -40,20 +40,20 @@ format-kimi-sdk: ## Auto-format kimi-sdk sources with ruff.
 	@echo "==> Formatting kimi-sdk sources"
 	@uv run --project sdks/kimi-sdk --directory sdks/kimi-sdk ruff check --fix
 	@uv run --project sdks/kimi-sdk --directory sdks/kimi-sdk ruff format
-.PHONY: check check-kimi-cli check-kosong check-pykaos check-kimi-sdk
-check: check-kimi-cli check-kosong check-pykaos check-kimi-sdk ## Run linting and type checks for all packages.
+.PHONY: check check-kimi-cli check-llmkit check-pykaos check-kimi-sdk
+check: check-kimi-cli check-llmkit check-pykaos check-kimi-sdk ## Run linting and type checks for all packages.
 check-kimi-cli: ## Run linting and type checks for Kimi Code CLI.
 	@echo "==> Checking Kimi Code CLI (ruff + pyright + ty; ty is non-blocking)"
 	@uv run ruff check
 	@uv run ruff format --check
 	@uv run pyright
 	@uv run ty check || true
-check-kosong: ## Run linting and type checks for kosong.
-	@echo "==> Checking kosong (ruff + pyright + ty; ty is non-blocking)"
-	@uv run --project packages/kosong --directory packages/kosong ruff check
-	@uv run --project packages/kosong --directory packages/kosong ruff format --check
-	@uv run --project packages/kosong --directory packages/kosong pyright
-	@uv run --project packages/kosong --directory packages/kosong ty check || true
+check-llmkit: ## Run linting and type checks for llmkit.
+	@echo "==> Checking llmkit (ruff + pyright + ty; ty is non-blocking)"
+	@uv run --project packages/llmkit --directory packages/llmkit ruff check
+	@uv run --project packages/llmkit --directory packages/llmkit ruff format --check
+	@uv run --project packages/llmkit --directory packages/llmkit pyright
+	@uv run --project packages/llmkit --directory packages/llmkit ty check || true
 check-pykaos: ## Run linting and type checks for pykaos.
 	@echo "==> Checking pykaos (ruff + pyright + ty; ty is non-blocking)"
 	@uv run --project packages/kaos --directory packages/kaos ruff check
@@ -66,31 +66,31 @@ check-kimi-sdk: ## Run linting and type checks for kimi-sdk.
 	@uv run --project sdks/kimi-sdk --directory sdks/kimi-sdk ruff format --check
 	@uv run --project sdks/kimi-sdk --directory sdks/kimi-sdk pyright
 	@uv run --project sdks/kimi-sdk --directory sdks/kimi-sdk ty check || true
-.PHONY: test test-kimi-cli test-kosong test-pykaos test-kimi-sdk
-test: test-kimi-cli test-kosong test-pykaos test-kimi-sdk ## Run all test suites.
+.PHONY: test test-kimi-cli test-llmkit test-pykaos test-kimi-sdk
+test: test-kimi-cli test-llmkit test-pykaos test-kimi-sdk ## Run all test suites.
 test-kimi-cli: ## Run Kimi Code CLI tests.
 	@echo "==> Running Kimi Code CLI tests"
 	@uv run pytest tests -vv
 
-test-kosong: ## Run kosong tests (including doctests).
-	@echo "==> Running kosong tests"
-	@uv run --project packages/kosong --directory packages/kosong pytest --doctest-modules -vv
+test-llmkit: ## Run llmkit tests (including doctests).
+	@echo "==> Running llmkit tests"
+	@uv run --project packages/llmkit --directory packages/llmkit pytest --doctest-modules -vv
 test-pykaos: ## Run pykaos tests.
 	@echo "==> Running pykaos tests"
 	@uv run --project packages/kaos --directory packages/kaos pytest tests -vv
 test-kimi-sdk: ## Run kimi-sdk tests.
 	@echo "==> Running kimi-sdk tests"
 	@uv run --project sdks/kimi-sdk --directory sdks/kimi-sdk pytest tests -vv
-.PHONY: build build-kimi-cli build-kosong build-pykaos build-kimi-sdk build-bin build-bin-onedir
-build: build-kimi-cli build-kosong build-pykaos build-kimi-sdk ## Build Python packages for release.
+.PHONY: build build-kimi-cli build-llmkit build-pykaos build-kimi-sdk build-bin build-bin-onedir
+build: build-kimi-cli build-llmkit build-pykaos build-kimi-sdk ## Build Python packages for release.
 build-kimi-cli: ## Build the kimi-cli and kimi-code sdists and wheels.
 	@echo "==> Building kimi-cli distributions"
 	@uv build --package kimi-cli --no-sources --out-dir dist
 	@echo "==> Building kimi-code distributions"
 	@uv build --package kimi-code --no-sources --out-dir dist
-build-kosong: ## Build the kosong sdist and wheel.
-	@echo "==> Building kosong distributions"
-	@uv build --package kosong --no-sources --out-dir dist/kosong
+build-llmkit: ## Build the llmkit sdist and wheel.
+	@echo "==> Building llmkit distributions"
+	@uv build --package llmkit --no-sources --out-dir dist/llmkit
 build-pykaos: ## Build the pykaos sdist and wheel.
 	@echo "==> Building pykaos distributions"
 	@uv build --package pykaos --no-sources --out-dir dist/pykaos

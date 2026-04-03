@@ -16,11 +16,11 @@ from typing import override
 
 import aiohttp
 from kaos.path import KaosPath
-from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kimi_cli.loop.agent import Runtime
 from kimi_cli.share import get_share_dir
-from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.file.rg_path import find_existing_rg, rg_binary_name
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.aiohttp import new_client_session

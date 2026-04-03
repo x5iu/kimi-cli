@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from inline_snapshot import snapshot
-from kosong.chat_provider.echo import EchoChatProvider
-from kosong.chat_provider.kimi import Kimi
+from llmkit.chat_provider.echo import EchoChatProvider
+from llmkit.chat_provider.kimi import Kimi
 from pydantic import SecretStr
 
 from kimi_cli.config import LLMModel, LLMProvider
@@ -89,7 +89,7 @@ def test_create_llm_echo_provider():
 
 
 def test_create_llm_anthropic_with_session_id():
-    from kosong.contrib.chat_provider.anthropic import Anthropic
+    from llmkit.contrib.chat_provider.anthropic import Anthropic
 
     provider = LLMProvider(
         type="anthropic",
@@ -109,7 +109,7 @@ def test_create_llm_anthropic_with_session_id():
 
 
 def test_create_llm_anthropic_without_session_id():
-    from kosong.contrib.chat_provider.anthropic import Anthropic
+    from llmkit.contrib.chat_provider.anthropic import Anthropic
 
     provider = LLMProvider(
         type="anthropic",

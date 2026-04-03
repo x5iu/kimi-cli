@@ -11,11 +11,11 @@ from typing import Literal
 
 from PIL import Image
 
+from kimi_cli.eventbus.types import ContentPart, ImageURLPart
 from kimi_cli.share import get_share_dir
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.media_tags import wrap_media_part
 from kimi_cli.utils.string import random_string
-from kimi_cli.wire.types import ContentPart, ImageURLPart
 
 _DEFAULT_PROMPT_CACHE_ROOT = get_share_dir() / "prompt-cache"
 _LEGACY_PROMPT_CACHE_ROOT = Path("/tmp/kimi")

@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from kosong.message import Message
+from llmkit.message import Message
 
-from kimi_cli.wire.types import AudioURLPart, ContentPart, ImageURLPart, TextPart, VideoURLPart
+from kimi_cli.eventbus.types import AudioURLPart, ContentPart, ImageURLPart, TextPart, VideoURLPart
 
 _MEDIA_OPEN_TAG_RE = re.compile(r"<(image|video|audio)(?:\s+[^>]*)?>")
 _MEDIA_CLOSE_TAG_RE = re.compile(r"</(image|video|audio)>")

@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from kaos.path import KaosPath
 
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.approval import Approval
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.approval import Approval
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.glob import Params as GlobParams
 from kimi_cli.tools.file.read import Params as ReadParams

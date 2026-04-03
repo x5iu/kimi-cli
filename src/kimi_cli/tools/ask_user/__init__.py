@@ -7,13 +7,18 @@ from pathlib import Path
 from typing import override
 from uuid import uuid4
 
-from kosong.tooling import BriefDisplayBlock, CallableTool2, Tool, ToolError, ToolReturnValue
+from llmkit.tooling import BriefDisplayBlock, CallableTool2, Tool, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
-from kimi_cli.soul import get_wire_or_none, wire_send
-from kimi_cli.soul.toolset import get_current_tool_call_or_none
+from kimi_cli.eventbus.types import (
+    QuestionItem,
+    QuestionNotSupported,
+    QuestionOption,
+    QuestionRequest,
+)
+from kimi_cli.loop import bus_send, get_event_bus_or_none
+from kimi_cli.loop.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import load_desc
-from kimi_cli.wire.types import QuestionItem, QuestionNotSupported, QuestionOption, QuestionRequest
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +83,7 @@ class AskUserQuestion(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
-        if self._is_yolo and self._is_yolo() and get_wire_or_none() is None:
+        if self._is_yolo and self._is_yolo() and get_event_bus_or_none() is None:
             return ToolReturnValue(
                 is_error=False,
                 output=(
@@ -89,11 +94,11 @@ class AskUserQuestion(CallableTool2[Params]):
                 display=[BriefDisplayBlock(text="Auto-dismissed (yolo)")],
             )
 
-        wire = get_wire_or_none()
+        wire = get_event_bus_or_none()
         if wire is None:
             return ToolError(
-                message="Cannot ask user questions: Wire is not available.",
-                brief="Wire unavailable",
+                message="Cannot ask user questions: EventBus is not available.",
+                brief="EventBus unavailable",
             )
 
         tool_call = get_current_tool_call_or_none()
@@ -121,7 +126,7 @@ class AskUserQuestion(CallableTool2[Params]):
             questions=questions,
         )
 
-        wire_send(request)
+        bus_send(request)
 
         try:
             answers = await request.wait()

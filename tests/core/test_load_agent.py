@@ -12,10 +12,10 @@ from inline_snapshot import snapshot
 
 from kimi_cli.config import Config
 from kimi_cli.exception import InvalidToolError, SystemPromptTemplateError
+from kimi_cli.loop.agent import BuiltinSystemPromptArgs, Runtime, _load_system_prompt, load_agent
+from kimi_cli.loop.approval import Approval
+from kimi_cli.loop.toolset import KimiToolset
 from kimi_cli.session import Session
-from kimi_cli.soul.agent import BuiltinSystemPromptArgs, Runtime, _load_system_prompt, load_agent
-from kimi_cli.soul.approval import Approval
-from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.utils.environment import Environment
 
 

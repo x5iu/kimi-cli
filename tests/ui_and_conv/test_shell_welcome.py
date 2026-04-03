@@ -10,8 +10,8 @@ import pytest
 from rich.console import Console
 
 from kimi_cli.app import KimiCLI
-from kimi_cli.soul import Soul
-from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.loop import AgentLoop
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.ui.shell import Shell
 
 
@@ -35,7 +35,7 @@ async def test_run_shell_welcome_info_excludes_promotional_tips(
     monkeypatch.setattr(shell_module, "Shell", FakeShell)
 
     cli = KimiCLI(
-        cast(KimiSoul, SimpleNamespace(name="Test", model_name="gpt-4")),
+        cast(KimiAgentLoop, SimpleNamespace(name="Test", model_name="gpt-4")),
         runtime,
         {},
     )
@@ -87,7 +87,7 @@ async def test_shell_run_does_not_start_background_update(monkeypatch: pytest.Mo
 
     shell = Shell(
         cast(
-            Soul,
+            AgentLoop,
             SimpleNamespace(
                 name="Test",
                 available_slash_commands=[],

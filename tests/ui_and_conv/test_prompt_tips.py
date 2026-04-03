@@ -10,7 +10,8 @@ from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout.containers import FloatContainer
 from prompt_toolkit.utils import get_cwidth
 
-from kimi_cli.soul import StatusSnapshot
+from kimi_cli.eventbus.types import StatusUpdate, TextPart, ThinkPart, ToolCallPart
+from kimi_cli.loop import StatusSnapshot
 from kimi_cli.ui.shell import prompt as shell_prompt
 from kimi_cli.ui.shell.prompt import (
     STEADY_INPUT_CURSOR,
@@ -22,7 +23,6 @@ from kimi_cli.ui.shell.prompt import (
     _toast_queues,
 )
 from kimi_cli.ui.shell.visualize import LiveView
-from kimi_cli.wire.types import StatusUpdate, TextPart, ThinkPart, ToolCallPart
 
 
 def test_build_toolbar_tips_without_clipboard():

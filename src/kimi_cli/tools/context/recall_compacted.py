@@ -5,13 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import override
 
-from kosong.message import Message
-from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+from llmkit.message import Message
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.utils.logging import logger
-from kimi_cli.soul.compaction_archive import (
+from kimi_cli.loop.agent import Runtime
+from kimi_cli.loop.compaction_archive import (
     CompactionArchiveRecord,
     archive_role_label,
     load_archive_messages,
@@ -20,6 +19,7 @@ from kimi_cli.soul.compaction_archive import (
     stringify_message_for_archive,
 )
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.utils.logging import logger
 
 MAX_RESULTS = 5
 OUTPUT_MAX_CHARS = 12_000
@@ -68,7 +68,7 @@ class RecallCompactedContext(CallableTool2[Params]):
         self._context_file_getter: Callable[[], Path] = lambda: runtime.session.context_file
 
     def bind_context_file(self, getter: Callable[[], Path]) -> None:
-        """Late-bind the current trajectory context file after KimiSoul is constructed."""
+        """Late-bind the current trajectory context file after KimiAgentLoop is constructed."""
         self._context_file_getter = getter
 
     @override

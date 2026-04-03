@@ -6,26 +6,26 @@ import sys
 from functools import partial
 from pathlib import Path
 
-from kosong.chat_provider import (
+from llmkit.chat_provider import (
     APIConnectionError,
     APIEmptyResponseError,
     APIStatusError,
     APITimeoutError,
     ChatProviderError,
 )
-from kosong.message import Message
+from llmkit.message import Message
 from rich import print
 
 from kimi_cli.cli import ExitCode, InputFormat, OutputFormat
-from kimi_cli.soul import (
+from kimi_cli.loop import (
+    AgentLoop,
     LLMNotSet,
     LLMNotSupported,
     MaxStepsReached,
     RunCancelled,
-    Soul,
-    run_soul,
+    run_agent_loop,
 )
-from kimi_cli.soul.kimisoul import KimiSoul
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.ui.print.visualize import visualize
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.signals import install_sigint_handler
@@ -36,7 +36,7 @@ class Print:
     An app implementation that prints the agent behavior to the console.
 
     Args:
-        soul (Soul): The soul to run.
+        soul (AgentLoop): The soul to run.
         input_format (InputFormat): The input format to use.
         output_format (OutputFormat): The output format to use.
         context_file (Path): The file to store the context.
@@ -45,14 +45,14 @@ class Print:
 
     def __init__(
         self,
-        soul: Soul,
+        soul: AgentLoop,
         input_format: InputFormat,
         output_format: OutputFormat,
         context_file: Path,
         *,
         final_only: bool = False,
     ):
-        self.soul = soul
+        self.agent_loop = soul
         self.input_format: InputFormat = input_format
         self.output_format: OutputFormat = output_format
         self.context_file = context_file
@@ -87,12 +87,14 @@ class Print:
                     logger.info("Running agent with command: {command}", command=command)
                     if self.output_format == "text" and not self.final_only:
                         print(command)
-                    await run_soul(
-                        self.soul,
+                    await run_agent_loop(
+                        self.agent_loop,
                         command,
                         partial(visualize, self.output_format, self.final_only),
                         cancel_event,
-                        self.soul.wire_file if isinstance(self.soul, KimiSoul) else None,
+                        self.agent_loop.event_log
+                        if isinstance(self.agent_loop, KimiAgentLoop)
+                        else None,
                     )
                 else:
                     logger.info("Empty command, skipping")

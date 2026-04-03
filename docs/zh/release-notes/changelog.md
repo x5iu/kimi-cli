@@ -10,7 +10,7 @@
 ## 1.19.0 (2026-03-10)
 
 - Core：新增 Plan 模式——AI 在编码前先制定实施方案并提交审批。Plan 模式下仅允许使用只读工具（`Glob`、`Grep`、`ReadFile`）探索代码库，将方案写入 plan 文件后通过 `ExitPlanMode` 提交审批，用户可批准、拒绝或提供修改意见；支持 `Shift-Tab` 快捷键和 `/plan` 斜杠命令切换
-- Vis：新增 `kimi vis` 命令，启动交互式可视化仪表板以检查会话追踪——包括 Wire 事件时间线、上下文查看器、会话浏览器和用量统计
+- Vis：新增 `kimi vis` 命令，启动交互式可视化仪表板以检查会话追踪——包括 EventBus 事件时间线、上下文查看器、会话浏览器和用量统计
 - Web：修复会话流状态管理问题——修复状态重置时的空引用错误，并在切换会话时保留斜杠命令，避免初始化响应返回前出现短暂的空白
 
 ## 1.18.0 (2026-03-09)
@@ -40,7 +40,7 @@
 - Shell：新增 `Ctrl-O` 快捷键，在外部编辑器中编辑当前输入内容（`$VISUAL`/`$EDITOR`），支持自动检测 VS Code、Vim、Vi 或 Nano
 - Shell：新增 `/editor` 斜杠命令，可交互式配置和切换默认外部编辑器，设置持久保存到配置文件
 - Shell：新增 `/new` 斜杠命令，无需重启 Kimi Code CLI 即可创建并切换到新会话
-- Wire：当客户端不支持 `supports_question` 能力时，自动隐藏 `AskUserQuestion` 工具，避免 LLM 调用不受支持的交互
+- EventBus：当客户端不支持 `supports_question` 能力时，自动隐藏 `AskUserQuestion` 工具，避免 LLM 调用不受支持的交互
 - Core：在压缩后估算上下文 Token 数量，使上下文用量百分比不再显示为 0%
 - Web：上下文用量百分比显示精确到一位小数，提升精度
 
@@ -58,12 +58,12 @@
 
 - Shell：在终端中将 `FetchURL` 工具的 URL 参数显示为可点击的超链接
 - Tool：新增 `AskUserQuestion` 工具，支持在执行过程中向用户展示结构化问题和预定义选项，支持单选、多选和自定义文本输入
-- Wire：新增 `QuestionRequest` / `QuestionResponse` 消息类型和能力协商机制，用于结构化问答交互
+- EventBus：新增 `QuestionRequest` / `QuestionResponse` 消息类型和能力协商机制，用于结构化问答交互
 - Shell：新增 `AskUserQuestion` 交互式问题面板，支持键盘驱动的选项选择
 - Web：新增 `QuestionDialog` 组件，支持在界面内展示并回答结构化问题，问题待回答时替代提示输入框
 - Core：支持会话状态跨会话持久化——审批决策（YOLO 模式、自动批准的操作）和动态子 Agent 现在会被保存，并在恢复会话时自动还原
 - Core：对元数据和会话状态文件使用原子化 JSON 写入，防止崩溃时数据损坏
-- Wire：新增 `steer` 请求，可在 Agent 轮次进行中注入用户消息（协议版本 1.4）
+- EventBus：新增 `steer` 请求，可在 Agent 轮次进行中注入用户消息（协议版本 1.4）
 - Web：支持在 `FetchURL` 工具的 URL 参数上使用 Cmd/Ctrl+点击在新标签页中打开链接，并显示适合当前平台的提示信息
 
 ## 1.13.0 (2026-02-24)
@@ -81,8 +81,8 @@
 - Web：改进创建会话对话框的命令值处理
 - Web：支持会话工作目录路径中的波浪号（`~`）展开
 - Web：修复 Assistant 消息内容溢出被裁剪的问题
-- Wire：修复多个子 Agent 并发运行时的死锁问题，不再在审批请求和工具调用请求上阻塞 UI 循环
-- Wire：Agent 轮次结束后清理残留的待处理请求
+- EventBus：修复多个子 Agent 并发运行时的死锁问题，不再在审批请求和工具调用请求上阻塞 UI 循环
+- EventBus：Agent 轮次结束后清理残留的待处理请求
 - Web：在提示输入框中显示引导占位文本，提示可使用斜杠命令和 @ 引用文件
 - Web：修复在 uvicorn Web 服务器中 Ctrl+C 无法使用的问题，在 Shell 模式退出后恢复默认的 SIGINT 信号处理程序和终端状态
 - Web：改进会话停止处理，使用正确的异步清理和超时机制
@@ -114,7 +114,7 @@
 
 - Config：添加 `default_yolo` 配置项，支持默认开启 YOLO（自动审批）模式
 - Config：支持 `max_steps_per_turn` 和 `max_steps_per_run` 作为循环控制设置的别名
-- Wire：新增 `replay` 请求，用于回放已记录的 Wire 事件（协议版本 1.3）
+- EventBus：新增 `replay` 请求，用于回放已记录的 EventBus 事件（协议版本 1.3）
 - Web：添加会话分支(fork)功能，可以从任意 Assistant 回复处创建新的分支会话
 - Web：添加会话归档功能，自动归档超过 15 天的会话
 - Web：添加多选模式，支持批量归档、取消归档和删除操作
@@ -140,7 +140,7 @@
 
 ## 1.7.0 (2026-02-05)
 
-- Rust：添加 `kagent`，Kimi Agent 内核的 Rust 实现，支持 Wire 模式（实验性）
+- Rust：添加 `kagent`，Kimi Agent 内核的 Rust 实现，支持 EventBus 模式（实验性）
 - Auth：修复多个会话同时运行时的 OAuth 令牌刷新冲突
 - Web：添加文件提及菜单（`@`），支持引用已上传附件和工作区文件，带自动补全功能
 - Web：添加斜杠命令菜单，支持自动补全、键盘导航和别名匹配
@@ -160,7 +160,7 @@
 - Web：修复创建新会话时 WebSocket 断开连接的问题
 - Web：将最大图片尺寸从 1024 提升至 4096 像素
 - Web：通过增强的悬停效果和更好的布局处理改进 UI 响应性
-- Wire：添加 `TurnEnd` 事件，用于标识 Agent 轮次的完成（协议版本 1.2）
+- EventBus：添加 `TurnEnd` 事件，用于标识 Agent 轮次的完成（协议版本 1.2）
 - Core：修复包含 `$` 的自定义 Agent 提示词文件导致静默启动失败的问题
 
 ## 1.5 (2026-01-30)
@@ -225,7 +225,7 @@
 - Shell：执行斜杠命令时支持 Ctrl-C 中断
 - Shell：修复 Shell 模式下输入不符合 Shell 语法的内容时的解析错误
 - Shell：修复 MCP 服务器和第三方库的 stderr 输出污染 Shell UI 的问题
-- Wire：优雅关闭，当连接关闭或收到 Ctrl-C 时正确清理待处理请求
+- EventBus：优雅关闭，当连接关闭或收到 Ctrl-C 时正确清理待处理请求
 
 ## 0.84 (2026-01-22)
 
@@ -255,9 +255,9 @@
 
 ## 0.80 (2026-01-20)
 
-- Wire：添加 `initialize` 方法，用于交换客户端/服务端信息、注册外部工具和公布斜杠命令
-- Wire：支持通过 Wire 协议调用外部工具
-- Wire：将 `ApprovalRequestResolved` 重命名为 `ApprovalResponse`（向后兼容）
+- EventBus：添加 `initialize` 方法，用于交换客户端/服务端信息、注册外部工具和公布斜杠命令
+- EventBus：支持通过 EventBus 协议调用外部工具
+- EventBus：将 `ApprovalRequestResolved` 重命名为 `ApprovalResponse`（向后兼容）
 
 ## 0.79 (2026-01-19)
 
@@ -265,9 +265,9 @@
 - Skills：统一 Skills 发现机制，采用分层加载（内置 → 用户 → 项目）；用户级 Skills 现在优先使用 `~/.config/agents/skills/`
 - Shell：斜杠命令自动补全支持模糊匹配
 - Shell：增强审批请求预览，显示 Shell 命令和 Diff 内容，使用 `Ctrl-E` 展开完整内容
-- Wire：添加 `ShellDisplayBlock` 类型，用于在审批请求中显示 Shell 命令
+- EventBus：添加 `ShellDisplayBlock` 类型，用于在审批请求中显示 Shell 命令
 - Shell：调整 `/help` 显示顺序，将键盘快捷键移至斜杠命令之前
-- Wire：对无效请求返回符合 JSON-RPC 2.0 规范的错误响应
+- EventBus：对无效请求返回符合 JSON-RPC 2.0 规范的错误响应
 
 ## 0.78 (2026-01-16)
 
@@ -280,7 +280,7 @@
 - Config：添加 `default_thinking` 配置项（升级后需运行 `/model` 选择 Thinking 模式）
 - LLM：为始终使用 Thinking 模式的模型添加 `always_thinking` 能力
 - CLI：将 `--command`/`-c` 重命名为 `--prompt`/`-p`，保留 `--command`/`-c` 作为别名，移除 `--query`/`-q`
-- Wire：修复 Wire 模式下审批请求无法正常响应的问题
+- EventBus：修复 EventBus 模式下审批请求无法正常响应的问题
 - CLI：添加 `--prompt-flow` 选项，加载 Mermaid 流程图文件作为 Prompt Flow
 - Core：加载 Prompt Flow 后添加 `/begin` 斜杠命令以启动流程
 - Core：使用基于 Prompt Flow 的实现替换旧的 Ralph 循环
@@ -312,9 +312,9 @@
 - Skills：添加随软件包发布的内置 skill-creator Skill
 - Tool：在 `ReadFile` 路径中将 `~` 展开为用户主目录
 - MCP：确保 MCP 工具加载完成后再开始 Agent 循环
-- Wire：修复 Wire 模式无法接受有效 `cancel` 请求的问题
+- EventBus：修复 EventBus 模式无法接受有效 `cancel` 请求的问题
 - Setup：`/model` 命令现在可以切换所选供应商的所有可用模型
-- Lib：从 `kimi_cli.wire.types` 重新导出所有 Wire 消息类型，作为 `kimi_cli.wire.message` 的替代
+- Lib：从 `kimi_cli.eventbus.types` 重新导出所有 EventBus 消息类型，作为 `kimi_cli.eventbus.message` 的替代
 - Loop：添加 `max_ralph_iterations` 循环控制配置，限制额外的 Ralph 迭代次数
 - Config：将循环控制配置中的 `max_steps_per_run` 重命名为 `max_steps_per_turn`（向后兼容）
 - CLI：添加 `--max-steps-per-turn`、`--max-retries-per-step` 和 `--max-ralph-iterations` 选项，覆盖循环控制配置
@@ -352,7 +352,7 @@
 - CLI：添加 `--config` 和 `--config-file` 选项，支持传入 JSON/TOML 配置
 - Core：`KimiCLI.create` 的 `config` 参数现在除了 `Path` 也支持 `Config` 类型
 - Tool：在 `WriteFile` 和 `StrReplaceFile` 的审批/结果中包含 diff 显示块
-- Wire：在审批请求中添加显示块（包括 diff），保持向后兼容
+- EventBus：在审批请求中添加显示块（包括 diff），保持向后兼容
 - ACP：在工具结果和审批提示中显示文件 diff 预览
 - ACP：连接 ACP 客户端管理的 MCP 服务器
 - ACP：如果支持，在 ACP 客户端终端中运行 Shell 命令
@@ -369,10 +369,10 @@
 
 ## 0.66 (2025-12-19)
 
-- Lib：在 `StatusUpdate` Wire 消息中提供 `token_usage` 和 `message_id`
+- Lib：在 `StatusUpdate` EventBus 消息中提供 `token_usage` 和 `message_id`
 - Lib：添加 `KimiToolset.load_tools` 方法，支持依赖注入加载工具
 - Lib：添加 `KimiToolset.load_mcp_tools` 方法，加载 MCP 工具
-- Lib：将 `MCPTool` 从 `kimi_cli.tools.mcp` 移至 `kimi_cli.soul.toolset`
+- Lib：将 `MCPTool` 从 `kimi_cli.tools.mcp` 移至 `kimi_cli.loop.toolset`
 - Lib：添加 `InvalidToolError`、`MCPConfigError` 和 `MCPRuntimeError` 异常类
 - Lib：使 Kimi Code CLI 详细异常类扩展 `ValueError` 或 `RuntimeError`
 - Lib：`KimiCLI.create` 和 `load_agent` 的 `mcp_configs` 参数支持传入验证后的 `list[fastmcp.mcp_config.MCPConfig]`
@@ -382,8 +382,8 @@
 - Config：配置文件从 JSON 迁移至 TOML
 - MCP：后台并行连接 MCP 服务器，减少启动时间
 - MCP：连接 MCP 服务器时添加 `mcp-session-id` HTTP 头
-- Lib：将斜杠命令（原"元命令"）拆分为两组：Shell 级和 KimiSoul 级
-- Lib：在 `Soul` 协议中添加 `available_slash_commands` 属性
+- Lib：将斜杠命令（原"元命令"）拆分为两组：Shell 级和 KimiAgentLoop 级
+- Lib：在 `AgentLoop` 协议中添加 `available_slash_commands` 属性
 - ACP：向 ACP 客户端广播 `/init`、`/compact` 和 `/yolo` 斜杠命令
 - SlashCmd：添加 `/mcp` 斜杠命令，显示 MCP 服务器和工具状态
 
@@ -436,20 +436,20 @@
 ## 0.59 (2025-11-28)
 
 - Core：将上下文文件位置移至 `.kimi/sessions/{workdir_md5}/{session_id}/context.jsonl`
-- Lib：将 `WireMessage` 类型别名移至 `kimi_cli.wire.message`
-- Lib：添加 `kimi_cli.wire.message.Request` 类型别名，用于请求消息（目前仅包含 `ApprovalRequest`）
-- Lib：添加 `kimi_cli.wire.message.is_event`、`is_request` 和 `is_wire_message` 工具函数，检查 Wire 消息类型
-- Lib：添加 `kimi_cli.wire.serde` 模块，用于 Wire 消息的序列化和反序列化
-- Lib：修改 `StatusUpdate` Wire 消息，不再使用 `kimi_cli.soul.StatusSnapshot`
-- Core：在会话目录中记录 Wire 消息到 JSONL 文件
-- Core：引入 `TurnBegin` Wire 消息，标记每个 Agent 轮次的开始
+- Lib：将 `BusMessage` 类型别名移至 `kimi_cli.eventbus.message`
+- Lib：添加 `kimi_cli.eventbus.message.Request` 类型别名，用于请求消息（目前仅包含 `ApprovalRequest`）
+- Lib：添加 `kimi_cli.eventbus.message.is_event`、`is_request` 和 `is_bus_message` 工具函数，检查 EventBus 消息类型
+- Lib：添加 `kimi_cli.eventbus.serde` 模块，用于 EventBus 消息的序列化和反序列化
+- Lib：修改 `StatusUpdate` EventBus 消息，不再使用 `kimi_cli.loop.StatusSnapshot`
+- Core：在会话目录中记录 EventBus 消息到 JSONL 文件
+- Core：引入 `TurnBegin` EventBus 消息，标记每个 Agent 轮次的开始
 - UI：Shell 模式下用面板重新打印用户输入
 - Lib：添加 `Session.dir` 属性，获取会话目录路径
 - UI：改进多个并行子代理时的"本会话批准"体验
-- Wire：重新实现 Wire 服务器模式（通过 `--wire` 选项启用）
+- EventBus：重新实现 EventBus 服务器模式（通过 `--wire` 选项启用）
 - Lib：重命名类以保持一致性：`ShellApp` → `Shell`，`PrintApp` → `Print`，`ACPServer` → `ACP`，`WireServer` → `WireOverStdio`
 - Lib：重命名方法以保持一致性：`KimiCLI.run_shell_mode` → `run_shell`，`run_print_mode` → `run_print`，`run_acp_server` → `run_acp`，`run_wire_server` → `run_wire_stdio`
-- Lib：添加 `KimiCLI.run` 方法，使用给定用户输入运行一轮并产生 Wire 消息
+- Lib：添加 `KimiCLI.run` 方法，使用给定用户输入运行一轮并产生 EventBus 消息
 - Print：修复 stream-json 打印模式输出刷新不正确的问题
 - LLM：改进与部分 OpenAI 和 Anthropic API 供应商的兼容性
 - Core：修复使用 Anthropic API 时压缩后的聊天供应商错误
@@ -487,7 +487,7 @@
 
 ## 0.54 (2025-11-13)
 
-- Lib：将 `WireMessage` 从 `kimi_cli.wire.message` 移至 `kimi_cli.wire`
+- Lib：将 `BusMessage` 从 `kimi_cli.eventbus.message` 移至 `kimi_cli.eventbus`
 - Print：修复 `stream-json` 输出格式缺少最后一条助手消息的问题
 - UI：当 API 密钥被 `KIMI_API_KEY` 环境变量覆盖时添加警告
 - UI：审批请求时发出提示音
@@ -514,13 +514,13 @@
 
 ## 0.51 (2025-11-08)
 
-- Lib：将 `Soul.model` 重命名为 `Soul.model_name`
+- Lib：将 `AgentLoop.model` 重命名为 `AgentLoop.model_name`
 - Lib：将 `LLMModelCapability` 重命名为 `ModelCapability` 并移至 `kimi_cli.llm`
 - Lib：在 `ModelCapability` 中添加 `"thinking"`
 - Lib：移除 `LLM.supports_image_in` 属性
-- Lib：添加必需的 `Soul.model_capabilities` 属性
-- Lib：将 `KimiSoul.set_thinking_mode` 重命名为 `KimiSoul.set_thinking`
-- Lib：添加 `KimiSoul.thinking` 属性
+- Lib：添加必需的 `AgentLoop.model_capabilities` 属性
+- Lib：将 `KimiAgentLoop.set_thinking_mode` 重命名为 `KimiAgentLoop.set_thinking`
+- Lib：添加 `KimiAgentLoop.thinking` 属性
 - UI：改进 LLM 模型能力检查和提示
 - UI：`/clear` 元命令时清屏
 - Tool：支持 Windows 上自动下载 ripgrep
@@ -547,7 +547,7 @@
 
 ## 0.46 (2025-11-03)
 
-- 引入 Wire over stdio 用于本地 IPC（实验性，可能变更）
+- 引入 EventBus over stdio 用于本地 IPC（实验性，可能变更）
 - 支持 Anthropic 供应商类型
 
 - 修复 PyInstaller 打包的二进制文件因入口点错误而无法工作的问题
@@ -693,8 +693,8 @@
 
 - 将包名从 `ensoul` 重命名为 `kimi-cli`
 - 将 `ENSOUL_*` 内置系统提示词参数重命名为 `KIMI_*`
-- 进一步解耦 `App` 与 `Soul`
-- 拆分 `Soul` 协议和 `KimiSoul` 实现以提高模块化
+- 进一步解耦 `App` 与 `AgentLoop`
+- 拆分 `AgentLoop` 协议和 `KimiAgentLoop` 实现以提高模块化
 
 ## 0.24 (2025-10-10)
 

@@ -9,8 +9,8 @@ from kimi_cli.background import format_task, format_task_list, list_task_views
 from kimi_cli.cli import Reload
 from kimi_cli.config import load_config, save_config
 from kimi_cli.exception import ConfigError
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.session import Session
-from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.ui.shell.console import console
 from kimi_cli.utils.datetime import format_relative_time
 from kimi_cli.utils.slashcmd import SlashCommand, SlashCommandRegistry
@@ -40,9 +40,9 @@ queued for execution after the current turn ends (they are async).
 SKILL_PREFIX = "skill:"
 
 
-def ensure_kimi_soul(app: Shell) -> KimiSoul | None:
-    if not isinstance(app.soul, KimiSoul):
-        console.print("[red]KimiSoul required[/red]")
+def ensure_kimi_soul(app: Shell) -> KimiAgentLoop | None:
+    if not isinstance(app.soul, KimiAgentLoop):
+        console.print("[red]KimiAgentLoop required[/red]")
         return None
     return app.soul
 
@@ -383,7 +383,7 @@ async def clear(app: Shell, args: str):
     """Clear the context"""
     if ensure_kimi_soul(app) is None:
         return
-    await app.run_soul_command("/clear")
+    await app.run_agent_loop_command("/clear")
     raise Reload()
 
 
@@ -396,7 +396,7 @@ async def undo(app: Shell, args: str):
     if soul.context.last_turn_checkpoint_id is None:
         console.print("[yellow]Nothing to undo.[/yellow]")
         return
-    await app.run_soul_command("/undo")
+    await app.run_agent_loop_command("/undo")
     raise Reload()
 
 
@@ -494,7 +494,7 @@ async def mcp(app: Shell, args: str):
     from rich.console import Group, RenderableType
     from rich.text import Text
 
-    from kimi_cli.soul.toolset import KimiToolset
+    from kimi_cli.loop.toolset import KimiToolset
     from kimi_cli.utils.rich.columns import BulletColumns
 
     soul = ensure_kimi_soul(app)

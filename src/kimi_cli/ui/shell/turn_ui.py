@@ -23,6 +23,7 @@ from prompt_toolkit.patch_stdout import patch_stdout as _patch_stdout
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
 
+from kimi_cli.eventbus.types import StepInterrupted, TextPart, ThinkPart, ToolCallPart
 from kimi_cli.ui.shell.console import console as _console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.rich_ptk import (
@@ -43,7 +44,6 @@ from kimi_cli.ui.shell.visualize import (
     recent_output_notice_text as _recent_output_notice_text,
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
-from kimi_cli.wire.types import StepInterrupted, TextPart, ThinkPart, ToolCallPart
 
 from .prompt_constants import (
     _INDICATOR_STYLES,

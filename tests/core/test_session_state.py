@@ -193,7 +193,7 @@ class TestSessionState:
 
 class TestApprovalStateCallback:
     def test_notify_change_called_on_set_yolo(self):
-        from kimi_cli.soul.approval import Approval, ApprovalState
+        from kimi_cli.loop.approval import Approval, ApprovalState
 
         changes: list[bool] = []
 
@@ -215,9 +215,9 @@ class TestApprovalStateCallback:
     async def test_notify_change_called_on_approve_for_session(self):
         import asyncio
 
-        from kimi_cli.soul.approval import Approval, ApprovalState
-        from kimi_cli.soul.toolset import current_tool_call
-        from kimi_cli.wire.types import ToolCall
+        from kimi_cli.eventbus.types import ToolCall
+        from kimi_cli.loop.approval import Approval, ApprovalState
+        from kimi_cli.loop.toolset import current_tool_call
 
         changes: list[bool] = []
 
@@ -248,7 +248,7 @@ class TestApprovalStateCallback:
         assert len(changes) == 1
 
     def test_no_callback_does_not_raise(self):
-        from kimi_cli.soul.approval import Approval, ApprovalState
+        from kimi_cli.loop.approval import Approval, ApprovalState
 
         state = ApprovalState()  # no on_change
         approval = Approval(state=state)

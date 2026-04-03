@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kimi_cli.soul.message import INTERNAL_USER_NAME
+from kimi_cli.loop.message import INTERNAL_USER_NAME
 from kimi_cli.utils.session_history import truncate_context_at_turn
 
 
