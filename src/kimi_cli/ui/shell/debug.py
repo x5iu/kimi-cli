@@ -147,9 +147,9 @@ def _format_message(msg: Message, index: int) -> Panel:
 @registry.command
 def debug(app: Shell, args: str):
     """Debug the context"""
-    assert isinstance(app.soul, KimiAgentLoop)
+    assert isinstance(app.agent_loop, KimiAgentLoop)
 
-    context = app.soul.context
+    context = app.agent_loop.context
     history = context.history
 
     if not history:

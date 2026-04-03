@@ -99,7 +99,7 @@ class JsonPrinter(Printer):
         print(message.model_dump_json(exclude_none=True), flush=True)
 
         for result in tool_results:
-            # FIXME: this assumes the way how the soul convert `ToolResult` to `Message`
+            # FIXME: this assumes the way how the agent loop converts `ToolResult` to `Message`
             message = tool_result_to_message(result)
             print(message.model_dump_json(exclude_none=True), flush=True)
 
@@ -154,7 +154,7 @@ class FinalOnlyJsonPrinter(Printer):
         self._content_buffer.clear()
 
 
-async def visualize(output_format: OutputFormat, final_only: bool, wire: EventBus) -> None:
+async def visualize(output_format: OutputFormat, final_only: bool, event_bus: EventBus) -> None:
     if final_only:
         match output_format:
             case "text":
@@ -168,10 +168,10 @@ async def visualize(output_format: OutputFormat, final_only: bool, wire: EventBu
             case "stream-json":
                 handler = JsonPrinter()
 
-    wire_ui = wire.ui_side(merge=True)
+    bus_consumer = event_bus.ui_side(merge=True)
     while True:
         try:
-            msg = await wire_ui.receive()
+            msg = await bus_consumer.receive()
         except QueueShutDown:
             handler.flush()
             break

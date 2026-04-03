@@ -113,7 +113,7 @@ class Approval:
 
     async def fetch_request(self) -> Request:
         """
-        Fetch an approval request from the queue. Intended to be called by the soul.
+        Fetch an approval request from the queue. Intended to be called by the agent loop.
         """
         while True:
             request = await self._request_queue.get()
@@ -129,7 +129,9 @@ class Approval:
 
     def resolve_request(self, request_id: str, response: Response) -> None:
         """
-        Resolve an approval request with the given response. Intended to be called by the soul.
+        Resolve an approval request with the given response.
+
+        Intended to be called by the agent loop.
 
         Args:
             request_id (str): The ID of the request to resolve.

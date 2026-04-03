@@ -48,7 +48,7 @@ async def replay_recent_history(
     event_log: EventLog | None = None,
 ) -> None:
     """
-    Replay the most recent user-initiated turns from the provided message history or wire file.
+    Replay the most recent user-initiated turns from the provided message history or event log.
     """
     if not history:
         # if the context history is empty,either this is a new session
@@ -96,7 +96,7 @@ async def _build_replay_turns_from_wire(event_log: EventLog | None) -> list[_Rep
     _skip_turn_events = False
     try:
         async for record in event_log.iter_records():
-            wire_msg = record.to_wire_message()
+            wire_msg = record.to_bus_message()
 
             if isinstance(wire_msg, TurnBegin):
                 _skip_turn_events = False

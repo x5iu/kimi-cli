@@ -63,7 +63,7 @@ def main() -> int:
 
     errors: list[str] = []
     for name, pyproject_path in (
-        ("llmkit", args.kosong_pyproject),
+        ("llmkit", args.llmkit_pyproject),
         ("pykaos", args.pykaos_pyproject),
     ):
         try:

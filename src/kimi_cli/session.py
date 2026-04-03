@@ -77,7 +77,7 @@ class Session:
 
         try:
             async for record in self.event_log.iter_records():
-                wire_msg = record.to_wire_message()
+                wire_msg = record.to_bus_message()
                 if isinstance(wire_msg, TurnBegin):
                     title = shorten(
                         Message(role="user", content=wire_msg.user_input).extract_text(" "),
@@ -137,7 +137,7 @@ class Session:
             work_dir=work_dir,
             work_dir_meta=work_dir_meta,
             context_file=context_file,
-            event_log=EventLog(path=session_dir / "wire.jsonl"),
+            event_log=EventLog(path=session_dir / "events.jsonl"),
             state=SessionState(),
             title="",
             updated_at=0.0,
@@ -180,7 +180,7 @@ class Session:
             work_dir=work_dir,
             work_dir_meta=work_dir_meta,
             context_file=context_file,
-            event_log=EventLog(path=session_dir / "wire.jsonl"),
+            event_log=EventLog(path=_resolve_event_log_path(session_dir)),
             state=load_session_state(session_dir),
             title="",
             updated_at=0.0,
@@ -224,7 +224,7 @@ class Session:
                 work_dir=work_dir,
                 work_dir_meta=work_dir_meta,
                 context_file=context_file,
-                event_log=EventLog(path=session_dir / "wire.jsonl"),
+                event_log=EventLog(path=_resolve_event_log_path(session_dir)),
                 state=load_session_state(session_dir),
                 title="",
                 updated_at=0.0,
@@ -259,6 +259,17 @@ class Session:
             session_id=work_dir_meta.last_session_id,
         )
         return await Session.find(work_dir, work_dir_meta.last_session_id)
+
+
+def _resolve_event_log_path(session_dir: Path) -> Path:
+    """Return the event log path, falling back to legacy ``wire.jsonl`` if needed."""
+    new_path = session_dir / "events.jsonl"
+    if new_path.exists():
+        return new_path
+    old_path = session_dir / "wire.jsonl"
+    if old_path.exists():
+        return old_path
+    return new_path
 
 
 def _migrate_session_context_file(work_dir_meta: WorkDirMeta, session_id: str) -> None:

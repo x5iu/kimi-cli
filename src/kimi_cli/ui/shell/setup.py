@@ -192,9 +192,9 @@ async def _prompt_text(prompt: str, *, is_password: bool = False) -> str | None:
 async def setup(app: Shell, args: str) -> None:
     """Setup a platform with API key."""
     from kimi_cli.cli import Reload
-    from kimi_cli.ui.shell.slash import ensure_kimi_soul
+    from kimi_cli.ui.shell.slash import ensure_kimi_agent_loop
 
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
     platform = await select_platform()

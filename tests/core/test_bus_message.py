@@ -309,7 +309,7 @@ async def test_approval_request_deserialize_without_display():
 
 
 def test_wire_message_record_roundtrip():
-    envelope = BusMessageEnvelope.from_wire_message(TurnBegin(user_input=[TextPart(text="hi")]))
+    envelope = BusMessageEnvelope.from_bus_message(TurnBegin(user_input=[TextPart(text="hi")]))
     record = BusMessageRecord(timestamp=123.456, message=envelope)
 
     assert record.model_dump(mode="json") == snapshot(
@@ -324,7 +324,7 @@ def test_wire_message_record_roundtrip():
 
     parsed = BusMessageRecord.model_validate_json(record.model_dump_json())
     assert parsed.message == envelope
-    assert parsed.to_wire_message() == TurnBegin(user_input=[TextPart(text="hi")])
+    assert parsed.to_bus_message() == TurnBegin(user_input=[TextPart(text="hi")])
 
 
 def test_bad_wire_message_serde():
@@ -481,13 +481,13 @@ def test_wire_message_type_alias():
     }
 
     for type_ in wire_message_types:
-        assert type_ in module._WIRE_MESSAGE_TYPES
+        assert type_ in module._BUS_MESSAGE_TYPES
 
 
 def test_read_bus_lines_request_id(tmp_path: Path):
     """Verify ``read_bus_lines`` emits a top-level JSON-RPC ``id`` for request messages.
 
-    wire.jsonl stores messages as ``{"type": "QuestionRequest", "payload": {"id": ..., ...}}``.
+    events.jsonl stores messages as ``{"type": "QuestionRequest", "payload": {"id": ..., ...}}``.
     The ``id`` lives inside ``payload``, NOT at the top of ``message``. ``read_bus_lines``
     must extract it to the top-level ``id`` field of the JSON-RPC envelope so that callers
     can correlate responses.
@@ -500,8 +500,8 @@ def test_read_bus_lines_request_id(tmp_path: Path):
 
     from kimi_cli.utils.session_history import read_bus_lines
 
-    # Build a realistic wire.jsonl with request and event messages
-    event_log = tmp_path / "wire.jsonl"
+    # Build a realistic events.jsonl with request and event messages
+    event_log = tmp_path / "events.jsonl"
 
     question_req = QuestionRequest(
         id="q-abc-123",
@@ -527,7 +527,7 @@ def test_read_bus_lines_request_id(tmp_path: Path):
 
     records = []
     for msg in [step_begin, question_req, approval_req]:
-        envelope = BusMessageEnvelope.from_wire_message(msg)
+        envelope = BusMessageEnvelope.from_bus_message(msg)
         record = {"timestamp": time.time(), "message": envelope.model_dump(mode="json")}
         records.append(json.dumps(record, ensure_ascii=False))
 

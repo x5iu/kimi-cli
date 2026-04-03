@@ -18,7 +18,7 @@ BUS_PROTOCOL_LEGACY_VERSION: str = "1.1"
 
 
 class EventLogMetadata(BaseModel):
-    """Metadata header stored as the first line in wire.jsonl."""
+    """Metadata header stored as the first line in the event log (events.jsonl)."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -35,15 +35,15 @@ class BusMessageRecord(BaseModel):
     message: BusMessageEnvelope
 
     @classmethod
-    def from_wire_message(cls, msg: BusMessage, *, timestamp: float) -> BusMessageRecord:
-        return cls(timestamp=timestamp, message=BusMessageEnvelope.from_wire_message(msg))
+    def from_bus_message(cls, msg: BusMessage, *, timestamp: float) -> BusMessageRecord:
+        return cls(timestamp=timestamp, message=BusMessageEnvelope.from_bus_message(msg))
 
-    def to_wire_message(self) -> BusMessage:
-        return self.message.to_wire_message()
+    def to_bus_message(self) -> BusMessage:
+        return self.message.to_bus_message()
 
 
 def parse_event_log_metadata(line: str) -> EventLogMetadata | None:
-    """Parse a wire file metadata line; return None if the line is not metadata."""
+    """Parse an event log metadata line; return None if the line is not metadata."""
     try:
         return EventLogMetadata.model_validate_json(line)
     except (ValidationError, ValueError):
@@ -51,7 +51,7 @@ def parse_event_log_metadata(line: str) -> EventLogMetadata | None:
 
 
 def parse_event_log_line(line: str) -> EventLogMetadata | BusMessageRecord:
-    """Parse a wire file line into metadata or a message record."""
+    """Parse an event log line into metadata or a message record."""
     metadata = parse_event_log_metadata(line)
     if metadata is not None:
         return metadata
@@ -90,7 +90,7 @@ class EventLog:
                         continue
                     return False
         except OSError:
-            logger.exception("Failed to read wire file {file}:", file=self.path)
+            logger.exception("Failed to read event log {file}:", file=self.path)
             return False
         return True
 
@@ -107,17 +107,17 @@ class EventLog:
                         parsed = parse_event_log_line(line)
                     except Exception:
                         logger.exception(
-                            "Failed to parse line in wire file {file}:", file=self.path
+                            "Failed to parse line in event log {file}:", file=self.path
                         )
                         continue
                     if isinstance(parsed, EventLogMetadata):
                         continue
                     yield parsed
         except Exception:
-            logger.exception("Failed to read wire file {file}:", file=self.path)
+            logger.exception("Failed to read event log {file}:", file=self.path)
 
     async def append_message(self, msg: BusMessage, *, timestamp: float | None = None) -> None:
-        record = BusMessageRecord.from_wire_message(
+        record = BusMessageRecord.from_bus_message(
             msg,
             timestamp=time.time() if timestamp is None else timestamp,
         )
@@ -149,5 +149,5 @@ def _load_protocol_version(path: Path) -> str | None:
                     return None
                 return metadata.protocol_version
     except OSError:
-        logger.exception("Failed to read wire file {file}:", file=path)
+        logger.exception("Failed to read event log {file}:", file=path)
     return None

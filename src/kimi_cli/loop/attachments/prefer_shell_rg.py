@@ -20,16 +20,16 @@ class PreferShellRgAttachmentProvider(AttachmentProvider):
     async def get_attachments(
         self,
         history: Sequence[Message],
-        soul: KimiAgentLoop,
+        agent_loop: KimiAgentLoop,
     ) -> list[Attachment]:
-        if _has_prefer_shell_rg_reminder(history) or not _has_shell_tool(soul):
+        if _has_prefer_shell_rg_reminder(history) or not _has_shell_tool(agent_loop):
             return []
 
         rg_path = find_existing_rg()
         if rg_path is None:
             return []
 
-        is_powershell = soul.runtime.environment.shell_name == "Windows PowerShell"
+        is_powershell = agent_loop.runtime.environment.shell_name == "Windows PowerShell"
         return [
             Attachment(
                 type="prefer_shell_rg",
@@ -39,8 +39,8 @@ class PreferShellRgAttachmentProvider(AttachmentProvider):
         ]
 
 
-def _has_shell_tool(soul: KimiAgentLoop) -> bool:
-    toolset = soul.agent.toolset
+def _has_shell_tool(agent_loop: KimiAgentLoop) -> bool:
+    toolset = agent_loop.agent.toolset
     find = getattr(toolset, "find", None)
     if callable(find):
         return find("Shell") is not None

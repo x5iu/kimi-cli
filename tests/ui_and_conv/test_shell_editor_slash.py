@@ -24,7 +24,7 @@ def _make_shell_app(runtime: Runtime, tmp_path: Path) -> SimpleNamespace:
         runtime=runtime,
     )
     soul = KimiAgentLoop(agent, context=Context(file_backend=tmp_path / "history.jsonl"))
-    return SimpleNamespace(soul=soul)
+    return SimpleNamespace(agent_loop=soul)
 
 
 async def test_editor_persists_to_runtime_config_file(

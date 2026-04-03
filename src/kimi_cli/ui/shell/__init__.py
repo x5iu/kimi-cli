@@ -51,18 +51,18 @@ from kimi_cli.utils.term import ensure_new_line, ensure_tty_sane
 
 
 class Shell:
-    def __init__(self, soul: AgentLoop, welcome_info: list[WelcomeInfoItem] | None = None):
-        self.agent_loop = soul
+    def __init__(self, agent_loop: AgentLoop, welcome_info: list[WelcomeInfoItem] | None = None):
+        self.agent_loop = agent_loop
         self._welcome_info = list(welcome_info or [])
         self._background_tasks: set[asyncio.Task[Any]] = set()
-        commands = [*soul.available_slash_commands, *shell_slash_registry.list_commands()]
+        commands = [*agent_loop.available_slash_commands, *shell_slash_registry.list_commands()]
         self._available_slash_commands: dict[str, SlashCommand[Any]] = {
             cmd.name: cmd for cmd in commands
         }
         self._slash_command_lookup: dict[str, SlashCommand[Any]] = self._index_slash_commands(
             commands
         )
-        """Shell-level slash commands + soul-level slash commands. Name to command mapping."""
+        """Shell-level slash commands + agent-loop-level slash commands. Name to command mapping."""
 
     @staticmethod
     def _index_slash_commands(
@@ -77,7 +77,7 @@ class Shell:
 
     @property
     def available_slash_commands(self) -> dict[str, SlashCommand[Any]]:
-        """Get all available slash commands, including shell-level and soul-level commands."""
+        """Get all available slash commands, including shell-level and agent-loop-level commands."""
         return self._available_slash_commands
 
     async def run(self, command: str | None = None) -> bool:
@@ -300,7 +300,7 @@ class Shell:
         pre_rendered_echo: str = "",
     ) -> bool:
         logger.info(
-            "Running interactive soul turn with user input: {user_input}",
+            "Running interactive agent loop turn with user input: {user_input}",
             user_input=user_input,
         )
         cancel_event = asyncio.Event()
@@ -458,7 +458,7 @@ class Shell:
         cancel_event: asyncio.Event,
         live_view: LiveView,
     ) -> bool:
-        logger.info("Running soul with user input: {user_input}", user_input=user_input)
+        logger.info("Running agent loop with user input: {user_input}", user_input=user_input)
 
         try:
             await run_agent_loop(
@@ -597,7 +597,7 @@ class Shell:
 
         command = shell_slash_registry.find_command(command_call.name)
         if command is None:
-            # the input is a soul-level slash command call
+            # the input is an agent-loop-level slash command call
             await self.run_agent_loop_command(command_call.raw_input)
             return
 
@@ -625,7 +625,7 @@ class Shell:
 
     async def run_agent_loop_command(self, user_input: str | list[ContentPart]) -> bool:
         """
-        Run the soul and handle any known exceptions.
+        Run the agent loop and handle any known exceptions.
 
         Returns:
             bool: Whether the run is successful.

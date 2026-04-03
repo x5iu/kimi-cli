@@ -12,7 +12,7 @@ from kimi_cli.constant import VERSION
 class InfoData(TypedDict):
     kimi_cli_version: str
     agent_spec_versions: list[str]
-    wire_protocol_version: str
+    bus_protocol_version: str
     python_version: str
 
 
@@ -23,7 +23,7 @@ def _collect_info() -> InfoData:
     return {
         "kimi_cli_version": VERSION,
         "agent_spec_versions": [str(version) for version in SUPPORTED_AGENT_SPEC_VERSIONS],
-        "wire_protocol_version": BUS_PROTOCOL_VERSION,
+        "bus_protocol_version": BUS_PROTOCOL_VERSION,
         "python_version": platform.python_version(),
     }
 
@@ -39,7 +39,7 @@ def _emit_info(json_output: bool) -> None:
     lines = [
         f"kimi-cli version: {info['kimi_cli_version']}",
         f"agent spec versions: {agent_versions_text}",
-        f"wire protocol: {info['wire_protocol_version']}",
+        f"bus protocol: {info['bus_protocol_version']}",
         f"python version: {info['python_version']}",
     ]
     for line in lines:

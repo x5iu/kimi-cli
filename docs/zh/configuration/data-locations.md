@@ -20,7 +20,7 @@ Kimi Code CLI 将所有数据存储在用户主目录下的 `~/.kimi/` 目录中
 │   └── <work-dir-hash>/
 │       └── <session-id>/
 │           ├── context.jsonl
-│           ├── wire.jsonl
+│           ├── events.jsonl
 │           └── state.json
 ├── user-history/         # 输入历史
 │   └── <work-dir-hash>.jsonl
@@ -79,7 +79,7 @@ MCP 服务器配置文件，存储通过 `kimi mcp add` 命令添加的 MCP 服�
 
 Kimi Code CLI 使用此文件在 `--continue` 或 `--session` 时恢复会话上下文。
 
-### `wire.jsonl`
+### `events.jsonl`
 
 EventBus 消息记录文件，以 JSONL 格式存储会话中的 EventBus 事件。用于会话回放和提取会话标题。
 

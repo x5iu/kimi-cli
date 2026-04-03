@@ -18,7 +18,7 @@ kimi info [--json]
 |-------|-------------|
 | `kimi_cli_version` | Kimi Code CLI version number |
 | `agent_spec_versions` | List of supported agent spec versions |
-| `wire_protocol_version` | EventBus protocol version |
+| `bus_protocol_version` | EventBus protocol version |
 | `python_version` | Python runtime version |
 
 ## Examples
@@ -29,7 +29,7 @@ kimi info [--json]
 $ kimi info
 kimi-cli version: 1.18.0
 agent spec versions: 1
-wire protocol: 1.4
+bus protocol: 1.4
 python version: 3.13.1
 ```
 
@@ -37,5 +37,5 @@ python version: 3.13.1
 
 ```sh
 $ kimi info --json
-{"kimi_cli_version": "1.18.0", "agent_spec_versions": ["1"], "wire_protocol_version": "1.4", "python_version": "3.13.1"}
+{"kimi_cli_version": "1.18.0", "agent_spec_versions": ["1"], "bus_protocol_version": "1.4", "python_version": "3.13.1"}
 ```

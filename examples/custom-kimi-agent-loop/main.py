@@ -83,7 +83,7 @@ async def main():
     toolset = SimpleToolset()
     toolset += MyBashTool()
 
-    soul = await HakimiAgentLoop.create(
+    agent_loop = await HakimiAgentLoop.create(
         llm=create_llm(
             LLMProvider(
                 type="kimi",
@@ -99,7 +99,7 @@ async def main():
         system_prompt="You are Hakimi, an AI assistant that helps users with various tasks.",
         toolset=toolset,
     )
-    ui = Shell(soul)
+    ui = Shell(agent_loop)
     await ui.run()
 
 

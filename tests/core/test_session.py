@@ -38,10 +38,10 @@ def work_dir(tmp_path: Path) -> KaosPath:
 
 
 def _write_wire_turn(session_dir: Path, text: str):
-    event_log = session_dir / "wire.jsonl"
+    event_log = session_dir / "events.jsonl"
     event_log.parent.mkdir(parents=True, exist_ok=True)
     metadata = EventLogMetadata(protocol_version=BUS_PROTOCOL_VERSION)
-    record = BusMessageRecord.from_wire_message(
+    record = BusMessageRecord.from_bus_message(
         TurnBegin(user_input=[TextPart(text=text)]),
         timestamp=time.time(),
     )
@@ -51,7 +51,7 @@ def _write_wire_turn(session_dir: Path, text: str):
 
 
 def _write_wire_metadata(session_dir: Path):
-    event_log = session_dir / "wire.jsonl"
+    event_log = session_dir / "events.jsonl"
     event_log.parent.mkdir(parents=True, exist_ok=True)
     metadata = EventLogMetadata(protocol_version=BUS_PROTOCOL_VERSION)
     event_log.write_text(

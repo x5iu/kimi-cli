@@ -54,7 +54,7 @@ def work_dir(tmp_path: Path) -> KaosPath:
 
 @pytest.fixture
 def mock_shell(work_dir: KaosPath) -> Mock:
-    """Create a mock Shell whose soul passes the KimiAgentLoop isinstance check.
+    """Create a mock Shell whose agent_loop passes the KimiAgentLoop isinstance check.
 
     The mock session is treated as non-empty so that /new does not attempt
     to delete it (delete would fail on a plain Mock because it is not awaitable).
@@ -67,7 +67,7 @@ def mock_shell(work_dir: KaosPath) -> Mock:
     mock_soul.runtime.session.is_empty.return_value = False
 
     shell = Mock()
-    shell.soul = mock_soul
+    shell.agent_loop = mock_soul
     return shell
 
 
@@ -89,8 +89,8 @@ class TestNewCommandRegistration:
         """/new should NOT be available in shell mode (Ctrl-X toggle)."""
         assert shell_mode_registry.find_command("new") is None
 
-    def test_not_in_soul_registry(self) -> None:
-        """/new should NOT appear in soul-level commands (Web UI visibility)."""
+    def test_not_in_agent_loop_registry(self) -> None:
+        """/new should NOT appear in agent-loop-level commands (Web UI visibility)."""
         from kimi_cli.loop.slash import registry as agent_loop_slash_registry
 
         assert agent_loop_slash_registry.find_command("new") is None
@@ -149,10 +149,10 @@ class TestNewCommandBehavior:
 
         assert len(set(ids)) == 3
 
-    async def test_returns_early_without_kimi_soul(self) -> None:
-        """When soul is not a KimiAgentLoop, the command should silently return."""
+    async def test_returns_early_without_kimi_agent_loop(self) -> None:
+        """When agent_loop is not a KimiAgentLoop, the command should silently return."""
         shell = Mock()
-        shell.soul = Mock()  # plain Mock, not spec=KimiAgentLoop
+        shell.agent_loop = Mock()  # plain Mock, not spec=KimiAgentLoop
 
         cmd = shell_slash_registry.find_command("new")
         assert cmd is not None
@@ -190,7 +190,7 @@ class TestNewCommandSessionCleanup:
         mock_soul = Mock(spec=KimiAgentLoop)
         mock_soul.runtime.session = empty_session
         shell = Mock()
-        shell.soul = mock_soul
+        shell.agent_loop = mock_soul
 
         cmd = shell_slash_registry.find_command("new")
         assert cmd is not None
@@ -214,7 +214,7 @@ class TestNewCommandSessionCleanup:
         mock_soul = Mock(spec=KimiAgentLoop)
         mock_soul.runtime.session = session_with_content
         shell = Mock()
-        shell.soul = mock_soul
+        shell.agent_loop = mock_soul
 
         cmd = shell_slash_registry.find_command("new")
         assert cmd is not None
@@ -240,7 +240,7 @@ class TestNewCommandSessionCleanup:
         mock_soul = Mock(spec=KimiAgentLoop)
         mock_soul.runtime.session = session_a
         shell = Mock()
-        shell.soul = mock_soul
+        shell.agent_loop = mock_soul
 
         # First /new: A is empty → cleaned up, B created
         with pytest.raises(Reload) as exc_info:
@@ -275,7 +275,7 @@ class TestTaskCommand:
         mock_soul = Mock(spec=KimiAgentLoop)
         mock_soul.runtime = runtime
         shell = Mock()
-        shell.soul = mock_soul
+        shell.agent_loop = mock_soul
 
         printed: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
         monkeypatch.setattr(

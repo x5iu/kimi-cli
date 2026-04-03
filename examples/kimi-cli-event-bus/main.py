@@ -16,12 +16,12 @@ async def main():
     async for msg in instance.run(
         user_input=user_input,
         cancel_event=asyncio.Event(),
-        merge_wire_messages=True,
+        merge_bus_messages=True,
     ):
         print(msg)
 
     # print the last assistant message
-    print(instance.soul.context.history[-1])
+    print(instance.agent_loop.context.history[-1])
 
 
 if __name__ == "__main__":

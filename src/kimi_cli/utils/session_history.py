@@ -10,7 +10,7 @@ from kimi_cli.utils.turns import is_real_user_turn_start_record
 
 
 def read_bus_lines(event_log: Path) -> list[str]:
-    """Read and parse ``wire.jsonl`` into JSON-RPC event strings."""
+    """Read and parse ``events.jsonl`` into JSON-RPC event strings."""
     result: list[str] = []
     with open(event_log, encoding="utf-8") as f:
         for line in f:

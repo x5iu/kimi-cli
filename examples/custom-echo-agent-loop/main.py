@@ -42,6 +42,6 @@ class EchoAgentLoop:
 
 
 if __name__ == "__main__":
-    soul = EchoAgentLoop()
-    ui = Shell(soul)
+    agent_loop = EchoAgentLoop()
+    ui = Shell(agent_loop)
     asyncio.run(ui.run())

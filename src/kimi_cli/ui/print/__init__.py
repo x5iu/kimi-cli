@@ -36,7 +36,7 @@ class Print:
     An app implementation that prints the agent behavior to the console.
 
     Args:
-        soul (AgentLoop): The soul to run.
+        agent_loop (AgentLoop): The agent loop to run.
         input_format (InputFormat): The input format to use.
         output_format (OutputFormat): The output format to use.
         context_file (Path): The file to store the context.
@@ -45,14 +45,14 @@ class Print:
 
     def __init__(
         self,
-        soul: AgentLoop,
+        agent_loop: AgentLoop,
         input_format: InputFormat,
         output_format: OutputFormat,
         context_file: Path,
         *,
         final_only: bool = False,
     ):
-        self.agent_loop = soul
+        self.agent_loop = agent_loop
         self.input_format: InputFormat = input_format
         self.output_format: OutputFormat = output_format
         self.context_file = context_file

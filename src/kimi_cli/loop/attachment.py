@@ -26,7 +26,7 @@ class AttachmentProvider(ABC):
     """Base class for attachment providers.
 
     Called before each LLM step. Implementations handle their own throttling.
-    Providers can access all runtime state via the ``soul`` parameter
+    Providers can access all runtime state via the ``agent_loop`` parameter
     (context_usage, runtime, config, etc.).
     """
 
@@ -34,7 +34,7 @@ class AttachmentProvider(ABC):
     async def get_attachments(
         self,
         history: Sequence[Message],
-        soul: KimiAgentLoop,
+        agent_loop: KimiAgentLoop,
     ) -> list[Attachment]: ...
 
 

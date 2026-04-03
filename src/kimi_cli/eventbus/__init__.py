@@ -17,7 +17,7 @@ BusMessageQueue = BroadcastQueue[BusMessage]
 
 class EventBus:
     """
-    A spmc channel for communication between the soul and the UI during a soul run.
+    A spmc channel for communication between the agent loop and the UI during a run.
     """
 
     def __init__(self, *, file_backend: EventLog | None = None):
@@ -50,7 +50,7 @@ class EventBus:
 
     def shutdown(self) -> None:
         self.producer_side.flush()
-        logger.debug("Shutting down wire")
+        logger.debug("Shutting down event bus")
         self._raw_queue.shutdown()
         self._merged_queue.shutdown()
 
@@ -65,7 +65,7 @@ class EventBus:
 
 class EventBusProducer:
     """
-    The soul side of a `EventBus`.
+    The producer side of an `EventBus`.
     """
 
     def __init__(self, raw_queue: BusMessageQueue, merged_queue: BusMessageQueue):
@@ -75,13 +75,13 @@ class EventBusProducer:
 
     def send(self, msg: BusMessage) -> None:
         if not isinstance(msg, ContentPart | ToolCallPart):
-            logger.debug("Sending wire message: {msg}", msg=msg)
+            logger.debug("Sending bus message: {msg}", msg=msg)
 
         # send raw message
         try:
             self._raw_queue.publish_nowait(msg)
         except QueueShutDown:
-            logger.info("Failed to send raw wire message, queue is shut down: {msg}", msg=msg)
+            logger.info("Failed to send raw bus message, queue is shut down: {msg}", msg=msg)
 
         # merge and send merged message
         match msg:
@@ -109,7 +109,7 @@ class EventBusProducer:
         try:
             self._merged_queue.publish_nowait(msg)
         except QueueShutDown:
-            logger.info("Failed to send merged wire message, queue is shut down: {msg}", msg=msg)
+            logger.info("Failed to send merged bus message, queue is shut down: {msg}", msg=msg)
 
 
 class EventBusConsumer:
@@ -123,13 +123,13 @@ class EventBusConsumer:
     async def receive(self) -> BusMessage:
         msg = await self._queue.get()
         if not isinstance(msg, ContentPart | ToolCallPart):
-            logger.debug("Receiving wire message: {msg}", msg=msg)
+            logger.debug("Receiving bus message: {msg}", msg=msg)
         return msg
 
 
 class _EventBusRecorder:
     def __init__(self, event_log: EventLog, queue: Queue[BusMessage]) -> None:
-        self._wire_file = event_log
+        self._event_log = event_log
         self._task = asyncio.create_task(self._consume_loop(queue))
 
     async def join(self) -> None:
@@ -145,4 +145,4 @@ class _EventBusRecorder:
                 break
 
     async def _record(self, msg: BusMessage) -> None:
-        await self._wire_file.append_message(msg)
+        await self._event_log.append_message(msg)

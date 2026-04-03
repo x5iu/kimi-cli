@@ -31,35 +31,35 @@ registry = SlashCommandRegistry[AgentLoopSlashCmdFunc]()
 
 
 @registry.command
-async def init(soul: KimiAgentLoop, args: str):
+async def init(agent_loop: KimiAgentLoop, args: str):
     """Analyze the codebase and generate an `AGENTS.md` file"""
     from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 
     with tempfile.TemporaryDirectory() as temp_dir:
         tmp_context = Context(file_backend=Path(temp_dir) / "context.jsonl")
-        tmp_soul = KimiAgentLoop(soul.agent, context=tmp_context)
-        await tmp_soul.run(prompts.INIT)
+        tmp_agent_loop = KimiAgentLoop(agent_loop.agent, context=tmp_context)
+        await tmp_agent_loop.run(prompts.INIT)
 
-    agents_md = await load_project_agents_md(soul.runtime.builtin_args.KIMI_WORK_DIR)
+    agents_md = await load_project_agents_md(agent_loop.runtime.builtin_args.KIMI_WORK_DIR)
     system_message = system(
         "The user just ran `/init` slash command. "
         "The system has analyzed the codebase and generated an `AGENTS.md` file. "
         f"Latest AGENTS.md file content:\n{agents_md}"
     )
-    await soul.context.append_message(internal_user_message([system_message]))
+    await agent_loop.context.append_message(internal_user_message([system_message]))
 
 
 @registry.command
-async def compact(soul: KimiAgentLoop, args: str):
+async def compact(agent_loop: KimiAgentLoop, args: str):
     """Compact the context (optionally with a custom focus, e.g. /compact keep db discussions)"""
-    if soul.context.n_checkpoints == 0:
+    if agent_loop.context.n_checkpoints == 0:
         bus_send(TextPart(text="The context is empty."))
         return
 
     logger.info("Running `/compact`")
-    await soul.compact_context(custom_instruction=args.strip())
+    await agent_loop.compact_context(custom_instruction=args.strip())
     bus_send(TextPart(text="The context has been compacted."))
-    snap = soul.status
+    snap = agent_loop.status
     bus_send(
         StatusUpdate(
             context_usage=snap.context_usage,
@@ -70,12 +70,12 @@ async def compact(soul: KimiAgentLoop, args: str):
 
 
 @registry.command(aliases=["reset"])
-async def clear(soul: KimiAgentLoop, args: str):
+async def clear(agent_loop: KimiAgentLoop, args: str):
     """Clear the context"""
     logger.info("Running `/clear`")
-    await soul.context.clear()
+    await agent_loop.context.clear()
     bus_send(TextPart(text="The context has been cleared."))
-    snap = soul.status
+    snap = agent_loop.status
     bus_send(
         StatusUpdate(
             context_usage=snap.context_usage,
@@ -86,14 +86,14 @@ async def clear(soul: KimiAgentLoop, args: str):
 
 
 @registry.command
-async def undo(soul: KimiAgentLoop, args: str):
+async def undo(agent_loop: KimiAgentLoop, args: str):
     """Undo the last turn (remove it from context)"""
-    if not await soul.undo_last_turn():
+    if not await agent_loop.undo_last_turn():
         bus_send(TextPart(text="Nothing to undo."))
         return
 
     bus_send(TextPart(text="Last turn has been undone."))
-    snap = soul.status
+    snap = agent_loop.status
     bus_send(
         StatusUpdate(
             context_usage=snap.context_usage,
@@ -104,18 +104,18 @@ async def undo(soul: KimiAgentLoop, args: str):
 
 
 @registry.command
-async def yolo(soul: KimiAgentLoop, args: str):
+async def yolo(agent_loop: KimiAgentLoop, args: str):
     """Toggle YOLO mode (auto-approve all actions)"""
-    if soul.runtime.approval.is_yolo():
-        soul.runtime.approval.set_yolo(False)
+    if agent_loop.runtime.approval.is_yolo():
+        agent_loop.runtime.approval.set_yolo(False)
         bus_send(TextPart(text="You only die once! Actions will require approval."))
     else:
-        soul.runtime.approval.set_yolo(True)
+        agent_loop.runtime.approval.set_yolo(True)
         bus_send(TextPart(text="You only live once! All actions will be auto-approved."))
 
 
 @registry.command(name="add-dir")
-async def add_dir(soul: KimiAgentLoop, args: str):
+async def add_dir(agent_loop: KimiAgentLoop, args: str):
     """Add a directory to the workspace. Usage: /add-dir <path>. Run without args to list added dirs"""  # noqa: E501
     from kaos.path import KaosPath
 
@@ -123,11 +123,11 @@ async def add_dir(soul: KimiAgentLoop, args: str):
 
     args = sanitize_cli_path(args)
     if not args:
-        if not soul.runtime.additional_dirs:
+        if not agent_loop.runtime.additional_dirs:
             bus_send(TextPart(text="No additional directories. Usage: /add-dir <path>"))
         else:
             lines = ["Additional directories:"]
-            for d in soul.runtime.additional_dirs:
+            for d in agent_loop.runtime.additional_dirs:
                 lines.append(f"  - {d}")
             bus_send(TextPart(text="\n".join(lines)))
         return
@@ -142,18 +142,18 @@ async def add_dir(soul: KimiAgentLoop, args: str):
         return
 
     # Check if already added (exact match)
-    if path in soul.runtime.additional_dirs:
+    if path in agent_loop.runtime.additional_dirs:
         bus_send(TextPart(text=f"Directory already in workspace: {path}"))
         return
 
     # Check if it's within the work_dir (already accessible)
-    work_dir = soul.runtime.builtin_args.KIMI_WORK_DIR
+    work_dir = agent_loop.runtime.builtin_args.KIMI_WORK_DIR
     if is_within_directory(path, work_dir):
         bus_send(TextPart(text=f"Directory is already within the working directory: {path}"))
         return
 
     # Check if it's within an already-added additional directory (redundant)
-    for existing in soul.runtime.additional_dirs:
+    for existing in agent_loop.runtime.additional_dirs:
         if is_within_directory(path, existing):
             bus_send(
                 TextPart(
@@ -170,11 +170,11 @@ async def add_dir(soul: KimiAgentLoop, args: str):
         return
 
     # Add the directory (only after readability is confirmed)
-    soul.runtime.additional_dirs.append(path)
+    agent_loop.runtime.additional_dirs.append(path)
 
     # Persist to session state
-    soul.runtime.session.state.additional_dirs.append(str(path))
-    soul.runtime.session.save_state()
+    agent_loop.runtime.session.state.additional_dirs.append(str(path))
+    agent_loop.runtime.session.save_state()
 
     # Inject a system message to inform the LLM about the new directory
     system_message = system(
@@ -183,7 +183,7 @@ async def add_dir(soul: KimiAgentLoop, args: str):
         "You can now read, write, search, and glob files in this directory "
         "as if it were part of the working directory."
     )
-    await soul.context.append_message(internal_user_message([system_message]))
+    await agent_loop.context.append_message(internal_user_message([system_message]))
 
     bus_send(TextPart(text=f"Added directory to workspace: {path}"))
     logger.info("Added additional directory: {path}", path=path)

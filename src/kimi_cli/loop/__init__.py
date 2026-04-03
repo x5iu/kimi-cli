@@ -96,17 +96,17 @@ class StatusSnapshot:
 class AgentLoop(Protocol):
     @property
     def name(self) -> str:
-        """The name of the soul."""
+        """The name of the agent loop."""
         ...
 
     @property
     def model_name(self) -> str:
-        """The name of the LLM model used by the soul. Empty string if LLM is not set."""
+        """The name of the LLM model used by the agent loop. Empty string if LLM is not set."""
         ...
 
     @property
     def model_capabilities(self) -> set[ModelCapability] | None:
-        """The capabilities of the LLM model used by the soul. None if LLM is not set."""
+        """The capabilities of the LLM model used by the agent loop. None if LLM is not set."""
         ...
 
     @property
@@ -119,12 +119,12 @@ class AgentLoop(Protocol):
 
     @property
     def status(self) -> StatusSnapshot:
-        """The current status of the soul. The returned value is immutable."""
+        """The current status of the agent loop. The returned value is immutable."""
         ...
 
     @property
     def available_slash_commands(self) -> list[SlashCommand[Any]]:
-        """List of available slash commands supported by the soul."""
+        """List of available slash commands supported by the agent loop."""
         ...
 
     async def run(self, user_input: str | list[ContentPart]):
@@ -154,14 +154,14 @@ class RunCancelled(Exception):
 
 
 async def run_agent_loop(
-    soul: AgentLoop,
+    agent_loop: AgentLoop,
     user_input: str | list[ContentPart],
     ui_loop_fn: UILoopFn,
     cancel_event: asyncio.Event,
     event_log: EventLog | None = None,
 ) -> None:
     """
-    Run the soul with the given user input, connecting it to the UI loop with a `EventBus`.
+    Run the agent loop with the given user input, connecting it to the UI loop with an `EventBus`.
 
     `cancel_event` is a outside handle that can be used to cancel the run. When the
     event is set, the run will be gracefully stopped and a `RunCancelled` will be raised.
@@ -173,14 +173,14 @@ async def run_agent_loop(
         MaxStepsReached: When the maximum number of steps is reached.
         RunCancelled: When the run is cancelled by the cancel event.
     """
-    wire = EventBus(file_backend=event_log)
-    bus_token = _current_event_bus.set(wire)
+    event_bus = EventBus(file_backend=event_log)
+    bus_token = _current_event_bus.set(event_bus)
 
     logger.debug("Starting UI loop with function: {ui_loop_fn}", ui_loop_fn=ui_loop_fn)
-    ui_task = asyncio.create_task(ui_loop_fn(wire))
+    ui_task = asyncio.create_task(ui_loop_fn(event_bus))
 
-    logger.debug("Starting soul run")
-    loop_task = asyncio.create_task(soul.run(user_input))
+    logger.debug("Starting agent loop run")
+    loop_task = asyncio.create_task(agent_loop.run(user_input))
 
     cancel_event_task = asyncio.create_task(cancel_event.wait())
     await asyncio.wait(
@@ -204,9 +204,9 @@ async def run_agent_loop(
             loop_task.result()  # this will raise if any exception was raised in the run task
     finally:
         logger.debug("Shutting down the UI loop")
-        # shutting down the wire should break the UI loop
-        wire.shutdown()
-        await wire.join()
+        # shutting down the event bus should break the UI loop
+        event_bus.shutdown()
+        await event_bus.join()
         try:
             await asyncio.wait_for(ui_task, timeout=0.5)
         except QueueShutDown:
@@ -218,12 +218,12 @@ async def run_agent_loop(
             _current_event_bus.reset(bus_token)
 
 
-_current_event_bus = ContextVar[EventBus | None]("current_wire", default=None)
+_current_event_bus = ContextVar[EventBus | None]("current_event_bus", default=None)
 
 
 def get_event_bus_or_none() -> EventBus | None:
     """
-    Get the current wire or None.
+    Get the current event bus or None.
     Expect to be not None when called from anywhere in the agent loop.
     """
     return _current_event_bus.get()
@@ -231,10 +231,10 @@ def get_event_bus_or_none() -> EventBus | None:
 
 def bus_send(msg: BusMessage) -> None:
     """
-    Send a wire message to the current wire.
-    Take this as `print` and `input` for souls.
-    Souls should always use this function to send wire messages.
+    Send a bus message to the current event bus.
+    Take this as `print` and `input` for agent loops.
+    Agent loops should always use this function to send bus messages.
     """
-    wire = get_event_bus_or_none()
-    assert wire is not None, "EventBus is expected to be set when soul is running"
-    wire.producer_side.send(msg)
+    event_bus = get_event_bus_or_none()
+    assert event_bus is not None, "EventBus is expected to be set when agent loop is running"
+    event_bus.producer_side.send(msg)

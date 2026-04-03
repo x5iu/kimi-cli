@@ -11,7 +11,7 @@ def serialize_bus_message(msg: BusMessage) -> dict[str, JsonType]:
     """
     Convert a `BusMessage` into a jsonifiable dict.
     """
-    envelope = BusMessageEnvelope.from_wire_message(msg)
+    envelope = BusMessageEnvelope.from_bus_message(msg)
     return envelope.model_dump(mode="json")
 
 
@@ -23,4 +23,4 @@ def deserialize_bus_message(data: dict[str, JsonType] | Any) -> BusMessage:
         ValueError: If the message type is unknown or the payload is invalid.
     """
     envelope = BusMessageEnvelope.model_validate(data)
-    return envelope.to_wire_message()
+    return envelope.to_bus_message()

@@ -20,7 +20,7 @@ Note: `KIMI_SHARE_DIR` only affects the storage location of the runtime data lis
 │   └── <work-dir-hash>/
 │       └── <session-id>/
 │           ├── context.jsonl
-│           ├── wire.jsonl
+│           ├── events.jsonl
 │           └── state.json
 ├── user-history/         # Input history
 │   └── <work-dir-hash>.jsonl
@@ -79,7 +79,7 @@ Context history file, stores the session's message history in JSON Lines (JSONL)
 
 Kimi Code CLI uses this file to restore session context when using `--continue` or `--session`.
 
-### `wire.jsonl`
+### `events.jsonl`
 
 EventBus message log file, stores EventBus events during the session in JSON Lines (JSONL) format. Used for session replay and extracting session titles.
 

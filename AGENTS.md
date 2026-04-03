@@ -57,7 +57,7 @@ shell UI, print execution mode, and MCP tool loading.
   archive metadata via `src/kimi_cli/loop/compaction_archive.py`, which powers the
   `RecallCompactedContext` tool, and preserves a snapshot of still-running background tasks.
 - **Approvals**: `src/kimi_cli/loop/approval.py` mediates user approvals for tool actions; the
-  soul forwards approval requests over `EventBus` for UI handling.
+  loop forwards approval requests over `EventBus` for UI handling.
 - **UI/EventBus**: `src/kimi_cli/loop/run_agent_loop` connects `KimiAgentLoop` to a `EventBus`
   (`src/kimi_cli/eventbus/`) so UI loops can stream events. Interactive frontends live in
   `src/kimi_cli/ui/` (shell/print).
@@ -90,7 +90,7 @@ shell UI, print execution mode, and MCP tool loading.
 - `src/kimi_cli/loop/context.py`: conversation history + checkpoints.
 - `src/kimi_cli/loop/toolset.py`: load tools, run tool calls, bridge to MCP tools.
 - `src/kimi_cli/ui/*`: shell/print frontends; they consume `EventBus` messages.
-- `src/kimi_cli/eventbus/*`: event types used between soul and UI (internal bus only).
+- `src/kimi_cli/eventbus/*`: event types used between the agent loop and UI (internal bus only).
 
 ## Repo map
 
@@ -103,16 +103,15 @@ shell UI, print execution mode, and MCP tool loading.
 - `src/kimi_cli/tools/`: built-in tools, including compacted-context recall and background task
   tools (no built-in subagent/Task tool — use `kimi-code-worker` skill instead)
 - `src/kimi_cli/ui/`: UI frontends (shell/print)
-- `src/kimi_cli/eventbus/`: EventBus event types (internal message bus between soul and UI)
+- `src/kimi_cli/eventbus/`: EventBus event types (internal message bus between the agent loop and UI)
 - `packages/llmkit/`, `packages/kaos/`: workspace deps
-  + Kosong is an LLM abstraction layer designed for modern AI agent applications.
+  + LLMKit is an LLM abstraction layer designed for modern AI agent applications.
     It unifies message structures, asynchronous tool orchestration, and pluggable
     chat providers so you can build agents with ease and avoid vendor lock-in.
   + PyKAOS is a lightweight Python library providing an abstraction layer for agents
     to interact with operating systems. File operations and command executions via KAOS
     can be easily switched between local environment and remote systems over SSH.
 - `tests/`, `tests_ai/`: test suites
-- `klips`: Kimi Code CLI Improvement Proposals
 
 ## Conventions and quality
 

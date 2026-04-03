@@ -255,11 +255,11 @@ class PsqlMode(Enum):
 
 
 # ============================================================================
-# PsqlSoul: SQL generation specialized AgentLoop
+# PsqlAgentLoop: SQL generation specialized AgentLoop
 # ============================================================================
 
 
-async def create_psql_soul(llm: LLM | None, conninfo: str) -> KimiAgentLoop:
+async def create_psql_agent_loop(llm: LLM | None, conninfo: str) -> KimiAgentLoop:
     """Create a KimiAgentLoop configured for PostgreSQL with ExecuteSql tool
     and standard kimi-cli tools."""
     from typing import cast
@@ -300,8 +300,8 @@ class PsqlShell:
     PROMPT_SYMBOL_AI = "✨"
     PROMPT_SYMBOL_PSQL = "$"
 
-    def __init__(self, soul: KimiAgentLoop, psql_process: PsqlProcess):
-        self.agent_loop = soul
+    def __init__(self, agent_loop: KimiAgentLoop, psql_process: PsqlProcess):
+        self.agent_loop = agent_loop
         self._psql_process = psql_process
         self._mode = PsqlMode.AI
         self._switch_requested = False
@@ -401,7 +401,7 @@ class PsqlShell:
         if user_input.lower() in ["exit", "quit", "\\q"]:
             raise KeyboardInterrupt
 
-        # Run soul with visualize (same as kimi-cli shell)
+        # Run agent loop with visualize (same as kimi-cli shell)
         cancel_event = asyncio.Event()
 
         try:
@@ -614,14 +614,14 @@ async def _run_async(
     llm = create_llm(provider, model)
 
     # Create AgentLoop with ExecuteSql tool (uses psycopg for read-only queries)
-    soul = await create_psql_soul(llm, conninfo_str)
+    agent_loop = await create_psql_agent_loop(llm, conninfo_str)
 
     # Start psql process (only for user's PSQL mode)
     psql_process = PsqlProcess(psql_args)
     psql_process.start()
 
     # Create and run shell
-    shell = PsqlShell(soul, psql_process)
+    shell = PsqlShell(agent_loop, psql_process)
     await shell.run()
 
 

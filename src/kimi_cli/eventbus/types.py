@@ -131,7 +131,7 @@ class NotificationNotice(BaseModel):
 
 class StatusUpdate(BaseModel):
     """
-    An update on the current status of the soul.
+    An update on the current status of the agent loop.
     None fields indicate no change from the previous status.
     """
 
@@ -184,7 +184,7 @@ class ApprovalRequest(BaseModel):
     action: str
     description: str
     display: list[DisplayBlock] = Field(default_factory=list[DisplayBlock])
-    """Defaults to an empty list for backwards-compatible wire.jsonl loading."""
+    """Defaults to an empty list for backwards-compatible events.jsonl loading."""
 
     # Note that the above fields are just a copy of `kimi_cli.loop.approval.Request`, but
     # we cannot directly use that class here because we want to avoid dependency from EventBus
@@ -401,7 +401,7 @@ type BusMessage = Event | Request
 
 _EVENT_TYPES = cast(tuple[type[Event], ...], flatten_union(Event))
 _REQUEST_TYPES = cast(tuple[type[Request], ...], flatten_union(Request))
-_WIRE_MESSAGE_TYPES = cast(tuple[type[BusMessage], ...], flatten_union(BusMessage))
+_BUS_MESSAGE_TYPES = cast(tuple[type[BusMessage], ...], flatten_union(BusMessage))
 
 
 def is_event(msg: Any) -> TypeGuard[Event]:
@@ -416,14 +416,14 @@ def is_request(msg: Any) -> TypeGuard[Request]:
 
 def is_bus_message(msg: Any) -> TypeGuard[BusMessage]:
     """Check if the message is a BusMessage."""
-    return isinstance(msg, _WIRE_MESSAGE_TYPES)
+    return isinstance(msg, _BUS_MESSAGE_TYPES)
 
 
-_NAME_TO_WIRE_MESSAGE_TYPE: dict[str, type[BusMessage]] = {
-    cls.__name__: cls for cls in _WIRE_MESSAGE_TYPES
+_NAME_TO_BUS_MESSAGE_TYPE: dict[str, type[BusMessage]] = {
+    cls.__name__: cls for cls in _BUS_MESSAGE_TYPES
 }
 # for backwards compatibility with EventBus v1
-_NAME_TO_WIRE_MESSAGE_TYPE["ApprovalRequestResolved"] = ApprovalResponse
+_NAME_TO_BUS_MESSAGE_TYPE["ApprovalRequestResolved"] = ApprovalResponse
 
 
 class BusMessageEnvelope(BaseModel):
@@ -431,28 +431,28 @@ class BusMessageEnvelope(BaseModel):
     payload: dict[str, JsonType]
 
     @classmethod
-    def from_wire_message(cls, msg: BusMessage) -> BusMessageEnvelope:
+    def from_bus_message(cls, msg: BusMessage) -> BusMessageEnvelope:
         typename: str | None = None
-        for name, typ in _NAME_TO_WIRE_MESSAGE_TYPE.items():
+        for name, typ in _NAME_TO_BUS_MESSAGE_TYPE.items():
             if issubclass(type(msg), typ):
                 typename = name
                 break
-        assert typename is not None, f"Unknown wire message type: {type(msg)}"
+        assert typename is not None, f"Unknown bus message type: {type(msg)}"
         return cls(
             type=typename,
             payload=msg.model_dump(mode="json"),
         )
 
-    def to_wire_message(self) -> BusMessage:
+    def to_bus_message(self) -> BusMessage:
         """
         Convert the envelope back into a `BusMessage`.
 
         Raises:
             ValueError: If the message type is unknown or the payload is invalid.
         """
-        msg_type = _NAME_TO_WIRE_MESSAGE_TYPE.get(self.type)
+        msg_type = _NAME_TO_BUS_MESSAGE_TYPE.get(self.type)
         if msg_type is None:
-            raise ValueError(f"Unknown wire message type: {self.type}")
+            raise ValueError(f"Unknown bus message type: {self.type}")
         return msg_type.model_validate(self.payload)
 
 

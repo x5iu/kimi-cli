@@ -37,17 +37,17 @@ class UsageRow:
 @registry.command(aliases=["/status"])
 async def usage(app: Shell, args: str):
     """Display API usage and quota information"""
-    assert isinstance(app.soul, KimiAgentLoop)
-    if app.soul.runtime.llm is None:
+    assert isinstance(app.agent_loop, KimiAgentLoop)
+    if app.agent_loop.runtime.llm is None:
         console.print("[red]LLM not set.[/red]")
         return
 
-    provider = app.soul.runtime.llm.provider_config
+    provider = app.agent_loop.runtime.llm.provider_config
     if provider is None:
         console.print("[red]LLM provider configuration not found.[/red]")
         return
 
-    usage_url = _usage_url(app.soul.runtime.llm.model_config)
+    usage_url = _usage_url(app.agent_loop.runtime.llm.model_config)
     if usage_url is None:
         console.print("[yellow]Usage is available on Kimi Code platform only.[/yellow]")
         return

@@ -175,21 +175,21 @@ class KimiCLI:
         context = Context(session.context_file)
         await context.restore()
 
-        soul = KimiAgentLoop(agent, context=context)
-        return KimiCLI(soul, runtime, env_overrides)
+        agent_loop = KimiAgentLoop(agent, context=context)
+        return KimiCLI(agent_loop, runtime, env_overrides)
 
     def __init__(
         self,
-        _soul: KimiAgentLoop,
+        _agent_loop: KimiAgentLoop,
         _runtime: Runtime,
         _env_overrides: dict[str, str],
     ) -> None:
-        self._agent_loop = _soul
+        self._agent_loop = _agent_loop
         self._runtime = _runtime
         self._env_overrides = _env_overrides
 
     @property
-    def soul(self) -> KimiAgentLoop:
+    def agent_loop(self) -> KimiAgentLoop:
         """Get the KimiAgentLoop instance."""
         return self._agent_loop
 
@@ -231,7 +231,7 @@ class KimiCLI:
         self,
         user_input: str | list[ContentPart],
         cancel_event: asyncio.Event,
-        merge_wire_messages: bool = False,
+        merge_bus_messages: bool = False,
     ) -> AsyncGenerator[BusMessage]:
         """
         Run the Kimi Code CLI instance without any UI and yield EventBus messages directly.
@@ -239,7 +239,7 @@ class KimiCLI:
         Args:
             user_input (str | list[ContentPart]): The user input to the agent.
             cancel_event (asyncio.Event): An event to cancel the run.
-            merge_wire_messages (bool): Whether to merge EventBus messages as much as possible.
+            merge_bus_messages (bool): Whether to merge EventBus messages as much as possible.
 
         Yields:
             BusMessage: The EventBus messages from the `KimiAgentLoop`.
@@ -252,11 +252,11 @@ class KimiCLI:
             RunCancelled: When the run is cancelled by the cancel event.
         """
         async with self._env():
-            wire_future = asyncio.Future[EventBusConsumer]()
+            bus_future = asyncio.Future[EventBusConsumer]()
             stop_ui_loop = asyncio.Event()
 
-            async def _ui_loop_fn(wire: EventBus) -> None:
-                wire_future.set_result(wire.ui_side(merge=merge_wire_messages))
+            async def _ui_loop_fn(event_bus: EventBus) -> None:
+                bus_future.set_result(event_bus.ui_side(merge=merge_bus_messages))
                 await stop_ui_loop.wait()
 
             loop_task = asyncio.create_task(
@@ -264,16 +264,16 @@ class KimiCLI:
             )
 
             try:
-                wire_ui = await wire_future
+                bus_consumer = await bus_future
                 while True:
-                    msg = await wire_ui.receive()
+                    msg = await bus_consumer.receive()
                     yield msg
             except QueueShutDown:
                 pass
             finally:
                 # stop consuming EventBus messages
                 stop_ui_loop.set()
-                # wait for the soul task to finish, or raise
+                # wait for the agent loop task to finish, or raise
                 await loop_task
 
     async def run_shell(self, command: str | None = None) -> bool:

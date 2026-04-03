@@ -158,10 +158,10 @@ class KimiToolset:
     ) -> tuple[bool, str | None]:
         if name in self._tool_dict:
             existing = self._tool_dict[name]
-            if not isinstance(existing, WireExternalTool):
+            if not isinstance(existing, BusExternalTool):
                 return False, "tool name conflicts with existing tool"
         try:
-            tool = WireExternalTool(
+            tool = BusExternalTool(
                 name=name,
                 description=description,
                 parameters=parameters,
@@ -436,7 +436,7 @@ class MCPTool[T: ClientTransport](CallableTool):
             raise
 
 
-class WireExternalTool(CallableTool):
+class BusExternalTool(CallableTool):
     def __init__(self, *, name: str, description: str, parameters: dict[str, Any]) -> None:
         super().__init__(
             name=name,
@@ -454,8 +454,8 @@ class WireExternalTool(CallableTool):
 
         from kimi_cli.loop import get_event_bus_or_none
 
-        wire = get_event_bus_or_none()
-        if wire is None:
+        bus = get_event_bus_or_none()
+        if bus is None:
             logger.error(
                 "EventBus is not available for external tool call: {tool_name}", tool_name=self.name
             )
@@ -465,7 +465,7 @@ class WireExternalTool(CallableTool):
             )
 
         external_tool_call = ToolCallRequest.from_tool_call(tool_call)
-        wire.producer_side.send(external_tool_call)
+        bus.producer_side.send(external_tool_call)
         try:
             return await external_tool_call.wait()
         except asyncio.CancelledError:

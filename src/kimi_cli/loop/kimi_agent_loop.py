@@ -97,8 +97,8 @@ from kimi_cli.utils.turns import is_real_user_turn_start_message
 
 if TYPE_CHECKING:
 
-    def type_check(soul: KimiAgentLoop):
-        _: AgentLoop = soul
+    def type_check(agent_loop: KimiAgentLoop):
+        _: AgentLoop = agent_loop
 
 
 SKILL_COMMAND_PREFIX = "skill:"
@@ -175,7 +175,7 @@ class _QueuedSteer:
 
 
 class KimiAgentLoop:
-    """The soul of Kimi Code CLI."""
+    """The agent loop of Kimi Code CLI."""
 
     def __init__(
         self,
@@ -184,7 +184,7 @@ class KimiAgentLoop:
         context: Context,
     ):
         """
-        Initialize the soul.
+        Initialize the agent loop.
 
         Args:
             agent (Agent): The agent to run.
@@ -224,7 +224,7 @@ class KimiAgentLoop:
 
         self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
 
-        # Bind tool state that depends on the live soul/context
+        # Bind tool state that depends on the live agent loop/context
         self._bind_approval_aware_tools()
         self._bind_context_recall_tools()
 
@@ -630,7 +630,9 @@ class KimiAgentLoop:
     def _make_skill_runner(
         self, skill: Skill
     ) -> Callable[[KimiAgentLoop, str], None | Awaitable[None]]:
-        async def _run_skill(soul: KimiAgentLoop, args: str, *, _skill: Skill = skill) -> None:
+        async def _run_skill(
+            agent_loop: KimiAgentLoop, args: str, *, _skill: Skill = skill
+        ) -> None:
             skill_text = await read_skill_text(_skill)
             if skill_text is None:
                 bus_send(
@@ -642,11 +644,11 @@ class KimiAgentLoop:
                 skill_text = f"{skill_text}\n\nUser request:\n{extra}"
             # Include non-text content parts (e.g. images) that were attached
             # to the slash command invocation.
-            extra_parts = list(soul._slash_command_content_parts)
+            extra_parts = list(agent_loop._slash_command_content_parts)
             content: str | list[ContentPart] = (
                 [TextPart(text=skill_text), *extra_parts] if extra_parts else skill_text
             )
-            await soul._turn(Message(role="user", content=content))
+            await agent_loop._turn(Message(role="user", content=content))
 
         _run_skill.__doc__ = skill.description
         return _run_skill
@@ -1194,8 +1196,8 @@ class KimiAgentLoop:
         if detection is None or not detection.has_question:
             return None
 
-        wire = get_event_bus_or_none()
-        if wire is None:
+        bus = get_event_bus_or_none()
+        if bus is None:
             return None
 
         assistant_reply_body = outcome.final_message.extract_text(sep="\n").strip()
@@ -1253,11 +1255,11 @@ class KimiAgentLoop:
                 if loading:
                     bus_send(MCPLoadingEnd())
 
-        async def _pipe_approval_to_wire():
+        async def _pipe_approval_to_bus():
             while True:
                 request = await self._approval.fetch_request()
-                # Here we decouple the wire approval request and the soul approval request.
-                wire_request = ApprovalRequest(
+                # Here we decouple the bus approval request and the loop approval request.
+                bus_request = ApprovalRequest(
                     id=request.id,
                     action=request.action,
                     description=request.description,
@@ -1265,12 +1267,12 @@ class KimiAgentLoop:
                     tool_call_id=request.tool_call_id,
                     display=request.display,
                 )
-                bus_send(wire_request)
-                # We wait for the request to be resolved over the wire, which means that,
-                # for each soul, we will have only one approval request waiting on the wire
-                # at a time. However, be aware that subagents (which have their own souls) may
-                # also send approval requests to the root wire.
-                resp = await wire_request.wait()
+                bus_send(bus_request)
+                # We wait for the request to be resolved over the bus, which means that,
+                # for each agent loop, we will have only one approval request waiting on the
+                # bus at a time. However, be aware that subagents (which have their own loops)
+                # may also send approval requests to the root bus.
+                resp = await bus_request.wait()
                 self._approval.resolve_request(request.id, resp)
                 bus_send(ApprovalResponse(request_id=request.id, response=resp))
 
@@ -1281,7 +1283,7 @@ class KimiAgentLoop:
                 raise MaxStepsReached(self._loop_control.max_steps_per_turn)
 
             bus_send(StepBegin(n=step_no))
-            approval_task = asyncio.create_task(_pipe_approval_to_wire())
+            approval_task = asyncio.create_task(_pipe_approval_to_bus())
             step_outcome: StepOutcome | None = None
             try:
                 if await self._consume_ready_skill_reminder(skill_reminder):
@@ -1326,7 +1328,7 @@ class KimiAgentLoop:
                 # break the agent loop
                 raise
             finally:
-                approval_task.cancel()  # stop piping approval requests to the wire
+                approval_task.cancel()  # stop piping approval requests to the bus
                 with suppress(asyncio.CancelledError):
                     try:
                         await approval_task

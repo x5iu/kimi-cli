@@ -40,11 +40,11 @@ queued for execution after the current turn ends (they are async).
 SKILL_PREFIX = "skill:"
 
 
-def ensure_kimi_soul(app: Shell) -> KimiAgentLoop | None:
-    if not isinstance(app.soul, KimiAgentLoop):
+def ensure_kimi_agent_loop(app: Shell) -> KimiAgentLoop | None:
+    if not isinstance(app.agent_loop, KimiAgentLoop):
         console.print("[red]KimiAgentLoop required[/red]")
         return None
-    return app.soul
+    return app.agent_loop
 
 
 @registry.command(aliases=["quit"])
@@ -152,7 +152,7 @@ async def model(app: Shell, args: str):
     from kimi_cli.llm import derive_model_capabilities
     from kimi_cli.platforms.registry import get_platform_name_for_provider, refresh_managed_models
 
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
     config = soul.runtime.config
@@ -275,7 +275,7 @@ async def editor(app: Shell, args: str):
     """Set default external editor for Ctrl-O"""
     from kimi_cli.utils.editor import get_editor_command
 
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
     config = soul.runtime.config
@@ -381,7 +381,7 @@ def feedback(app: Shell, args: str):
 @registry.command(aliases=["reset"])
 async def clear(app: Shell, args: str):
     """Clear the context"""
-    if ensure_kimi_soul(app) is None:
+    if ensure_kimi_agent_loop(app) is None:
         return
     await app.run_agent_loop_command("/clear")
     raise Reload()
@@ -390,7 +390,7 @@ async def clear(app: Shell, args: str):
 @registry.command
 async def undo(app: Shell, args: str):
     """Undo the last turn"""
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
     if soul.context.last_turn_checkpoint_id is None:
@@ -403,7 +403,7 @@ async def undo(app: Shell, args: str):
 @registry.command
 async def new(app: Shell, args: str):
     """Start a new session"""
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
     current_session = soul.runtime.session
@@ -421,7 +421,7 @@ async def new(app: Shell, args: str):
 @registry.command(name="sessions", aliases=["resume"])
 async def list_sessions(app: Shell, args: str):
     """List sessions and resume optionally"""
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
 
@@ -466,7 +466,7 @@ async def list_sessions(app: Shell, args: str):
 @shell_mode_registry.command(name="task")
 def task(app: Shell, args: str):
     """List or inspect background tasks (usage: /task [all|<task_id>])"""
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
     arg = args.strip()
@@ -497,7 +497,7 @@ async def mcp(app: Shell, args: str):
     from kimi_cli.loop.toolset import KimiToolset
     from kimi_cli.utils.rich.columns import BulletColumns
 
-    soul = ensure_kimi_soul(app)
+    soul = ensure_kimi_agent_loop(app)
     if soul is None:
         return
     toolset = soul.agent.toolset

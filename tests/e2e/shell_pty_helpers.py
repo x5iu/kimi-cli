@@ -267,7 +267,7 @@ def find_session_dir(home_dir: Path, work_dir: Path) -> Path:
 
 def find_tool_result_output(home_dir: Path, work_dir: Path, tool_call_id: str) -> Any:
     session_dir = find_session_dir(home_dir, work_dir)
-    wire_path = session_dir / "wire.jsonl"
+    wire_path = session_dir / "events.jsonl"
     with wire_path.open(encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.strip()
@@ -295,7 +295,7 @@ def find_tool_result_output(home_dir: Path, work_dir: Path, tool_call_id: str) -
 
 def list_turn_begin_inputs(home_dir: Path, work_dir: Path) -> list[str]:
     session_dir = find_session_dir(home_dir, work_dir)
-    wire_path = session_dir / "wire.jsonl"
+    wire_path = session_dir / "events.jsonl"
     inputs: list[str] = []
     with wire_path.open(encoding="utf-8") as handle:
         for raw_line in handle:
@@ -328,7 +328,7 @@ def list_turn_begin_inputs(home_dir: Path, work_dir: Path) -> list[str]:
 
 def count_wire_messages(home_dir: Path, work_dir: Path, message_type: str) -> int:
     session_dir = find_session_dir(home_dir, work_dir)
-    wire_path = session_dir / "wire.jsonl"
+    wire_path = session_dir / "events.jsonl"
     count = 0
     with wire_path.open(encoding="utf-8") as handle:
         for raw_line in handle:
