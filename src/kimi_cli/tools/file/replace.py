@@ -1,3 +1,4 @@
+import difflib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -394,12 +395,66 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
         result_lines.extend(original_lines[source_index:])
         return "".join(result_lines)
 
+    @staticmethod
+    def _fuzzy_match_context(content: str, needle: str) -> str:
+        """Find the closest fuzzy match for *needle* in *content* and return a
+        diff-like context string showing where the closest match lives."""
+        content_lines = content.splitlines(keepends=True)
+        needle_lines = needle.splitlines(keepends=True)
+
+        best_ratio = 0.0
+        best_start = 0
+        best_size = len(needle_lines)
+        window = max(len(needle_lines), 1)
+
+        for start in range(max(len(content_lines) - window + 1, 1)):
+            candidate = content_lines[start : start + window]
+            ratio = difflib.SequenceMatcher(
+                None, "".join(candidate), needle
+            ).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_start = start
+                best_size = window
+
+        if best_ratio < 0.4:
+            return ""
+
+        # Show surrounding context (3 lines before/after)
+        ctx_before = max(best_start - 3, 0)
+        ctx_after = min(best_start + best_size + 3, len(content_lines))
+        context_block = content_lines[ctx_before:ctx_after]
+
+        closest_text = "".join(content_lines[best_start : best_start + best_size])
+        diff = difflib.unified_diff(
+            needle.splitlines(keepends=True),
+            closest_text.splitlines(keepends=True),
+            fromfile="expected",
+            tofile="found (closest match)",
+            lineterm="",
+        )
+        diff_str = "\n".join(diff)
+
+        lines_info: list[str] = []
+        lines_info.append(
+            f"\nClosest match (similarity {best_ratio:.0%}) "
+            f"near line {best_start + 1}:"
+        )
+        if diff_str:
+            lines_info.append(diff_str)
+        lines_info.append(f"\nSurrounding context (lines {ctx_before + 1}-{ctx_after}):")
+        for i, line in enumerate(context_block, start=ctx_before + 1):
+            lines_info.append(f"  {i:>4} | {line.rstrip()}")
+        return "\n".join(lines_info)
+
     def _apply_operation(self, content: str, op: EditOperation, *, index: int) -> str:
         if isinstance(op, ReplaceOp):
             if op.old not in content:
+                hint = self._fuzzy_match_context(content, op.old)
                 raise _EditError(
                     "No replacements were made. "
                     f"Replace operation {index} could not find the target string."
+                    + (hint if hint else "")
                 )
             if op.replace_all:
                 return content.replace(op.old, op.new)
@@ -413,7 +468,11 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
 
         if isinstance(op, DeleteOp):
             if op.old not in content:
-                raise _EditError(f"Delete operation {index} could not find the target string.")
+                hint = self._fuzzy_match_context(content, op.old)
+                raise _EditError(
+                    f"Delete operation {index} could not find the target string."
+                    + (hint if hint else "")
+                )
             if op.replace_all:
                 return content.replace(op.old, "")
             return content.replace(op.old, "", 1)

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from typing import override
@@ -13,6 +14,9 @@ from kimi_cli.loop.toolset import get_current_tool_call_or_none
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.aiohttp import new_client_session
+
+_MAX_RETRIES = 2
+_RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 
 
 class Params(BaseModel):
@@ -66,55 +70,105 @@ class SearchWeb(CallableTool2[Params]):
         tool_call = get_current_tool_call_or_none()
         assert tool_call is not None, "Tool call is expected to be set"
 
-        try:
-            async with (
-                new_client_session() as session,
-                session.post(
-                    self._base_url,
-                    headers={
-                        "User-Agent": USER_AGENT,
-                        "Authorization": f"Bearer {api_key}",
-                        "X-Msh-Tool-Call-Id": tool_call.id,
-                        **self._custom_headers,
-                    },
-                    json={
-                        "text_query": params.query,
-                        "limit": params.limit,
-                        "enable_page_crawling": params.include_content,
-                        "timeout_seconds": 30,
-                    },
-                ) as response,
-            ):
-                if response.status != 200:
-                    error_body = _format_error_response_body(await response.text())
-                    if error_body:
-                        builder.write(error_body)
-                    return builder.error(
-                        (
-                            f"Failed to search. Status: {response.status}."
-                            + (" The HTTP response body is included below." if error_body else "")
-                        ),
-                        brief="Failed to search",
-                    )
+        last_error_result: ToolReturnValue | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                async with (
+                    new_client_session() as session,
+                    session.post(
+                        self._base_url,
+                        headers={
+                            "User-Agent": USER_AGENT,
+                            "Authorization": f"Bearer {api_key}",
+                            "X-Msh-Tool-Call-Id": tool_call.id,
+                            **self._custom_headers,
+                        },
+                        json={
+                            "text_query": params.query,
+                            "limit": params.limit,
+                            "enable_page_crawling": params.include_content,
+                            "timeout_seconds": 30,
+                        },
+                    ) as response,
+                ):
+                    if response.status != 200:
+                        error_body = _format_error_response_body(await response.text())
 
-                try:
-                    results = Response(**await response.json()).search_results
-                except ValidationError as e:
-                    return builder.error(
-                        (
-                            f"Failed to parse search results. Error: {e}. "
-                            "This may indicates that the search service is currently unavailable."
-                        ),
-                        brief="Failed to parse search results",
-                    )
-        except (aiohttp.ClientError, TimeoutError) as e:
-            return builder.error(
-                (
-                    f"Failed to search due to network error: {str(e)}. "
-                    "This may indicate the search service is unreachable."
-                ),
-                brief="Network error",
-            )
+                        # HTTP 403: return immediately with specific guidance
+                        if response.status == 403:
+                            err_builder = ToolResultBuilder(max_line_length=None)
+                            if error_body:
+                                err_builder.write(error_body)
+                            return err_builder.error(
+                                "Search service denied the request (HTTP 403). "
+                                "Use `FetchURL` with a specific URL instead.",
+                                brief="HTTP 403 Forbidden",
+                            )
+
+                        # Retryable statuses: 429 and 5xx
+                        if response.status in _RETRYABLE_STATUSES:
+                            err_builder = ToolResultBuilder(max_line_length=None)
+                            if error_body:
+                                err_builder.write(error_body)
+                            last_error_result = err_builder.error(
+                                (
+                                    f"Failed to search. Status: {response.status}."
+                                    + (
+                                        " The HTTP response body is included below."
+                                        if error_body
+                                        else ""
+                                    )
+                                ),
+                                brief="Failed to search",
+                            )
+                            if attempt < _MAX_RETRIES:
+                                await asyncio.sleep(2**attempt)
+                                continue
+                            return last_error_result
+
+                        # Other 4xx: return immediately
+                        err_builder = ToolResultBuilder(max_line_length=None)
+                        if error_body:
+                            err_builder.write(error_body)
+                        return err_builder.error(
+                            (
+                                f"Failed to search. Status: {response.status}."
+                                + (
+                                    " The HTTP response body is included below."
+                                    if error_body
+                                    else ""
+                                )
+                            ),
+                            brief="Failed to search",
+                        )
+
+                    try:
+                        results = Response(**await response.json()).search_results
+                    except ValidationError as e:
+                        return builder.error(
+                            (
+                                f"Failed to parse search results. Error: {e}. "
+                                "This may indicates that the search service is currently "
+                                "unavailable."
+                            ),
+                            brief="Failed to parse search results",
+                        )
+
+                    # Success — break out of the retry loop
+                    break
+
+            except (aiohttp.ClientError, TimeoutError) as e:
+                return builder.error(
+                    (
+                        f"Failed to search due to network error: {str(e)}. "
+                        "This may indicate the search service is unreachable."
+                    ),
+                    brief="Network error",
+                )
+        else:
+            # All retries exhausted (should not reach here, but safety net)
+            assert last_error_result is not None
+            return last_error_result
 
         for i, result in enumerate(results):
             if i > 0:

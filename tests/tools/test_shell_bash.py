@@ -149,12 +149,15 @@ async def test_command_with_timeout(shell_tool: Shell):
     assert result.message == snapshot("Command executed successfully.")
 
 
-async def test_command_timeout_expires(shell_tool: Shell):
-    """Test command that times out."""
+async def test_command_timeout_migrates_to_background(shell_tool: Shell):
+    """Test command that times out is restarted as a background task."""
     result = await shell_tool(Params(command="sleep 2", timeout=1))
-    assert result.is_error
-    assert result.message == snapshot("Command killed by timeout (1s)")
-    assert result.brief == snapshot("Killed by timeout (1s)")
+    assert not result.is_error
+    assert "exceeded 1s timeout and was terminated" in result.output
+    assert "Restarted the same command as a background task" in result.output
+    assert "starts from scratch" in result.output
+    assert "partial progress from the foreground run is lost" in result.output
+    assert "TaskOutput" in result.output
 
 
 async def test_environment_variables(shell_tool: Shell):

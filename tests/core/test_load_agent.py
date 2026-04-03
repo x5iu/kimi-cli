@@ -115,7 +115,7 @@ def test_load_system_prompt_missing_arg_raises(builtin_args: BuiltinSystemPrompt
 
 def test_load_tools_valid(runtime: Runtime):
     """Test loading valid tools."""
-    tool_paths = ["kimi_cli.tools.think:Think", "kimi_cli.tools.shell:Shell"]
+    tool_paths = ["kimi_cli.tools.todo:SetTodoList", "kimi_cli.tools.shell:Shell"]
     toolset = KimiToolset()
     toolset.load_tools(
         tool_paths,
@@ -133,7 +133,7 @@ def test_load_tools_valid(runtime: Runtime):
 
 def test_load_tools_invalid(runtime: Runtime):
     """Test loading with invalid tool paths."""
-    tool_paths = ["kimi_cli.tools.nonexistent:Tool", "kimi_cli.tools.think:Think"]
+    tool_paths = ["kimi_cli.tools.nonexistent:Tool", "kimi_cli.tools.todo:SetTodoList"]
     toolset = KimiToolset()
     try:
         toolset.load_tools(

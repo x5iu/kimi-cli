@@ -36,7 +36,6 @@ from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.shell import Shell
-from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
@@ -196,12 +195,6 @@ def tool_call_context(tool_name: str) -> Generator[None]:
         yield
     finally:
         current_tool_call.reset(token)
-
-
-@pytest.fixture
-def think_tool() -> Think:
-    """Create a Think tool instance."""
-    return Think()
 
 
 @pytest.fixture

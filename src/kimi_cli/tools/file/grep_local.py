@@ -47,7 +47,8 @@ class Params(BaseModel):
     )
     output_mode: str = Field(
         description=(
-            "`content`: Show matching lines (supports `-B`, `-A`, `-C`, `-n`, `head_limit`); "
+            "`content`: Show matching lines with line numbers "
+            "(supports `-B`, `-A`, `-C`, `head_limit`); "
             "`files_with_matches`: Show file paths (supports `head_limit`); "
             "`count_matches`: Show total number of matches. "
             "Defaults to `files_with_matches`."
@@ -77,14 +78,6 @@ class Params(BaseModel):
             "Requires `output_mode` to be `content`."
         ),
         default=None,
-    )
-    line_number: bool = Field(
-        alias="-n",
-        description=(
-            "Show line numbers in output (the `-n` option). "
-            "Requires `output_mode` to be `content`. Defaults to true."
-        ),
-        default=True,
     )
     ignore_case: bool = Field(
         alias="-i",
@@ -265,8 +258,8 @@ def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = Fals
             args.extend(["--after-context", str(params.after_context)])
         if params.context is not None:
             args.extend(["--context", str(params.context)])
-        if params.line_number:
-            args.append("--line-number")
+        # Always show line numbers in content mode
+        args.append("--line-number")
 
     # File filtering options
     if params.glob:

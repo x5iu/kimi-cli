@@ -54,13 +54,15 @@ async def test_glob_multiple_matches(glob_tool: Glob, test_files: KaosPath):
     assert "Found 1 matches" in result.message
 
 
-async def test_glob_recursive_pattern_prohibited(glob_tool: Glob, test_files: KaosPath):
-    """Test that recursive glob pattern starting with **/ is prohibited."""
+async def test_glob_recursive_pattern_auto_corrected(glob_tool: Glob, test_files: KaosPath):
+    """Test that recursive glob pattern starting with **/ is auto-corrected."""
     result = await glob_tool(Params(pattern="**/*.py", directory=str(test_files)))
 
-    assert result.is_error
-    assert "starts with '**' which is not allowed" in result.message
-    assert "Unsafe pattern" in result.brief
+    assert not result.is_error
+    # Should auto-correct **/*.py to */*.py and include a notice
+    assert "is not allowed" in result.output
+    assert "Automatically changed to" in result.output
+    assert "*/*.py" in result.output
 
 
 async def test_glob_safe_recursive_pattern(glob_tool: Glob, test_files: KaosPath):
@@ -227,25 +229,24 @@ async def test_glob_max_matches_limit(glob_tool: Glob, temp_work_dir: KaosPath):
     assert f"Only the first {MAX_MATCHES} matches are returned" in result.message
 
 
-async def test_glob_enhanced_double_star_validation(glob_tool: Glob, temp_work_dir: KaosPath):
-    """Test enhanced ** pattern validation with directory listing."""
+async def test_glob_enhanced_double_star_auto_correction(glob_tool: Glob, temp_work_dir: KaosPath):
+    """Test enhanced ** pattern auto-correction with notice."""
     # Create some top-level files and directories for listing
     await (temp_work_dir / "file1.txt").write_text("content1")
     await (temp_work_dir / "file2.py").write_text("content2")
     await (temp_work_dir / "src").mkdir()
+    await (temp_work_dir / "src" / "data.txt").write_text("data")
     await (temp_work_dir / "docs").mkdir()
 
     result = await glob_tool(Params(pattern="**/*.txt", directory=str(temp_work_dir)))
 
-    assert result.is_error
-    assert "starts with '**' which is not allowed" in result.message
-    assert "Use more specific patterns instead" in result.message
-    # Should include directory listing
+    assert not result.is_error
     assert isinstance(result.output, str)
-    assert "file1.txt" in result.output
-    assert "file2.py" in result.output
-    assert "src" in result.output
-    assert "docs" in result.output
+    # Should include auto-correction notice
+    assert "is not allowed" in result.output
+    assert "Automatically changed to" in result.output
+    # The corrected pattern */*.txt matches txt files one level deep
+    assert "data.txt" in result.output
 
 
 async def test_glob_exactly_max_matches(glob_tool: Glob, temp_work_dir: KaosPath):
@@ -288,14 +289,15 @@ async def test_glob_complex_pattern(glob_tool: Glob, test_files: KaosPath):
 
 
 async def test_glob_wildcard_with_double_star_patterns(glob_tool: Glob, test_files: KaosPath):
-    """Test various patterns with ** that are allowed."""
-    # Test pattern with ** in the middle
+    """Test various patterns with ** that are auto-corrected or allowed."""
+    # Test pattern with ** at the start: auto-corrected to */main/*.py
     result = await glob_tool(Params(pattern="**/main/*.py", directory=str(test_files)))
 
-    assert result.is_error
-    assert "starts with '**' which is not allowed" in result.message
+    assert not result.is_error
+    assert "is not allowed" in result.output
+    assert "Automatically changed to" in result.output
 
-    # Test pattern with ** not at the beginning
+    # Test pattern with ** not at the beginning: allowed as-is
     result = await glob_tool(Params(pattern="src/**/test_*.py", directory=str(test_files)))
 
     assert not result.is_error
@@ -315,7 +317,7 @@ async def test_glob_pattern_edge_cases(glob_tool: Glob, test_files: KaosPath):
     result = await glob_tool(Params(pattern="*.py", directory=str(test_files)))
     assert not result.is_error
 
-    # Test pattern that starts with **/
+    # Test pattern that starts with **: auto-corrected
     result = await glob_tool(Params(pattern="**/*.txt", directory=str(test_files)))
-    assert result.is_error
-    assert "starts with '**' which is not allowed" in result.message
+    assert not result.is_error
+    assert "is not allowed" in result.output

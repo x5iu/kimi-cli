@@ -82,7 +82,6 @@ async def test_grep_content_mode(grep_tool: Grep, temp_test_files):
                 "pattern": "hello",
                 "path": temp_dir,
                 "output_mode": "content",
-                "-n": True,
                 "-i": True,
             }
         )
@@ -90,7 +89,7 @@ async def test_grep_content_mode(grep_tool: Grep, temp_test_files):
     assert not result.is_error
     assert isinstance(result.output, str)
 
-    # Should show matching lines with line numbers
+    # Should show matching lines with line numbers (always enabled)
     assert "hello" in result.output.lower()
     assert ":" in result.output  # Line numbers should be present
 
@@ -127,7 +126,6 @@ async def test_grep_with_context(grep_tool: Grep, temp_test_files):
                 "path": temp_dir,
                 "output_mode": "content",
                 "-C": 1,
-                "-n": True,
             }
         )
     )
@@ -252,7 +250,6 @@ async def test_grep_output_truncation(grep_tool: Grep):
                     "path": temp_dir,
                     "output_mode": "content",
                     "head_limit": 0,
-                    "-n": True,
                 }
             )
         )
@@ -327,7 +324,6 @@ async def test_grep_single_file(grep_tool: Grep):
                     "pattern": "hello",
                     "path": f.name,
                     "output_mode": "content",
-                    "-n": True,
                 }
             )
         )
@@ -352,7 +348,6 @@ async def test_grep_before_after_context(grep_tool: Grep, temp_test_files):
                 "path": temp_dir,
                 "output_mode": "content",
                 "-B": 2,
-                "-n": True,
             }
         )
     )
@@ -371,7 +366,6 @@ async def test_grep_before_after_context(grep_tool: Grep, temp_test_files):
                 "path": temp_dir,
                 "output_mode": "content",
                 "-A": 2,
-                "-n": True,
             }
         )
     )
@@ -601,14 +595,14 @@ async def test_grep_content_default_line_numbers(grep_tool: Grep):
                 assert parts[1].strip().isdigit(), f"Expected line number, got: {parts[1]}"
 
 
-async def test_grep_content_disable_line_numbers(grep_tool: Grep):
-    """content mode can opt-out of line numbers with -n=false."""
+async def test_grep_content_always_has_line_numbers(grep_tool: Grep):
+    """content mode always includes line numbers (no opt-out)."""
     with tempfile.TemporaryDirectory() as temp_dir:
         (Path(temp_dir) / "a.txt").write_text("hello\nworld\n")
 
         result = await grep_tool(
             Params.model_validate(
-                {"pattern": "hello", "path": temp_dir, "output_mode": "content", "-n": False}
+                {"pattern": "hello", "path": temp_dir, "output_mode": "content"}
             )
         )
         assert not result.is_error
@@ -616,8 +610,9 @@ async def test_grep_content_disable_line_numbers(grep_tool: Grep):
         for line in result.output.split("\n"):
             if line.strip() and not line.startswith("--"):
                 parts = line.split(":")
-                # path:content (2 parts), NOT path:linenum:content (3 parts)
-                assert len(parts) == 2, f"Expected path:content without linenum, got: {line}"
+                # path:linenum:content (3+ parts)
+                assert len(parts) >= 3, f"Expected path:linenum:content, got: {line}"
+                assert parts[1].strip().isdigit(), f"Expected line number, got: {parts[1]}"
 
 
 async def test_grep_count_summary(grep_tool: Grep):
@@ -721,7 +716,6 @@ def test_build_rg_args_flag_mapping():
             "-B": 2,
             "-A": 3,
             "-C": 1,
-            "-n": True,
             "glob": "*.py",
             "type": "py",
         }
@@ -734,7 +728,7 @@ def test_build_rg_args_flag_mapping():
     assert "--before-context" in args
     assert "--after-context" in args
     assert "--context" in args
-    assert "--line-number" in args
+    assert "--line-number" in args  # always present in content mode
     assert "--glob" in args
     assert "--type" in args
     # Pattern and path after --

@@ -195,14 +195,26 @@ class Context:
         self._last_turn_checkpoint_id = None
         return rotated_file_path
 
-    async def append_message(self, message: Message | Sequence[Message]):
+    async def append_message(
+        self,
+        message: Message | Sequence[Message],
+        *,
+        message_metadata: Sequence[dict[str, object]] | None = None,
+    ):
         logger.debug("Appending message(s) to context: {message}", message=message)
         messages = [message] if isinstance(message, Message) else message
         self._history.extend(messages)
         self._pending_token_estimate += estimate_text_tokens(messages)
 
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
-            for message in messages:
+            for idx, message in enumerate(messages):
+                if message_metadata is not None and idx < len(message_metadata):
+                    extras = message_metadata[idx]
+                    if extras:
+                        data = json.loads(message.model_dump_json(exclude_none=True))
+                        data.update(extras)
+                        await f.write(json.dumps(data, ensure_ascii=False) + "\n")
+                        continue
                 await f.write(message.model_dump_json(exclude_none=True) + "\n")
 
     async def update_token_count(self, token_count: int):

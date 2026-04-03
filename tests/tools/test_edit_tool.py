@@ -12,6 +12,7 @@ from kimi_cli.tools.file.replace import (
     PatchOp,
     PrependOp,
     ReplaceLinesOp,
+    ReplaceOp,
 )
 
 
@@ -123,3 +124,40 @@ async def test_edit_requires_explicit_kind(temp_work_dir: KaosPath):
                 "edit": {"old": "world", "new": "there"},
             }
         )
+
+
+async def test_replace_fuzzy_hint_on_mismatch(edit_tool, temp_work_dir: KaosPath):
+    """When a replace target is not found, the error should include a fuzzy-match hint."""
+    file_path = temp_work_dir / "fuzzy.txt"
+    await file_path.write_text("def hello_world():\n    print('hello')\n    return True\n")
+
+    # Slightly wrong old string — extra space and different quotes
+    result = await edit_tool(
+        EditParams(
+            path=str(file_path),
+            edit=[ReplaceOp(old="def hello_world( ):\n    print('hello')", new="replaced")],
+        )
+    )
+
+    assert result.is_error
+    assert "could not find the target string" in result.message
+    # Fuzzy-match hint is included in the error message
+    assert "Closest match" in result.message
+    assert "similarity" in result.message
+
+
+async def test_delete_fuzzy_hint_on_mismatch(edit_tool, temp_work_dir: KaosPath):
+    """When a delete target is not found, the error should include a fuzzy-match hint."""
+    file_path = temp_work_dir / "fuzzy_delete.txt"
+    await file_path.write_text("line one\nline two\nline three\n")
+
+    result = await edit_tool(
+        EditParams(
+            path=str(file_path),
+            edit=[DeleteOp(old="line  two")],  # extra space
+        )
+    )
+
+    assert result.is_error
+    assert "could not find the target string" in result.message
+    assert "Closest match" in result.message

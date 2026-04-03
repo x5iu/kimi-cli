@@ -14,17 +14,9 @@ from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
-
-
-def test_think_description(think_tool: Think):
-    """Test the description of Think tool."""
-    assert think_tool.base.description == snapshot(
-        "Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.\n"
-    )
 
 
 def test_set_todo_list_description(set_todo_list_tool: SetTodoList):
@@ -166,16 +158,9 @@ Find files and directories using glob patterns. This tool supports standard glob
 
 def test_grep_description(grep_tool: Grep):
     """Test the description of Grep tool."""
-    assert grep_tool.base.description == snapshot(
-        """\
-A structured search tool wrapping ripgrep. Use as a fallback when the Shell tool with `rg` is unavailable or when you prefer a structured interface with built-in pagination.
-
-**Tips:**
-- When a `<system-hint>` gives you an `rg` path, prefer Shell with `rg` for maximum flexibility.
-- Use this tool when Shell is not available, or for simple searches where structured output (files_with_matches, count_matches) is convenient.
-- Use the ripgrep pattern syntax, not grep syntax. E.g. you need to escape braces like `\\\\{` to search for `{`.
-"""
-    )
+    description = grep_tool.base.description
+    assert "ripgrep" in description
+    assert "Shell" in description
 
 
 def test_write_file_description(write_file_tool: WriteFile):

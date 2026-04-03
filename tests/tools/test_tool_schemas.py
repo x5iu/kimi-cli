@@ -13,26 +13,9 @@ from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
-
-
-def test_think_params_schema(think_tool: Think):
-    """Test the schema of Think tool parameters."""
-    assert think_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "thought": {
-                    "description": "A thought to think about.",
-                    "type": "string",
-                }
-            },
-            "required": ["thought"],
-            "type": "object",
-        }
-    )
 
 
 def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
@@ -317,7 +300,7 @@ def test_grep_params_schema(grep_tool: Grep):
                 },
                 "output_mode": {
                     "default": "files_with_matches",
-                    "description": "`content`: Show matching lines (supports `-B`, `-A`, `-C`, `-n`, `head_limit`); `files_with_matches`: Show file paths (supports `head_limit`); `count_matches`: Show total number of matches. Defaults to `files_with_matches`.",
+                    "description": "`content`: Show matching lines with line numbers (supports `-B`, `-A`, `-C`, `head_limit`); `files_with_matches`: Show file paths (supports `head_limit`); `count_matches`: Show total number of matches. Defaults to `files_with_matches`.",
                     "type": "string",
                 },
                 "-B": {
@@ -334,11 +317,6 @@ def test_grep_params_schema(grep_tool: Grep):
                     "anyOf": [{"type": "integer"}, {"type": "null"}],
                     "default": None,
                     "description": "Number of lines to show before and after each match (the `-C` option). Requires `output_mode` to be `content`.",
-                },
-                "-n": {
-                    "default": True,
-                    "description": "Show line numbers in output (the `-n` option). Requires `output_mode` to be `content`. Defaults to true.",
-                    "type": "boolean",
                 },
                 "-i": {
                     "default": False,

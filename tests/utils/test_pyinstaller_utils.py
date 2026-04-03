@@ -115,10 +115,6 @@ def test_pyinstaller_datas():
         ("src/kimi_cli/tools/shell/bash.md", "kimi_cli/tools/shell"),
         ("src/kimi_cli/tools/shell/powershell.md", "kimi_cli/tools/shell"),
         (
-            "src/kimi_cli/tools/think/think.md",
-            "kimi_cli/tools/think",
-        ),
-        (
             "src/kimi_cli/tools/todo/set_todo_list.md",
             "kimi_cli/tools/todo",
         ),
@@ -190,7 +186,6 @@ def test_pyinstaller_datas():
     ("src/kimi_cli/tools/file/write.md", "kimi_cli/tools/file"),
     ("src/kimi_cli/tools/shell/bash.md", "kimi_cli/tools/shell"),
     ("src/kimi_cli/tools/shell/powershell.md", "kimi_cli/tools/shell"),
-    ("src/kimi_cli/tools/think/think.md", "kimi_cli/tools/think"),
     ("src/kimi_cli/tools/todo/set_todo_list.md", "kimi_cli/tools/todo"),
     ("src/kimi_cli/tools/web/fetch.md", "kimi_cli/tools/web"),
     ("src/kimi_cli/tools/web/search.md", "kimi_cli/tools/web"),
@@ -219,7 +214,6 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.tools.file.write",
             "kimi_cli.tools.shell",
             "kimi_cli.tools.test",
-            "kimi_cli.tools.think",
             "kimi_cli.tools.todo",
             "kimi_cli.tools.todo_text",
             "kimi_cli.tools.utils",

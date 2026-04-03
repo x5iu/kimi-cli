@@ -1461,7 +1461,11 @@ class KimiAgentLoop:
         logger.debug(
             "Appending tool messages to context: {tool_messages}", tool_messages=tool_messages
         )
-        await self._context.append_message(tool_messages)
+        # Persist is_error flag alongside tool result messages in context JSONL
+        tool_metadata: list[dict[str, object]] = [
+            {"is_error": tr.return_value.is_error} for tr in tool_results
+        ]
+        await self._context.append_message(tool_messages, message_metadata=tool_metadata)
         # Estimate tool result tokens so the compaction trigger
         # has a more accurate count
         if tool_messages:

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.tools.utils import load_desc
-from kimi_cli.utils.path import is_within_directory, is_within_workspace, list_directory
+from kimi_cli.utils.path import is_within_directory, is_within_workspace
 
 MAX_MATCHES = 1000
 
@@ -44,22 +44,31 @@ class Glob(CallableTool2[Params]):
         self._additional_dirs = runtime.additional_dirs
         self._skills_dirs = runtime.skills_dirs
 
-    async def _validate_pattern(self, pattern: str) -> ToolError | None:
-        """Validate that the pattern is safe to use."""
+    def _auto_correct_pattern(self, pattern: str) -> tuple[str, str | None]:
+        """Auto-correct unsafe patterns.
+
+        Returns (corrected_pattern, notice_or_none).
+        """
+        if pattern.startswith("**/"):
+            corrected = pattern.replace("**/", "*/", 1)
+            notice = (
+                f"Pattern `{pattern}` is not allowed (would recursively scan all "
+                "directories). Automatically changed to `{corrected}` (current "
+                "directory only). Specify a directory like `src/**/*.ext` for "
+                "deeper search."
+            ).format(corrected=corrected)
+            return corrected, notice
         if pattern.startswith("**"):
-            ls_result = await list_directory(self._work_dir)
-            return ToolError(
-                output=ls_result,
-                message=(
-                    f"Pattern `{pattern}` starts with '**' which is not allowed. "
-                    "This would recursively search all directories and may include large "
-                    "directories like `node_modules`. Use more specific patterns instead. "
-                    "For your convenience, a list of all files and directories in the "
-                    "top level of the working directory is provided below."
-                ),
-                brief="Unsafe pattern",
-            )
-        return None
+            # e.g. "**" or "**xyz" without slash
+            corrected = pattern.replace("**", "*", 1)
+            notice = (
+                f"Pattern `{pattern}` is not allowed (would recursively scan all "
+                "directories). Automatically changed to `{corrected}` (current "
+                "directory only). Specify a directory like `src/**/*.ext` for "
+                "deeper search."
+            ).format(corrected=corrected)
+            return corrected, notice
+        return pattern, None
 
     async def _validate_directory(self, directory: KaosPath) -> ToolError | None:
         """Validate that the directory is safe to search."""
@@ -85,10 +94,8 @@ class Glob(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         try:
-            # Validate pattern safety
-            pattern_error = await self._validate_pattern(params.pattern)
-            if pattern_error:
-                return pattern_error
+            # Auto-correct unsafe patterns instead of rejecting them
+            pattern, correction_notice = self._auto_correct_pattern(params.pattern)
 
             dir_path = (
                 KaosPath(params.directory).expanduser() if params.directory else self._work_dir
@@ -121,7 +128,7 @@ class Glob(CallableTool2[Params]):
 
             # Perform the glob search - users can use ** directly in pattern
             matches: list[KaosPath] = []
-            async for match in dir_path.glob(params.pattern):
+            async for match in dir_path.glob(pattern):
                 matches.append(match)
 
             # Post-filter: ensure matched paths don't escape the base directory
@@ -137,9 +144,9 @@ class Glob(CallableTool2[Params]):
 
             # Limit matches
             message = (
-                f"Found {len(matches)} matches for pattern `{params.pattern}`."
+                f"Found {len(matches)} matches for pattern `{pattern}`."
                 if len(matches) > 0
-                else f"No matches found for pattern `{params.pattern}`."
+                else f"No matches found for pattern `{pattern}`."
             )
             if len(matches) > MAX_MATCHES:
                 matches = matches[:MAX_MATCHES]
@@ -148,8 +155,12 @@ class Glob(CallableTool2[Params]):
                     "You may want to use a more specific pattern."
                 )
 
+            output = "\n".join(str(p.relative_to(dir_path)) for p in matches)
+            if correction_notice:
+                output = correction_notice + "\n\n" + output if output else correction_notice
+
             return ToolOk(
-                output="\n".join(str(p.relative_to(dir_path)) for p in matches),
+                output=output,
                 message=message,
             )
 

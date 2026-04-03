@@ -169,10 +169,69 @@ class Shell(CallableTool2[Params]):
                     brief=f"Failed with exit code: {exitcode}",
                 )
         except TimeoutError:
-            return builder.error(
+            # Migrate the timed-out foreground command to a background task
+            return await self._migrate_to_background(params, builder)
+
+    async def _migrate_to_background(
+        self, params: Params, partial_builder: ToolResultBuilder
+    ) -> ToolReturnValue:
+        """Restart a timed-out foreground command as a background task.
+
+        The foreground process is already killed at this point.  We start a
+        **new** background process running the same command from scratch.
+        Note: the background worker uses ``get_clean_env()`` (not the
+        ``get_noninteractive_env()`` used by the foreground path) because
+        background tasks are long-lived and should not inherit the
+        terminal-oriented tweaks that ``get_noninteractive_env()`` applies.
+        """
+        tool_call = get_current_tool_call_or_none()
+        if tool_call is None:
+            return partial_builder.error(
                 f"Command killed by timeout ({params.timeout}s)",
                 brief=f"Killed by timeout ({params.timeout}s)",
             )
+
+        try:
+            # Use a longer timeout for the background task (10x the original, capped)
+            bg_timeout = min(params.timeout * 10, MAX_BACKGROUND_TIMEOUT)
+            view = self._runtime.background_tasks.create_bash_task(
+                command=params.command,
+                description=f"Restarted after foreground timeout: {params.command[:80]}",
+                timeout_s=bg_timeout,
+                tool_call_id=tool_call.id,
+                shell_name="Windows PowerShell" if self._is_powershell else "bash",
+                shell_path=str(self._shell_path),
+                cwd=str(self._runtime.session.work_dir),
+                interactive=False,
+            )
+        except Exception:
+            return partial_builder.error(
+                f"Command killed by timeout ({params.timeout}s)",
+                brief=f"Killed by timeout ({params.timeout}s)",
+            )
+
+        task_id = view.spec.id
+        builder = ToolResultBuilder()
+        builder.write(
+            f"Command exceeded {params.timeout}s timeout and was terminated. "
+            f"Restarted the same command as a background task (task_id: {task_id}). "
+            "Note: the command starts from scratch; any partial progress from "
+            "the foreground run is lost. "
+            f'Use `TaskOutput(task_id="{task_id}")` to check progress, '
+            "or continue with other work."
+        )
+        builder.display(
+            BackgroundTaskDisplayBlock(
+                task_id=view.spec.id,
+                kind=view.spec.kind,
+                status=view.runtime.status,
+                description=view.spec.description,
+            )
+        )
+        return builder.ok(
+            f"Restarted as background task {task_id}",
+            brief=f"Restarted as {task_id}",
+        )
 
     async def _run_in_background(self, params: Params) -> ToolReturnValue:
         tool_call = get_current_tool_call_or_none()
