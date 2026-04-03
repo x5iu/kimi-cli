@@ -6,6 +6,7 @@ This is the only todo list tool available to you. That said, each time you want 
 
 - Use `done_when` to record a short completion criterion when it helps keep the plan grounded.
 - Use `executor="background_shell"` for long-running shell work, and `executor="main"` for work done directly.
+- The todo list is limited to a maximum of 25 items. If you need more, consolidate smaller steps into higher-level items.
 
 Abusing this tool to track too small steps will just waste your time and make your context messy. For example, here are some cases you should not use this tool:
 

@@ -74,6 +74,7 @@ def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
                         "required": ["title", "status"],
                         "type": "object",
                     },
+                    "maxItems": 25,
                     "type": "array",
                 }
             },

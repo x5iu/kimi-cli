@@ -1546,6 +1546,24 @@ class KimiAgentLoop:
                     )
                 )
 
+            # Inject current todo state so the agent retains awareness after compaction.
+            todos = self._runtime.session.state.todos
+            if todos:
+                todo_lines = [
+                    f"- [{t.status}] {t.title}" for t in todos
+                ]
+                final_messages.append(
+                    internal_user_message(
+                        [
+                            system(
+                                "Your current todo list survived compaction. "
+                                "Review it before creating a new one.\n"
+                                + "\n".join(todo_lines)
+                            )
+                        ]
+                    )
+                )
+
             self._sync_context_recall_tool_visibility()
 
             try:

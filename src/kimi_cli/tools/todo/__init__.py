@@ -34,8 +34,11 @@ class Todo(BaseModel):
     )
 
 
+_MAX_TODOS = 25
+
+
 class Params(BaseModel):
-    todos: list[Todo] = Field(description="The updated todo list")
+    todos: list[Todo] = Field(description="The updated todo list", max_length=_MAX_TODOS)
 
 
 def _todo_lock(session: Session) -> asyncio.Lock:
@@ -91,6 +94,44 @@ def _shorten_todo(todo: Todo) -> str:
     return todo_label(todo.title)
 
 
+def _diff_todos(old: list[Todo], new: list[Todo]) -> str:
+    """Return a short human-readable summary of what changed between two todo lists."""
+    old_map: dict[str, TodoStatus] = {t.title: t.status for t in old}
+    new_map: dict[str, TodoStatus] = {t.title: t.status for t in new}
+
+    parts: list[str] = []
+    transitions: list[str] = []
+    added: list[str] = []
+    removed: list[str] = []
+    unchanged = 0
+
+    for title, status in new_map.items():
+        if title not in old_map:
+            added.append(f"'{_shorten_todo(Todo(title=title, status=status))}'")
+        elif old_map[title] != status:
+            transitions.append(
+                f"'{_shorten_todo(Todo(title=title, status=status))}' "
+                f"{old_map[title]} -> {status}"
+            )
+        else:
+            unchanged += 1
+
+    for title in old_map:
+        if title not in new_map:
+            removed.append(f"'{_shorten_todo(Todo(title=title, status=old_map[title]))}'")
+
+    for t in transitions:
+        parts.append(f"Marked {t}.")
+    for a in added:
+        parts.append(f"Added {a}.")
+    for r in removed:
+        parts.append(f"Removed {r}.")
+    if unchanged:
+        parts.append(f"{unchanged} item{'s' if unchanged != 1 else ''} unchanged.")
+
+    return " ".join(parts) if parts else "No changes."
+
+
 def _summarize_todos(todos: list[Todo]) -> str:
     if not todos:
         return "Todo list is empty."
@@ -126,11 +167,16 @@ class SetTodoList(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         async with _todo_lock(self._runtime.session):
+            old_todos = _load_todos_unlocked(self._runtime.session)
             _save_todos_unlocked(self._runtime.session, params.todos)
+
+        diff = _diff_todos(old_todos, params.todos)
+        summary = _summarize_todos(params.todos)
+        output = f"{summary}\nChanges: {diff}"
 
         return ToolReturnValue(
             is_error=False,
-            output=_summarize_todos(params.todos),
+            output=output,
             message="Todo list updated",
             display=[_todo_display_block(params.todos)],
         )
