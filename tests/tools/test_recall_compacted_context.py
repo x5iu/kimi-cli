@@ -162,7 +162,7 @@ async def test_search_no_matches_returns_archive_list(
             ),
         ],
     )
-    registration = register_compaction_archive(
+    register_compaction_archive(
         context_file,
         archive_file,
         message_count=2,
@@ -207,3 +207,8 @@ async def test_missing_archive_file_gracefully_handled(
 
     assert not result.is_error
     assert "No matching excerpts" in result.output
+
+
+def test_score_text_empty_token_does_not_match():
+    score = RecallCompactedContext._score_text("some text here", "query", [""])
+    assert score == 0

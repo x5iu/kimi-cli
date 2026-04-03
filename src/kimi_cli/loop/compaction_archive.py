@@ -6,7 +6,6 @@ from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from textwrap import shorten
 
 from llmkit.message import Message, ToolCall
 from pydantic import BaseModel
@@ -23,7 +22,17 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.turns import is_checkpoint_user_text, is_internal_user_message
 
 _MANIFEST_SUFFIX = ".compaction-archives.jsonl"
-_SUMMARY_WIDTH = 280
+_SUMMARY_WIDTH = 600
+
+def _truncate_summary(summary: str) -> str:
+    """Truncate summary to at most _SUMMARY_WIDTH characters, adding '...' if truncated."""
+    if not summary:
+        return ""
+    stripped = summary.strip()
+    if len(stripped) <= _SUMMARY_WIDTH:
+        return stripped
+    return stripped[:_SUMMARY_WIDTH] + "..."
+
 
 
 class CompactionArchiveRecord(BaseModel):
@@ -63,6 +72,24 @@ def load_compaction_archives(context_file: Path) -> list[CompactionArchiveRecord
                     path=manifest_path,
                     line_no=line_no,
                 )
+
+    # Deduplicate by id: preserve the chronological position of the first
+    # occurrence but use the content from the last occurrence (supports
+    # append-only keyword backfills).
+    first_seen: dict[str, int] = {}
+    last_content: dict[str, CompactionArchiveRecord] = {}
+    for idx, rec in enumerate(records):
+        if rec.id not in first_seen:
+            first_seen[rec.id] = idx
+        last_content[rec.id] = rec
+    if len(first_seen) < len(records):
+        records = [
+            last_content[rid]
+            for rid, _ in sorted(
+                first_seen.items(), key=lambda x: x[1]
+            )
+        ]
+
     return records
 
 
@@ -82,7 +109,7 @@ def register_compaction_archive(
         archive_file=archive_file.name,
         created_at=datetime.now().astimezone().isoformat(),
         message_count=message_count,
-        summary=shorten(summary.strip(), width=_SUMMARY_WIDTH, placeholder="…") if summary else "",
+        summary=_truncate_summary(summary),
         keywords=keywords,
     )
 
@@ -176,15 +203,23 @@ _KEYWORD_RE = re.compile(
     r"(?:[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)+)"  # dotted identifiers (paths, modules)
     r"|(?:[\w./:-]{2,}/[\w./:-]+)"  # file paths with slashes
     r"|(?:[A-Z][a-zA-Z0-9]+(?:Error|Exception|Warning))"  # error class names
-    r"|(?:[a-z_][a-z0-9_]{2,}\.[a-z_]+)"  # module.attribute patterns
     r"|(?:[A-Z][a-z]+(?:[A-Z][a-z]+)+)",  # CamelCase identifiers
-    re.ASCII,
 )
+
+_WORD_RE = re.compile(r"\b[a-zA-Z]{4,}\b", re.ASCII)
+
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
 
 _STOP_KEYWORDS = frozenset({
     "true", "false", "none", "null", "self", "return", "import",
     "from", "class", "async", "await", "with", "that", "this",
-    "tool", "call", "type", "text", "content", "message", "role",
+    "have", "been", "will", "would", "could", "should", "about",
+    "there", "their", "which", "when", "what", "were", "them",
+    "then", "than", "each", "make", "like", "just", "over",
+    "such", "into", "only", "also", "some", "very", "here",
+    "more", "after", "before", "other", "these", "first",
+    "using", "file", "line", "code", "output", "error", "tool",
+    "call", "type", "text", "content", "message", "role",
     "user", "assistant", "system", "function", "the",
 })
 
@@ -196,11 +231,24 @@ def extract_archive_keywords(messages: Sequence[Message]) -> list[str]:
     counts: Counter[str] = Counter()
     for message in messages:
         text = stringify_message_for_archive(message)
-        candidates = _KEYWORD_RE.findall(text)
-        for candidate in candidates:
+
+        # Code identifiers – higher weight (x2)
+        for candidate in _KEYWORD_RE.findall(text):
             lowered = candidate.lower()
             if len(lowered) >= 3 and lowered not in _STOP_KEYWORDS:
+                counts[lowered] += 2
+
+        # Plain English words – weight x1
+        for candidate in _WORD_RE.findall(text):
+            lowered = candidate.lower()
+            if lowered not in _STOP_KEYWORDS:
                 counts[lowered] += 1
+
+        # CJK terms – weight x1
+        for candidate in _CJK_RE.findall(text):
+            if candidate not in _STOP_KEYWORDS:
+                counts[candidate] += 1
+
     return [kw for kw, _ in counts.most_common(_MAX_KEYWORDS)]
 
 
@@ -213,7 +261,18 @@ def is_checkpoint_message(message: Message) -> bool:
     return False
 
 
+_archive_cache: dict[Path, tuple[float, list[Message]]] = {}
+
+
 def load_archive_messages(archive_file: Path) -> list[Message]:
+    try:
+        mtime = archive_file.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    cached = _archive_cache.get(archive_file)
+    if cached is not None and cached[0] == mtime:
+        return list(cached[1])
+
     messages: list[Message] = []
     with archive_file.open(encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
@@ -243,6 +302,8 @@ def load_archive_messages(archive_file: Path) -> list[Message]:
             if is_checkpoint_message(message):
                 continue
             messages.append(message)
+
+    _archive_cache[archive_file] = (mtime, messages)
     return messages
 
 
@@ -253,3 +314,46 @@ def archive_role_label(message: Message) -> str:
     if message.role == "tool" and message.tool_call_id:
         role += f" [{message.tool_call_id}]"
     return role
+
+
+def backfill_archive_keywords(context_file: Path) -> int:
+    """Re-extract keywords for archives with empty keyword lists.
+
+    Returns the number of records updated.  Uses append-only writes so
+    that concurrent ``register_compaction_archive`` calls are never lost.
+    ``load_compaction_archives`` deduplicates by id (last occurrence wins).
+    """
+    records = load_compaction_archives(context_file)
+    if not records:
+        return 0
+
+    # Collect updated records for archives with empty keyword lists.
+    updated_records: list[CompactionArchiveRecord] = []
+    for record in records:
+        if record.keywords:
+            continue
+        archive_path = resolve_compaction_archive_path(
+            context_file, record
+        )
+        if not archive_path.exists():
+            continue
+        messages = load_archive_messages(archive_path)
+        new_keywords = extract_archive_keywords(messages)
+        if new_keywords:
+            updated_records.append(record.model_copy(
+                update={"keywords": new_keywords},
+            ))
+
+    if not updated_records:
+        return 0
+
+    # Append updated records to the manifest.  load_compaction_archives
+    # deduplicates by id (last occurrence wins), so the appended lines
+    # will supersede the originals without risking data loss from a
+    # concurrent register_compaction_archive append.
+    manifest = manifest_path_for_context(context_file)
+    with manifest.open("a", encoding="utf-8") as f:
+        for rec in updated_records:
+            f.write(rec.model_dump_json() + "\n")
+
+    return len(updated_records)

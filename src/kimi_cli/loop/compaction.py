@@ -21,6 +21,7 @@ from kimi_cli.llm import LLM
 from kimi_cli.loop.compaction_archive import stringify_tool_calls
 from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.turns import is_real_user_turn_start_message
 
 
 class CompactionResult(NamedTuple):
@@ -191,7 +192,7 @@ class SimpleCompaction:
         # A "turn" is: user → assistant → trailing tool messages.
         n_user = 0
         for index in range(len(messages) - 1, -1, -1):
-            if messages[index].role == "user":
+            if is_real_user_turn_start_message(messages[index]):
                 n_user += 1
                 if n_user == self.max_preserved_messages:
                     preserve_start_index = index

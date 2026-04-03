@@ -7,6 +7,7 @@ from llmkit.message import Message
 import kimi_cli.prompts as prompts
 from kimi_cli.eventbus.types import TextPart, ThinkPart
 from kimi_cli.loop.compaction import CompactionResult, SimpleCompaction, should_auto_compact
+from kimi_cli.loop.message import internal_user_message, system
 
 
 def test_prepare_returns_original_when_not_enough_messages():
@@ -366,3 +367,30 @@ class TestShouldAutoCompact:
     def test_zero_tokens_never_triggers(self):
         """Empty context should never trigger compaction."""
         assert not should_auto_compact(0, 200_000, trigger_ratio=0.85, reserved_context_size=50_000)
+
+
+def test_prepare_does_not_count_internal_user_as_preserved_turn():
+    messages = [
+        Message(role="user", content=[TextPart(text="Oldest question")]),
+        Message(role="assistant", content=[TextPart(text="Oldest answer")]),
+        Message(role="user", content=[TextPart(text="Old question")]),
+        Message(role="assistant", content=[TextPart(text="Old answer")]),
+        internal_user_message(
+            [system("Compacted context archives are available")]
+        ),
+        Message(role="user", content=[TextPart(text="Latest question")]),
+        Message(role="assistant", content=[TextPart(text="Latest answer")]),
+    ]
+
+    result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
+
+    assert result.compact_message is not None
+    preserved_texts = [
+        part.text
+        for msg in result.to_preserve
+        for part in msg.content
+        if isinstance(part, TextPart)
+    ]
+    assert "Oldest question" not in preserved_texts
+    assert "Old question" in preserved_texts
+    assert "Latest question" in preserved_texts

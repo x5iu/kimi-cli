@@ -13,9 +13,12 @@ from kimi_cli.eventbus.types import (
     VideoURLPart,
 )
 from kimi_cli.loop.compaction_archive import (
+    _SUMMARY_WIDTH,
     CompactionArchiveRecord,
     archive_role_label,
+    backfill_archive_keywords,
     build_compaction_summary,
+    extract_archive_keywords,
     is_checkpoint_message,
     load_archive_messages,
     load_compaction_archives,
@@ -461,12 +464,12 @@ def test_register_compaction_archive_truncates_long_summaries(
     ctx.touch()
     archive = tmp_path / "archive.jsonl"
     archive.touch()
-    long_summary = "A" * 500
+    long_summary = "A" * 800
 
     result = register_compaction_archive(
         ctx, archive, message_count=1, summary=long_summary
     )
-    assert len(result.record.summary) <= 280
+    assert len(result.record.summary) <= _SUMMARY_WIDTH + len("...")
 
 
 def test_register_compaction_archive_id_uses_max_existing(
@@ -589,3 +592,179 @@ def test_resolve_compaction_archive_path():
     )
     result = resolve_compaction_archive_path(ctx, record)
     assert result == Path("/data/sessions/context_1.jsonl")
+
+
+def test_extract_archive_keywords_english_and_code():
+    msgs = [
+        Message(
+            role="assistant",
+            content=[TextPart(text=(
+                "The CompactionArchive module lives in kimi_cli.loop.compaction_archive. "
+                "It raised a ValueError when the summary was empty."
+            ))],
+        ),
+    ]
+    keywords = extract_archive_keywords(msgs)
+    assert isinstance(keywords, list)
+    assert len(keywords) <= 10
+    assert "kimi_cli.loop.compaction_archive" in keywords
+
+
+def test_extract_archive_keywords_cjk():
+    msgs = [
+        Message(
+            role="user",
+            content=[TextPart(text="请实现压缩功能，处理压缩归档的逻辑")],
+        ),
+    ]
+    keywords = extract_archive_keywords(msgs)
+    assert any(
+        all('\u4e00' <= c <= '\u9fff' for c in kw)
+        for kw in keywords
+    ), f"Expected CJK keywords, got: {keywords}"
+
+
+def test_extract_archive_keywords_empty_messages():
+    assert extract_archive_keywords([]) == []
+
+
+def test_word_re_matches_at_cjk_boundary():
+    from kimi_cli.loop.compaction_archive import _WORD_RE
+    assert _WORD_RE.findall("功能test模块") == ["test"]
+    assert _WORD_RE.findall("test功能") == ["test"]
+    assert _WORD_RE.findall("功能test") == ["test"]
+
+
+def test_backfill_archive_keywords(tmp_path: Path):
+    ctx = tmp_path / "context.jsonl"
+    ctx.touch()
+    archive_file = tmp_path / "context_1.jsonl"
+    msgs = [
+        Message(
+            role="user",
+            content=[TextPart(text="Implement CompactionArchive for kimi_cli.loop")],
+        ),
+        Message(
+            role="assistant",
+            content=[TextPart(text="Done implementing the compaction archive module.")],
+        ),
+    ]
+    archive_file.write_text(
+        "\n".join(m.model_dump_json(exclude_none=True) for m in msgs) + "\n",
+        encoding="utf-8",
+    )
+    registration = register_compaction_archive(
+        ctx, archive_file, message_count=2, summary="compaction archive impl"
+    )
+    assert registration.record.keywords == []
+
+    updated = backfill_archive_keywords(ctx)
+    assert updated == 1
+
+    records = load_compaction_archives(ctx)
+    assert len(records) == 1
+    assert len(records[0].keywords) > 0
+
+    assert backfill_archive_keywords(ctx) == 0
+
+
+def test_truncate_summary_edge_cases():
+    from kimi_cli.loop.compaction_archive import _truncate_summary
+    assert _truncate_summary("") == ""
+    assert _truncate_summary("   ") == ""
+    text_at_limit = "A" * _SUMMARY_WIDTH
+    assert _truncate_summary(text_at_limit) == text_at_limit
+    text_over = "A" * (_SUMMARY_WIDTH + 1)
+    result = _truncate_summary(text_over)
+    assert result == "A" * _SUMMARY_WIDTH + "..."
+    assert len(result) == _SUMMARY_WIDTH + 3
+
+
+def test_backfill_does_not_clobber_concurrent_registration(
+    tmp_path: Path,
+):
+    ctx = tmp_path / "context.jsonl"
+    ctx.touch()
+
+    archive1 = tmp_path / "context_1.jsonl"
+    msgs1 = [
+        Message(
+            role="user",
+            content=[TextPart(text="Implement CompactionArchive")],
+        ),
+    ]
+    archive1.write_text(
+        "\n".join(
+            m.model_dump_json(exclude_none=True) for m in msgs1
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    register_compaction_archive(
+        ctx, archive1, message_count=1, summary="first"
+    )
+
+    archive2 = tmp_path / "context_2.jsonl"
+    archive2.touch()
+    register_compaction_archive(
+        ctx, archive2, message_count=1, summary="second"
+    )
+
+    updated = backfill_archive_keywords(ctx)
+    assert updated == 1
+
+    records = load_compaction_archives(ctx)
+    ids = [r.id for r in records]
+    assert "c001" in ids
+    assert "c002" in ids
+    assert len(records) == 2
+
+    c001 = next(r for r in records if r.id == "c001")
+    assert len(c001.keywords) > 0
+
+
+def test_load_compaction_archives_deduplicates_by_id(
+    tmp_path: Path,
+):
+    ctx = tmp_path / "context.jsonl"
+    ctx.touch()
+    manifest = manifest_path_for_context(ctx)
+
+    old = CompactionArchiveRecord(
+        id="c001",
+        archive_file="a1.jsonl",
+        created_at="2026-01-01T00:00:00+00:00",
+        message_count=5,
+        summary="first archive",
+        keywords=[],
+    )
+    new = CompactionArchiveRecord(
+        id="c001",
+        archive_file="a1.jsonl",
+        created_at="2026-01-01T00:00:00+00:00",
+        message_count=5,
+        summary="first archive",
+        keywords=["compaction", "archive"],
+    )
+    other = CompactionArchiveRecord(
+        id="c002",
+        archive_file="a2.jsonl",
+        created_at="2026-01-02T00:00:00+00:00",
+        message_count=3,
+        summary="second archive",
+    )
+    manifest.write_text(
+        old.model_dump_json()
+        + "\n"
+        + other.model_dump_json()
+        + "\n"
+        + new.model_dump_json()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    records = load_compaction_archives(ctx)
+    assert len(records) == 2
+    assert records[0].id == "c001"
+    assert records[1].id == "c002"
+    assert records[0].keywords == ["compaction", "archive"]

@@ -70,6 +70,7 @@ from kimi_cli.loop.compaction import (
     should_auto_compact,
 )
 from kimi_cli.loop.compaction_archive import (
+    backfill_archive_keywords,
     build_compaction_summary,
     load_compaction_archives,
     register_compaction_archive,
@@ -1523,6 +1524,38 @@ class KimiAgentLoop:
                         f" Key topics: "
                         f"{', '.join(registration.record.keywords[:8])}."
                     )
+
+                # Build an overview of ALL archives (not just the latest).
+                all_archives = load_compaction_archives(
+                    self._context.file_backend
+                )
+                archive_overview_lines: list[str] = []
+                newest_id = registration.record.id
+                recent_archives = all_archives[-5:]
+                older_count = len(all_archives) - len(recent_archives)
+                if older_count > 0:
+                    archive_overview_lines.append(
+                        f"  ({older_count} older archive(s) not shown"
+                        " — use RecallCompactedContext to search them)"
+                    )
+                for ar in recent_archives:
+                    summary_preview = (
+                        ar.summary[:80] + "..."
+                        if len(ar.summary) > 80
+                        else ar.summary
+                    )
+                    tag = " [NEW]" if ar.id == newest_id else ""
+                    archive_overview_lines.append(
+                        f"- {ar.id} ({ar.message_count} msgs): "
+                        f"{summary_preview}{tag}"
+                    )
+                archive_overview = ""
+                if archive_overview_lines:
+                    archive_overview = (
+                        "\n\nArchive overview:\n"
+                        + "\n".join(archive_overview_lines)
+                    )
+
                 final_messages.append(
                     internal_user_message(
                         [
@@ -1543,6 +1576,7 @@ class KimiAgentLoop:
                                 "or design decisions. Prefer this tool over "
                                 "guessing or asking the user to repeat "
                                 "themselves."
+                                f"{archive_overview}"
                             )
                         ]
                     )
@@ -1567,6 +1601,17 @@ class KimiAgentLoop:
                 )
 
             self._sync_context_recall_tool_visibility()
+
+            # Backfill keywords for any older archives that were created before
+            # keyword extraction was implemented.
+            try:
+                await asyncio.to_thread(
+                    backfill_archive_keywords, self._context.file_backend
+                )
+            except Exception:
+                logger.opt(exception=True).debug(
+                    "Failed to backfill archive keywords"
+                )
 
             try:
                 await self._checkpoint()

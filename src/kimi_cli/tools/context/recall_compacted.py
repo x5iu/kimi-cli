@@ -22,7 +22,6 @@ from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.logging import logger
 
 MAX_RESULTS = 5
-OUTPUT_MAX_CHARS = 12_000
 EXCERPT_MAX_CHARS = 4000
 _TOKEN_RE = re.compile(r"[\w./:-]+|[\u4e00-\u9fff]+")
 
@@ -75,7 +74,8 @@ class RecallCompactedContext(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         context_file = self._context_file_getter()
         records = load_compaction_archives(context_file)
-        builder = ToolResultBuilder(max_chars=OUTPUT_MAX_CHARS)
+        output_max = params.max_results * EXCERPT_MAX_CHARS + 2000
+        builder = ToolResultBuilder(max_chars=output_max)
 
         if not records:
             builder.write(
@@ -152,6 +152,11 @@ class RecallCompactedContext(CallableTool2[Params]):
         summary_boosts: dict[str, int] = {}
         for record in records:
             s = self._score_text(record.summary, query_lc, tokens)
+            # Boost from pre-extracted keywords
+            if record.keywords:
+                kw_set = set(record.keywords)
+                kw_hits = sum(1 for t in tokens if t in kw_set)
+                s += kw_hits
             if s > 0:
                 summary_boosts[record.id] = s
         tasks = [
@@ -193,6 +198,12 @@ class RecallCompactedContext(CallableTool2[Params]):
             if score <= 0:
                 continue
             score += summary_boost
+            # Boost score when query tokens overlap with archive keywords
+            if record.keywords:
+                kw_set = set(record.keywords)
+                kw_hits = sum(1 for t in tokens if t in kw_set)
+                if kw_hits:
+                    score += kw_hits
             start, end = self._expand_to_turn_boundary(index, messages)
             raw_hits.append((score, start, end, index))
 
@@ -292,7 +303,14 @@ class RecallCompactedContext(CallableTool2[Params]):
                 r'(?:^|\W)' + re.escape(query) + r'(?:\W|$)', lowered
             ):
                 score += 2
-        score += sum(1 for token in tokens if token in lowered)
+        for token in tokens:
+            # Use word boundary for ASCII tokens, substring for CJK
+            if token and all('\u4e00' <= c <= '\u9fff' for c in token):
+                if token in lowered:
+                    score += 1
+            else:
+                if re.search(r'(?:^|\W)' + re.escape(token) + r'(?:\W|$)', lowered):
+                    score += 1
         # Length normalization: gently penalize very long messages
         if score > 0 and len(lowered) > 500:
             score = max(1, score - (len(lowered) // 2000))

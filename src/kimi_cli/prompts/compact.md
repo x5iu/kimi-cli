@@ -22,6 +22,16 @@ The above is a list of messages in an agent conversation. You are now given a ta
 - For errors: Keep full error message + final solution
 - For discussions: Extract decisions and action items only
 
+**Re-compaction Handling:**
+- If the FIRST message in the conversation is itself a compaction summary
+  (starts with structured XML tags like `<current_focus>`),
+  you MUST preserve its key information with HIGH fidelity
+- Do NOT further compress file paths, error messages, commit hashes,
+  or design decisions from a previous compaction summary
+- Carry forward ALL items from prior `<completed_tasks>` and
+  `<active_issues>` sections — do not drop them even if they seem old
+- When in doubt, keep more rather than less from a prior compaction summary
+
 **Required Output Structure:**
 
 <current_focus>
