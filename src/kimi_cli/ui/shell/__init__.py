@@ -164,6 +164,17 @@ class Shell:
                                 bg_auto_failures = 0
                             continue
 
+                    # Poll for pending LLM notifications during prompt
+                    # wait so we can auto-trigger when a background task
+                    # completes while the user is idle.
+                    _npoll: asyncio.Task[None] | None = None
+                    if (
+                        isinstance(self.agent_loop, KimiAgentLoop)
+                        and bg_auto_failures < _MAX_BG_AUTO_TRIGGER_FAILURES
+                    ):
+                        _npoll = asyncio.create_task(
+                            self._notification_auto_trigger_poll(prompt_session)
+                        )
                     try:
                         ensure_new_line()
                         user_input = await prompt_session.prompt()
@@ -177,6 +188,9 @@ class Shell:
                         prompt_session.execute_deferred_erase()
                         console.print("Bye!")
                         break
+                    finally:
+                        if _npoll is not None:
+                            _npoll.cancel()
 
                     if not user_input:
                         logger.debug("Got empty input, skipping")
@@ -562,6 +576,34 @@ class Shell:
             console.print(f"[red]Failed to run shell command: {e}[/red]")
         finally:
             remove_sigint()
+
+    async def _notification_auto_trigger_poll(
+        self,
+        prompt_session: CustomPromptSession,
+        interval: float = 2.0,
+    ) -> None:
+        """Poll for pending LLM notifications and interrupt the idle prompt."""
+        assert isinstance(self.agent_loop, KimiAgentLoop)
+        max_failures = 3
+        failures = 0
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                self.agent_loop.runtime.background_tasks.reconcile()
+                if self.agent_loop.runtime.notifications.has_pending_for_sink("llm"):
+                    logger.debug("Pending LLM notification detected, interrupting prompt")
+                    prompt_session.trigger_notification_auto_turn()
+                    return
+                failures = 0
+            except Exception:
+                failures += 1
+                logger.exception("Notification auto-trigger poll failed")
+                if failures >= max_failures:
+                    logger.warning(
+                        "Notification auto-trigger poll disabled after {n} consecutive failures",
+                        n=failures,
+                    )
+                    return
 
     def _start_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)

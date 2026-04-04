@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import suppress
 from hashlib import md5
 from typing import Any
 
@@ -169,6 +170,12 @@ class _ClearScreenRequest(Exception):
     def __init__(self, buffer_text: str = ""):
         self.buffer_text = buffer_text
         super().__init__()
+
+class _NotificationAutoTrigger(Exception):
+    """Raised to interrupt the idle prompt when background task notifications arrive."""
+
+    pass
+
 
 
 class CustomPromptSession(
@@ -642,7 +649,29 @@ class CustomPromptSession(
         self._hard_redraw(app)
         return app, text_area
 
-    async def prompt(self) -> UserInput:
+    def trigger_notification_auto_turn(self) -> None:
+        """Interrupt the idle prompt to auto-trigger a turn for pending notifications.
+
+        Skips interruption if the user has typed content into the buffer
+        (they are not truly idle).  Also swallows any ``InvalidStateError``
+        from prompt_toolkit if the application has already resolved (e.g.
+        the user pressed Enter at the same instant).
+        """
+        app = self._prompt_app
+        if app is None or not app.is_running:
+            return
+        # Don't interrupt if the user is actively composing input.
+        if self._prompt_text_area is not None and self._prompt_text_area.buffer.text.strip():
+            return
+        with suppress(Exception):
+            app.exit(exception=_NotificationAutoTrigger())
+
+    async def prompt(self) -> UserInput | None:
+        """Prompt the user for input.
+
+        Returns ``None`` when the prompt is interrupted by a notification
+        auto-trigger (background task completed while idle).
+        """
         restore_text = ""
         while True:
             app, text_area = self._prepare_prompt_application()
@@ -654,6 +683,8 @@ class CustomPromptSession(
             try:
                 with patch_stdout(raw=True):
                     command = str(await app.run_async()).strip()
+            except _NotificationAutoTrigger:
+                return None
             except _ClearScreenRequest as req:
                 import sys
 
