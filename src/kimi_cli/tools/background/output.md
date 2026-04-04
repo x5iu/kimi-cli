@@ -12,3 +12,4 @@ Guidelines:
 - The response includes `output_preview_start_line`, `output_preview_end_line` (exclusive — the range is `[start, end)`), `output_has_before`, `output_has_after`, and `output_next_offset` for line-level pagination. Use `output_next_offset` as the next `offset` value to continue forward.
 - When the preview is truncated, use `ReadFile` with the returned `output_path` to inspect the full log in pages.
 - This tool works with the generic background task system and should remain the primary read path for future task types, not just bash.
+- When context budget is tight, always pass `offset` (from the previous `output_next_offset`) to read only new lines instead of re-reading the full output.

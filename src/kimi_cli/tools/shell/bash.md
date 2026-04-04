@@ -26,4 +26,4 @@ ${RG_PREFERENCE_GUIDANCE}
 - After starting a background task, do not guess its outcome. If a live session notification channel is active, rely on that completion notification; otherwise use `TaskOutput` when you need to inspect progress or block until completion.
 - If you need to tell a human shell user how to manage background tasks, only mention `/task`.
 
-- Check the existence of a command by running `which <command>` before using it.
+- When context budget is tight, pipe output through `| head -N` or `| tail -N` to limit size. For `rg`, always specify a target directory and use `--max-count` to bound results.- Check the existence of a command by running `which <command>` before using it.
