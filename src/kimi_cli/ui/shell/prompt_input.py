@@ -35,7 +35,7 @@ class PromptInputMixin:
 
         if get_editor_command(configured) is None:
             cast(Callable[..., None], _prompt_module_attr("toast", _toast))(
-                "No editor found. Set $VISUAL/$EDITOR or run /editor."
+                "No editor found. Set $VISUAL/$EDITOR or default_editor in config.toml."
             )
             return
 

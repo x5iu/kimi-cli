@@ -72,14 +72,12 @@ Key flags:
 | `--output-format text` | Plain text output (default for `--print`) |
 | `--quiet` | Alias for `--print --output-format text --final-message-only` |
 | `--final-message-only` | Only print the final assistant message |
-| `--verbose` | Print verbose information |
 | `--model <model>` | Override the LLM model |
 | `-w` / `--work-dir <dir>` | Working directory for the agent |
 | `--add-dir <dir>` | Grant access to additional directories |
 | `--max-steps-per-turn <n>` | Limit maximum steps per turn |
 | `-C` / `--continue` | Resume the most recent session |
 | `-S` / `--session <id>` | Resume a specific session |
-| `--config <toml/json>` | Override configuration inline |
 | `--no-thinking` | Disable thinking mode |
 
 ### Pipe input
@@ -127,7 +125,6 @@ results as they complete.
 | `--quiet` | Headless + text output + final message only |
 | `--output-format` | `text` or `stream-json` |
 | `--final-message-only` | Only emit last assistant message |
-| `--verbose` | Verbose output |
 | `--model` | LLM model override |
 | `-w` / `--work-dir` | Working directory |
 | `--add-dir` | Additional directory access |
@@ -136,4 +133,3 @@ results as they complete.
 | `--no-thinking` | Disable thinking mode |
 | `-C` / `--continue` | Resume last session |
 | `-S` / `--session` | Resume specific session |
-| `--config` | Inline config override |

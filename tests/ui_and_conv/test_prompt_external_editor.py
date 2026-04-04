@@ -86,7 +86,7 @@ def test_open_in_external_editor_toast_when_no_editor(monkeypatch) -> None:
 
     prompt_session._open_in_external_editor(cast(KeyPressEvent, event))
 
-    assert toast_calls == ["No editor found. Set $VISUAL/$EDITOR or run /editor."]
+    assert toast_calls == ["No editor found. Set $VISUAL/$EDITOR or default_editor in config.toml."]
     assert app.tasks == []
     assert buff.document is None
 

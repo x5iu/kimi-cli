@@ -158,9 +158,7 @@ def test_pyinstaller_datas():
     (
         ".venv/lib/python3.14/site-packages/fastmcp/../fastmcp-2.12.5.dist-info/licenses/LICENSE",
         "fastmcp/../fastmcp-2.12.5.dist-info/licenses",
-    ),
-    ("src/kimi_cli/CHANGELOG.md", "kimi_cli"),
-    ("src/kimi_cli/agents/default/agent.yaml", "kimi_cli/agents/default"),
+    ), ("src/kimi_cli/agents/default/agent.yaml", "kimi_cli/agents/default"),
     ("src/kimi_cli/agents/default/system.md", "kimi_cli/agents/default"),
     ("src/kimi_cli/prompts/compact.md", "kimi_cli/prompts"),
     ("src/kimi_cli/prompts/init.md", "kimi_cli/prompts"),

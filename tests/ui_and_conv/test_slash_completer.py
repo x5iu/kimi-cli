@@ -142,10 +142,10 @@ def testwrap_to_width_respects_max_lines():
 def test_slash_menu_preserves_unselected_state(monkeypatch):
     completions = [
         Completion(
-            text="/editor",
+            text="/model",
             start_position=0,
-            display="/editor",
-            display_meta="Set default external editor for Ctrl-O",
+            display="/model",
+            display_meta="Switch LLM model or thinking mode",
         ),
         Completion(
             text="/exit",
@@ -169,8 +169,8 @@ def test_slash_menu_preserves_unselected_state(monkeypatch):
     assert content.cursor_position.y == 0
     assert "›" not in rendered_lines[1]
     assert "›" not in rendered_lines[2]
-    assert "Ctrl-O" in rendered_lines[1]
-    assert rendered_lines[1].count("/editor") == 1
+    assert "Switch" in rendered_lines[1]
+    assert rendered_lines[1].count("/model") == 1
     assert rendered_lines[-1].strip() == ""
 
 
@@ -198,10 +198,10 @@ def test_completion_menu_uses_full_width_when_meta_missing() -> None:
 def test_completion_menu_height_is_stable_for_selected_description(monkeypatch) -> None:
     completions = [
         Completion(
-            text="/editor",
+            text="/model",
             start_position=0,
-            display="/editor",
-            display_meta="Set default external editor for Ctrl-O and configure wait behavior",
+            display="/model",
+            display_meta="Switch LLM model or thinking mode and save preference",
         ),
         Completion(
             text="/exit",
@@ -237,7 +237,7 @@ def test_completion_menu_height_is_stable_for_selected_description(monkeypatch) 
     assert unselected_content.line_count == 6
     detail_line = "".join(fragment[1] for fragment in selected_content.get_line(5))
     assert "╰─" in detail_line
-    assert "Ctrl-O" in detail_line
+    assert "Switch" in detail_line
 
 
 def testfind_prompt_float_container_supports_conditional_container_shape():

@@ -57,34 +57,6 @@ def _normalize_cli_error_output(text: str) -> str:
     return normalized
 
 
-def test_config_option_requires_argument_is_reported(tmp_path: Path) -> None:
-    share_dir = tmp_path / "share"
-    result = _run_kimi(["--config"], share_dir=share_dir)
-    assert result.returncode == snapshot(2)
-    assert result.stdout == snapshot("")
-    assert _normalize_cli_error_output(result.stderr) == snapshot(
-        """\
-Error:
-Option '--config' requires an argument.
-"""
-    )
-
-
-def test_config_option_help_value_is_reported(tmp_path: Path) -> None:
-    share_dir = tmp_path / "share"
-    result = _run_kimi(["--config", "--help"], share_dir=share_dir)
-    assert result.returncode == snapshot(2)
-    assert result.stdout == snapshot("")
-    assert _normalize_cli_error_output(result.stderr) == snapshot(
-        """\
-Usage: python -m kimi_cli.cli [OPTIONS] COMMAND [ARGS]...
-Try 'python -m kimi_cli.cli -h' for help.
-Error:
-Invalid value for --config: Invalid configuration text: Expecting value: line 1 column 1 (char 0); Unexpected
-character: '\\x00' at line 1 col 6
-"""
-    )
-
 
 def test_invalid_config_toml_is_reported(tmp_path: Path) -> None:
     share_dir = tmp_path / "share"

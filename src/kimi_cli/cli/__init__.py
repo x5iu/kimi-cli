@@ -10,7 +10,6 @@ import typer
 
 from kimi_cli.constant import VERSION
 
-from .info import cli as info_cli
 from .mcp import cli as mcp_cli
 
 
@@ -60,13 +59,6 @@ def kimi(
             help="Show version and exit.",
             callback=_version_callback,
             is_eager=True,
-        ),
-    ] = False,
-    verbose: Annotated[
-        bool,
-        typer.Option(
-            "--verbose",
-            help="Print verbose information. Default: no.",
         ),
     ] = False,
     debug: Annotated[
@@ -120,13 +112,6 @@ def kimi(
             help="Continue the previous session for the working directory. Default: no.",
         ),
     ] = False,
-    config_string: Annotated[
-        str | None,
-        typer.Option(
-            "--config",
-            help="Config TOML/JSON string to load. Default: none.",
-        ),
-    ] = None,
     config_file: Annotated[
         Path | None,
         typer.Option(
@@ -158,9 +143,7 @@ def kimi(
         bool,
         typer.Option(
             "--yolo",
-            "--yes",
             "-y",
-            "--auto-approve",
             help="Automatically approve all actions. Default: no.",
         ),
     ] = False,
@@ -169,8 +152,6 @@ def kimi(
         typer.Option(
             "--prompt",
             "-p",
-            "--command",
-            "-c",
             help="User prompt to the agent. Default: prompt interactively.",
         ),
     ] = None,
@@ -216,13 +197,6 @@ def kimi(
         ),
     ] = False,
     # Customization
-    agent: Annotated[
-        Literal["default"] | None,
-        typer.Option(
-            "--agent",
-            help="Builtin agent specification to use. Default: builtin default agent.",
-        ),
-    ] = None,
     agent_file: Annotated[
         Path | None,
         typer.Option(
@@ -248,16 +222,6 @@ def kimi(
             ),
         ),
     ] = None,
-    mcp_config: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--mcp-config",
-            help=(
-                "MCP config JSON to load. Add this option multiple times to specify multiple MCP "
-                "configs. Default: none."
-            ),
-        ),
-    ] = None,
     local_skills_dir: Annotated[
         Path | None,
         typer.Option(
@@ -278,25 +242,6 @@ def kimi(
             help="Maximum number of steps in one turn. Default: from config.",
         ),
     ] = None,
-    max_retries_per_step: Annotated[
-        int | None,
-        typer.Option(
-            "--max-retries-per-step",
-            min=1,
-            help="Maximum number of retries in one step. Default: from config.",
-        ),
-    ] = None,
-    max_ralph_iterations: Annotated[
-        int | None,
-        typer.Option(
-            "--max-ralph-iterations",
-            min=-1,
-            help=(
-                "Extra iterations after the first turn in Ralph mode. Use -1 for unlimited. "
-                "Default: from config."
-            ),
-        ),
-    ] = None,
 ):
     """Kimi, your next CLI agent."""
     from kimi_cli.utils.proxy import normalize_proxy_env
@@ -314,10 +259,8 @@ def kimi(
 
     from kaos.path import KaosPath
 
-    from kimi_cli.agentspec import DEFAULT_AGENT_FILE
     from kimi_cli.app import KimiCLI, enable_logging
-    from kimi_cli.config import Config, load_config_from_string
-    from kimi_cli.exception import ConfigError
+    from kimi_cli.config import Config
     from kimi_cli.metadata import load_metadata, save_metadata
     from kimi_cli.session import Session
     from kimi_cli.utils.logging import logger, open_original_stderr, redirect_stderr_to_logger
@@ -359,16 +302,8 @@ def kimi(
             "--print": print_mode,
         },
         {
-            "--agent": agent is not None,
-            "--agent-file": agent_file is not None,
-        },
-        {
             "--continue": continue_,
             "--session": session_id is not None,
-        },
-        {
-            "--config": config_string is not None,
-            "--config-file": config_file is not None,
         },
     ]
     for option_set in conflict_option_sets:
@@ -378,11 +313,6 @@ def kimi(
                 f"Cannot combine {', '.join(active_options)}.",
                 param_hint=active_options[0],
             )
-
-    if agent is not None:
-        match agent:
-            case "default":
-                agent_file = DEFAULT_AGENT_FILE
 
     ui: UIMode = "shell"
     if print_mode:
@@ -410,19 +340,10 @@ def kimi(
         )
 
     config: Config | Path | None = None
-    if config_string is not None:
-        config_string = config_string.strip()
-        if not config_string:
-            raise typer.BadParameter("Config cannot be empty", param_hint="--config")
-        try:
-            config = load_config_from_string(config_string)
-        except ConfigError as e:
-            raise typer.BadParameter(str(e), param_hint="--config") from e
-    elif config_file is not None:
+    if config_file is not None:
         config = config_file
 
     file_configs = list(mcp_config_file or [])
-    raw_mcp_config = list(mcp_config or [])
 
     # Use default MCP config file if no MCP config is provided
     if not file_configs:
@@ -434,11 +355,6 @@ def kimi(
         mcp_configs = [json.loads(conf.read_text(encoding="utf-8")) for conf in file_configs]
     except json.JSONDecodeError as e:
         raise typer.BadParameter(f"Invalid JSON: {e}", param_hint="--mcp-config-file") from e
-
-    try:
-        mcp_configs += [json.loads(conf) for conf in raw_mcp_config]
-    except json.JSONDecodeError as e:
-        raise typer.BadParameter(f"Invalid JSON: {e}", param_hint="--mcp-config") from e
 
     skills_dir: KaosPath | None = None
     if local_skills_dir is not None:
@@ -514,8 +430,6 @@ def kimi(
             mcp_configs=mcp_configs,
             skills_dir=skills_dir,
             max_steps_per_turn=max_steps_per_turn,
-            max_retries_per_step=max_retries_per_step,
-            max_ralph_iterations=max_ralph_iterations,
         )
         try:
             match ui:
@@ -604,7 +518,6 @@ def kimi(
         raise typer.Exit(code=1) from exc
 
 
-cli.add_typer(info_cli, name="info")
 
 
 @cli.command(name="__background-task-worker", hidden=True)

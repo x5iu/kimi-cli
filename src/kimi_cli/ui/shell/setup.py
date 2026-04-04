@@ -206,11 +206,3 @@ async def setup(app: Shell, args: str) -> None:
     await asyncio.sleep(1)
     console.clear()
     raise Reload
-
-
-@registry.command
-def reload(app: Shell, args: str):
-    """Reload configuration"""
-    from kimi_cli.cli import Reload
-
-    raise Reload
