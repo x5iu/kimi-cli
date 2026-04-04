@@ -205,3 +205,120 @@ async def test_early_turn_steer_is_not_dropped_before_agent_loop_starts(
     assert "Reminder content follows in the rest of this message." in reminder_text
     assert reminder_text.endswith("also do this")
     assert step_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_second_steer_uses_abbreviated_instruction(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    """The second steer in a turn should use abbreviated instruction text."""
+    soul = KimiAgentLoop(
+        Agent(
+            name="Steer Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    turn_id = soul._begin_turn()
+    try:
+        soul.steer("first reminder")
+        await soul._consume_pending_steers()
+
+        soul.steer("second reminder")
+        await soul._consume_pending_steers()
+    finally:
+        soul._end_turn(turn_id)
+
+    # First steer gets full instruction
+    first_text = soul.context.history[0].extract_text(" ")
+    assert "additional user instruction" in first_text
+
+    # Second steer gets abbreviated instruction
+    second_text = soul.context.history[1].extract_text(" ")
+    assert "same handling rules" in second_text
+    assert "additional user instruction" not in second_text
+    assert "second reminder" in second_text
+
+
+@pytest.mark.asyncio
+async def test_steer_count_resets_on_new_turn(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    """Steer count resets when a new turn begins, so the first steer gets full instruction."""
+    soul = KimiAgentLoop(
+        Agent(
+            name="Steer Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    # First turn
+    turn_id = soul._begin_turn()
+    try:
+        soul.steer("turn1 steer")
+        await soul._consume_pending_steers()
+    finally:
+        soul._end_turn(turn_id)
+
+    # Second turn
+    turn_id2 = soul._begin_turn()
+    try:
+        soul.steer("turn2 first steer")
+        await soul._consume_pending_steers()
+    finally:
+        soul._end_turn(turn_id2)
+
+    # Both first steers of each turn should have the full instruction
+    first_text = soul.context.history[0].extract_text(" ")
+    assert "additional user instruction" in first_text
+
+    second_text = soul.context.history[1].extract_text(" ")
+    assert "additional user instruction" in second_text
+
+
+@pytest.mark.asyncio
+async def test_steer_count_resets_after_compaction(
+    runtime: Runtime,
+    tmp_path: Path,
+) -> None:
+    """After compaction mid-turn, steer count resets so next steer gets full instruction."""
+    soul = KimiAgentLoop(
+        Agent(
+            name="Steer Test Agent",
+            system_prompt="Test system prompt.",
+            toolset=EmptyToolset(),
+            runtime=runtime,
+        ),
+        context=Context(file_backend=tmp_path / "history.jsonl"),
+    )
+
+    turn_id = soul._begin_turn()
+    try:
+        # First steer — full instruction
+        soul.steer("first reminder")
+        await soul._consume_pending_steers()
+        assert soul._turn_steer_count == 1
+
+        # Simulate compaction: increment generation and reset count
+        soul._compaction_generation += 1
+        soul._turn_steer_count = 0
+
+        # Next steer after compaction — should get full instruction again
+        soul.steer("post-compaction reminder")
+        await soul._consume_pending_steers()
+    finally:
+        soul._end_turn(turn_id)
+
+    # The post-compaction steer (history[-1]) should have full instruction, not brief
+    post_compaction_text = soul.context.history[-1].extract_text(" ")
+    assert "additional user instruction" in post_compaction_text
+    assert "same handling rules" not in post_compaction_text
+    assert "post-compaction reminder" in post_compaction_text

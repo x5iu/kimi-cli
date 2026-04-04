@@ -61,6 +61,9 @@ from kimi_cli.loop import (
 )
 from kimi_cli.loop.agent import Agent, Runtime
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider, IncrementalHistoryNormalizer
+from kimi_cli.loop.attachments.context_budget import ContextBudgetAttachmentProvider
+from kimi_cli.loop.attachments.goal_tracking import GoalTrackingAttachmentProvider
+from kimi_cli.loop.attachments.post_compaction import PostCompactionContinuityAttachmentProvider
 from kimi_cli.loop.attachments.prefer_shell_rg import PreferShellRgAttachmentProvider
 from kimi_cli.loop.compaction import (
     Compaction,
@@ -106,12 +109,16 @@ SKILL_COMMAND_PREFIX = "skill:"
 MAX_SKILL_RECOMMENDATIONS = 3
 
 TURN_END_QUESTION_DETECTOR_PROMPT = (
-    Path(__file__).parent.parent / "prompts" / "turn_end_question_detector.md"
-).read_text(encoding="utf-8").strip()
+    (Path(__file__).parent.parent / "prompts" / "turn_end_question_detector.md")
+    .read_text(encoding="utf-8")
+    .strip()
+)
 
 SKILL_RECOMMENDER_PROMPT = (
-    Path(__file__).parent.parent / "prompts" / "skill_recommender.md"
-).read_text(encoding="utf-8").strip()
+    (Path(__file__).parent.parent / "prompts" / "skill_recommender.md")
+    .read_text(encoding="utf-8")
+    .strip()
+)
 
 
 type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
@@ -219,8 +226,15 @@ class KimiAgentLoop:
 
         self._steer_queue: asyncio.Queue[_QueuedSteer] = asyncio.Queue()
         self._active_turn_id: int | None = None
+        self._turn_steer_count: int = 0
+        self._compaction_generation: int = 0
         self._next_turn_id = 0
-        self._attachment_providers: list[AttachmentProvider] = [PreferShellRgAttachmentProvider()]
+        self._attachment_providers: list[AttachmentProvider] = [
+            PreferShellRgAttachmentProvider(),
+            GoalTrackingAttachmentProvider(),
+            ContextBudgetAttachmentProvider(),
+            PostCompactionContinuityAttachmentProvider(),
+        ]
         self._history_normalizer = IncrementalHistoryNormalizer()
 
         self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
@@ -366,6 +380,7 @@ class KimiAgentLoop:
     def _begin_turn(self) -> int:
         self._next_turn_id += 1
         self._active_turn_id = self._next_turn_id
+        self._turn_steer_count = 0
         return self._next_turn_id
 
     def _end_turn(self, turn_id: int) -> None:
@@ -416,6 +431,10 @@ class KimiAgentLoop:
             "'you just added', or 'you mentioned later'. Keep the final response centered on the "
             "user's original turn-opening request."
         )
+
+    @staticmethod
+    def _steer_instruction_text_brief() -> str:
+        return "Additional user reminder (same handling rules as the previous reminder):"
 
     @staticmethod
     def _skill_steer_instruction_text() -> str:
@@ -485,7 +504,15 @@ class KimiAgentLoop:
         if is_skill:
             reminder_message = self._build_skill_steer_message(content)
         else:
-            reminder_message = self._build_steer_message(content)
+            if self._turn_steer_count > 0:
+                reminder_message = self._build_steer_message_impl(
+                    content,
+                    instruction=self._steer_instruction_text_brief(),
+                    label="Reminder content",
+                )
+            else:
+                reminder_message = self._build_steer_message(content)
+            self._turn_steer_count += 1
         if self._runtime.llm is None:
             raise LLMNotSet()
         if missing_caps := check_message(reminder_message, self._runtime.llm.capabilities):
@@ -660,9 +687,7 @@ class KimiAgentLoop:
         full_history = list(self._context.history)
         if len(full_history) > 11:
             # Find first user message
-            first_user_idx = next(
-                (i for i, m in enumerate(full_history) if m.role == "user"), 0
-            )
+            first_user_idx = next((i for i, m in enumerate(full_history) if m.role == "user"), 0)
             tail_start = len(full_history) - 10
             if first_user_idx >= tail_start:
                 # First user message is already in the tail — no need to prepend
@@ -1524,15 +1549,10 @@ class KimiAgentLoop:
                 )
                 keywords_info = ""
                 if registration.record.keywords:
-                    keywords_info = (
-                        f" Key topics: "
-                        f"{', '.join(registration.record.keywords[:8])}."
-                    )
+                    keywords_info = f" Key topics: {', '.join(registration.record.keywords[:8])}."
 
                 # Build an overview of ALL archives (not just the latest).
-                all_archives = load_compaction_archives(
-                    self._context.file_backend
-                )
+                all_archives = load_compaction_archives(self._context.file_backend)
                 archive_overview_lines: list[str] = []
                 newest_id = registration.record.id
                 recent_archives = all_archives[-5:]
@@ -1544,21 +1564,15 @@ class KimiAgentLoop:
                     )
                 for ar in recent_archives:
                     summary_preview = (
-                        ar.summary[:80] + "..."
-                        if len(ar.summary) > 80
-                        else ar.summary
+                        ar.summary[:80] + "..." if len(ar.summary) > 80 else ar.summary
                     )
                     tag = " [NEW]" if ar.id == newest_id else ""
                     archive_overview_lines.append(
-                        f"- {ar.id} ({ar.message_count} msgs): "
-                        f"{summary_preview}{tag}"
+                        f"- {ar.id} ({ar.message_count} msgs): {summary_preview}{tag}"
                     )
                 archive_overview = ""
                 if archive_overview_lines:
-                    archive_overview = (
-                        "\n\nArchive overview:\n"
-                        + "\n".join(archive_overview_lines)
-                    )
+                    archive_overview = "\n\nArchive overview:\n" + "\n".join(archive_overview_lines)
 
                 final_messages.append(
                     internal_user_message(
@@ -1589,33 +1603,28 @@ class KimiAgentLoop:
             # Inject current todo state so the agent retains awareness after compaction.
             todos = self._runtime.session.state.todos
             if todos:
-                todo_lines = [
-                    f"- [{t.status}] {t.title}" for t in todos
-                ]
+                todo_lines = [f"- [{t.status}] {t.title}" for t in todos]
                 final_messages.append(
                     internal_user_message(
                         [
                             system(
                                 "Your current todo list survived compaction. "
-                                "Review it before creating a new one.\n"
-                                + "\n".join(todo_lines)
+                                "Review it before creating a new one.\n" + "\n".join(todo_lines)
                             )
                         ]
                     )
                 )
 
             self._sync_context_recall_tool_visibility()
+            self._compaction_generation += 1
+            self._turn_steer_count = 0
 
             # Backfill keywords for any older archives that were created before
             # keyword extraction was implemented.
             try:
-                await asyncio.to_thread(
-                    backfill_archive_keywords, self._context.file_backend
-                )
+                await asyncio.to_thread(backfill_archive_keywords, self._context.file_backend)
             except Exception:
-                logger.opt(exception=True).debug(
-                    "Failed to backfill archive keywords"
-                )
+                logger.opt(exception=True).debug("Failed to backfill archive keywords")
 
             try:
                 await self._checkpoint()
@@ -1723,5 +1732,3 @@ class KimiAgentLoop:
             if retry_state.next_action is not None
             else "unknown",
         )
-
-

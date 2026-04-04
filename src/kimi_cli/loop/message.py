@@ -34,7 +34,7 @@ def tool_result_to_message(tool_result: ToolResult) -> Message:
     """Convert a tool result to a message."""
     if tool_result.return_value.is_error:
         assert tool_result.return_value.message, "Error return value should have a message"
-        message = tool_result.return_value.message
+        message = _sanitize_tool_output_tags(tool_result.return_value.message)
         if isinstance(tool_result.return_value, ToolRuntimeError):
             message += "\nThis is an unexpected error and the tool is probably not working."
         content: list[ContentPart] = [system(f"ERROR: {message}")]
@@ -43,7 +43,7 @@ def tool_result_to_message(tool_result: ToolResult) -> Message:
     else:
         content: list[ContentPart] = []
         if tool_result.return_value.message:
-            content.append(system(tool_result.return_value.message))
+            content.append(system(_sanitize_tool_output_tags(tool_result.return_value.message)))
         if tool_result.return_value.output:
             content.extend(_output_to_content_parts(tool_result.return_value.output))
         if not content:
@@ -60,6 +60,15 @@ def tool_result_to_message(tool_result: ToolResult) -> Message:
     )
 
 
+def _sanitize_tool_output_tags(text: str) -> str:
+    """Escape system directive tags in tool output to prevent false interpretation."""
+    text = text.replace("<system-reminder>", "‹system-reminder›")
+    text = text.replace("</system-reminder>", "‹/system-reminder›")
+    text = text.replace("<system-hint>", "‹system-hint›")
+    text = text.replace("</system-hint>", "‹/system-hint›")
+    return text
+
+
 def _output_to_content_parts(
     output: str | ContentPart | Sequence[ContentPart],
 ) -> list[ContentPart]:
@@ -67,11 +76,18 @@ def _output_to_content_parts(
     match output:
         case str(text):
             if text:
-                content.append(TextPart(text=text))
+                content.append(TextPart(text=_sanitize_tool_output_tags(text)))
         case ContentPart():
-            content.append(output)
+            if isinstance(output, TextPart):
+                content.append(TextPart(text=_sanitize_tool_output_tags(output.text)))
+            else:
+                content.append(output)
         case _:
-            content.extend(output)
+            for part in output:
+                if isinstance(part, TextPart):
+                    content.append(TextPart(text=_sanitize_tool_output_tags(part.text)))
+                else:
+                    content.append(part)
     return content
 
 
