@@ -62,9 +62,14 @@ from kimi_cli.loop import (
 from kimi_cli.loop.agent import Agent, Runtime
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider, IncrementalHistoryNormalizer
 from kimi_cli.loop.attachments.context_budget import ContextBudgetAttachmentProvider
+from kimi_cli.loop.attachments.edit_verify import EditVerificationReminderProvider
 from kimi_cli.loop.attachments.goal_tracking import GoalTrackingAttachmentProvider
+from kimi_cli.loop.attachments.grep_read_nudge import GrepThenTargetedReadNudgeProvider
 from kimi_cli.loop.attachments.post_compaction import PostCompactionContinuityAttachmentProvider
 from kimi_cli.loop.attachments.prefer_shell_rg import PreferShellRgAttachmentProvider
+from kimi_cli.loop.attachments.recall_nudge import RecallNudgeAfterCompactionProvider
+from kimi_cli.loop.attachments.task_poll import TaskPollEscalationAttachmentProvider
+from kimi_cli.loop.attachments.tool_storm import ToolStormBreakerAttachmentProvider
 from kimi_cli.loop.compaction import (
     Compaction,
     CompactionResult,
@@ -234,6 +239,11 @@ class KimiAgentLoop:
             GoalTrackingAttachmentProvider(),
             ContextBudgetAttachmentProvider(),
             PostCompactionContinuityAttachmentProvider(),
+            TaskPollEscalationAttachmentProvider(),
+            ToolStormBreakerAttachmentProvider(),
+            GrepThenTargetedReadNudgeProvider(),
+            RecallNudgeAfterCompactionProvider(),
+            EditVerificationReminderProvider(),
         ]
         self._history_normalizer = IncrementalHistoryNormalizer()
 

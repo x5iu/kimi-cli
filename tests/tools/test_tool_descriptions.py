@@ -70,7 +70,7 @@ Read text content from a file.
 - If the file doesn't exist or path is invalid, an error will be returned.
 - If you want to search for a certain content/pattern, prefer Shell with `rg` (or the Grep tool if Shell is unavailable) over ReadFile.
 - Content will be returned with a line number before each line like `cat -n` format.
-- Use `line_offset` and `n_lines` parameters when you only need to read a part of the file.
+- Use `line_offset` and `n_lines` parameters when you only need to read a part of the file.- When context budget is tight, prefer reading ≤200 lines at a time with `line_offset` + `n_lines` rather than loading the whole file.
 - `line_offset` can be negative to count backward from the end of the file. For example, `line_offset=-200` reads the last 200 lines.
 - The tool result message includes the file's total line count when it is known.
 - The maximum number of lines that can be read at once is 1000.
@@ -172,6 +172,7 @@ Write content to a file.
 **Tips:**
 - When `mode` is not specified, it defaults to `overwrite`. Always write with caution.
 - When the content to write is too long (e.g. > 100 lines), use this tool multiple times instead of a single call. Use `overwrite` mode at the first time, then use `append` mode after the first write.
+- When making small changes to existing files, prefer the Edit tool over WriteFile — surgical edits consume far less context than full rewrites.
 """
     )
 
