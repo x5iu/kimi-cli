@@ -146,24 +146,21 @@ class Shell:
                             logger.info(
                                 "Background task completed while idle, auto-triggering agent"
                             )
-                            ok = await self.run_agent_loop_command(
-                                "<system-reminder>"
-                                "Background tasks completed while you were idle."
-                                "</system-reminder>"
-                            )
+                            saved_mode = prompt_session._mode
+                            try:
+                                ok = await self._run_interactive_turn(
+                                    prompt_session,
+                                    "‹system-reminder›"
+                                    "Background tasks completed while you were idle."
+                                    "‹/system-reminder›",
+                                )
+                            finally:
+                                prompt_session._mode = saved_mode
                             console.print()
                             if not ok:
-                                bg_auto_failures += 1
-                                logger.warning(
-                                    "Background auto-trigger failed ({n}/{max})",
-                                    n=bg_auto_failures,
-                                    max=_MAX_BG_AUTO_TRIGGER_FAILURES,
-                                )
-                                await asyncio.sleep(2)
-                            else:
-                                bg_auto_failures = 0
+                                break
+                            bg_auto_failures = 0
                             continue
-
                     # Poll for pending LLM notifications during prompt
                     # wait so we can auto-trigger when a background task
                     # completes while the user is idle.
