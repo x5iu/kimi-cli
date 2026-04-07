@@ -109,7 +109,26 @@ class Approval:
         approved_future = asyncio.Future[bool]()
         self._request_queue.put_nowait(request)
         self._requests[request.id] = (request, approved_future)
-        return await approved_future
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(approved_future), timeout=300.0
+            )
+        except TimeoutError:
+            logger.warning(
+                "Approval request {id} timed out after 300s",
+                id=request.id,
+            )
+            self._cancel_request(request.id)
+            return False
+
+    def _cancel_request(self, request_id: str) -> None:
+        """Cancel a single pending request by ID."""
+        request_tuple = self._requests.pop(request_id, None)
+        if request_tuple is None:
+            return
+        _request, future = request_tuple
+        if not future.done():
+            future.set_result(False)
 
     async def fetch_request(self) -> Request:
         """
