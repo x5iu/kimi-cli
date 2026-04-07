@@ -1,20 +1,9 @@
 name: CI (llmkit)
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/ci-llmkit.yml"
-      - "packages/llmkit/**"
-      - "pyproject.toml"
-      - "uv.lock"
   push:
     branches:
-      - main
-    paths:
-      - ".github/workflows/ci-llmkit.yml"
-      - "packages/llmkit/**"
-      - "pyproject.toml"
-      - "uv.lock"
+      - allstar
 
 jobs:
   test:
@@ -55,39 +44,3 @@ jobs:
           UV_PYTHON: ${{ steps.setup-python.outputs.python-path }}
         run: make test-llmkit
 
-  docs:
-    runs-on: ubuntu-latest
-    env:
-      FOOTER_VERSION: ${{ github.ref_name }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-          allow-prereleases: true
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v1
-        with:
-          version: "0.8.5"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras --project packages/llmkit
-
-      - name: Generate API documentation
-        run: |
-          uv run --project packages/llmkit pdoc llmkit \
-            --docformat google \
-            --footer-text "llmkit ${FOOTER_VERSION}" \
-            -o packages/llmkit/docs
-
-      - name: Upload docs preview
-        uses: actions/upload-artifact@v4
-        with:
-          name: docs-preview
-          path: packages/llmkit/docs

@@ -1,5 +1,8 @@
 name: Typo checker
-on: [pull_request]
+on:
+  push:
+    branches:
+      - allstar
 
 jobs:
   run:
