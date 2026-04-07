@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import PurePosixPath, PureWindowsPath
 
 from kaos.path import KaosPath
-
 from kimi_cli.utils.path import is_within_directory, is_within_workspace
 
 

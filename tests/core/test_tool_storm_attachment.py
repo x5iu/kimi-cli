@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from llmkit.message import Message, TextPart, ToolCall
-
 from kimi_cli.loop.attachments.tool_storm import ToolStormBreakerAttachmentProvider
+from llmkit.message import Message, TextPart, ToolCall
 
 
 def _make_agent_loop_mock(*, compaction_generation: int = 0) -> MagicMock:

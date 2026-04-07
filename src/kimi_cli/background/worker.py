@@ -40,9 +40,7 @@ async def _stdin_relay_loop(
         if process.stdin is None:
             return
         try:
-            pending = sorted(
-                p for p in queue_dir.iterdir() if p.is_file() and p.suffix == ".msg"
-            )
+            pending = sorted(p for p in queue_dir.iterdir() if p.is_file() and p.suffix == ".msg")
         except FileNotFoundError:
             logger.warning("stdin relay: queue directory removed, stopping")
             return
@@ -76,9 +74,7 @@ async def _stdin_relay_loop(
             try:
                 msg_file.unlink()
             except OSError:
-                logger.warning(
-                    "stdin relay: failed to unlink %s, may re-send", msg_file.name
-                )
+                logger.warning("stdin relay: failed to unlink %s, may re-send", msg_file.name)
 
 
 def terminate_process_tree_windows(pid: int, *, force: bool) -> None:
@@ -335,7 +331,7 @@ async def run_background_task_worker(
                 try:
                     await task
                 except Exception:
-                    logger.exception('Background helper task failed')
+                    logger.exception("Background helper task failed")
                 except asyncio.CancelledError:
                     pass
 

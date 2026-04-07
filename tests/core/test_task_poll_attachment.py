@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from llmkit.message import Message, TextPart, ToolCall
-
 from kimi_cli.loop.attachments.task_poll import TaskPollEscalationAttachmentProvider
+from llmkit.message import Message, TextPart, ToolCall
 
 
 def _make_agent_loop_mock(
-    *, compaction_generation: int = 0, active_turn_id: int = 1,
+    *,
+    compaction_generation: int = 0,
+    active_turn_id: int = 1,
 ) -> MagicMock:
     mock = MagicMock()
     mock._compaction_generation = compaction_generation
@@ -224,7 +225,8 @@ class TestTaskPollEscalationAttachmentProvider:
         result1 = await provider.get_attachments(
             history,
             _make_agent_loop_mock(
-                compaction_generation=0, active_turn_id=1,
+                compaction_generation=0,
+                active_turn_id=1,
             ),
         )
         assert len(result1) == 1
@@ -243,7 +245,8 @@ class TestTaskPollEscalationAttachmentProvider:
         result2 = await provider.get_attachments(
             compacted_history,
             _make_agent_loop_mock(
-                compaction_generation=1, active_turn_id=1,  # same turn
+                compaction_generation=1,
+                active_turn_id=1,  # same turn
             ),
         )
         # bash-abc was already fired — same-turn compaction preserves
@@ -266,7 +269,8 @@ class TestTaskPollEscalationAttachmentProvider:
         result1 = await provider.get_attachments(
             history,
             _make_agent_loop_mock(
-                compaction_generation=0, active_turn_id=1,
+                compaction_generation=0,
+                active_turn_id=1,
             ),
         )
         assert len(result1) == 1
@@ -285,7 +289,8 @@ class TestTaskPollEscalationAttachmentProvider:
         result2 = await provider.get_attachments(
             compacted_history,
             _make_agent_loop_mock(
-                compaction_generation=1, active_turn_id=2,  # new turn!
+                compaction_generation=1,
+                active_turn_id=2,  # new turn!
             ),
         )
         # New turn — must fire again even though gen also changed

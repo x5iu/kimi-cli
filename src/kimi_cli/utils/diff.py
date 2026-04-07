@@ -5,9 +5,8 @@ import difflib
 import re
 from difflib import SequenceMatcher
 
-from llmkit.tooling import DisplayBlock
-
 from kimi_cli.tools.display import DiffDisplayBlock
+from llmkit.tooling import DisplayBlock
 
 N_CONTEXT_LINES = 3
 

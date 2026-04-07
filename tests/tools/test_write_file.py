@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from kaos.path import KaosPath
 from pydantic import ValidationError
 
+from kaos.path import KaosPath
 from kimi_cli.eventbus.types import DiffDisplayBlock
 from kimi_cli.tools.file.write import Params, WriteFile
 

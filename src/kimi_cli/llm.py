@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast, get_args
 
-from llmkit.chat_provider import ChatProvider
 from pydantic import SecretStr
 
 from kimi_cli.constant import USER_AGENT
 from kimi_cli.exception import ConfigError
+from llmkit.chat_provider import ChatProvider
 
 if TYPE_CHECKING:
     from kimi_cli.config import LLMModel, LLMProvider
@@ -148,9 +148,7 @@ def create_llm(
                 try:
                     gen_kwargs["top_p"] = float(top_p)
                 except ValueError:
-                    raise ConfigError(
-                        f"KIMI_MODEL_TOP_P must be a number, got {top_p!r}"
-                    ) from None
+                    raise ConfigError(f"KIMI_MODEL_TOP_P must be a number, got {top_p!r}") from None
             if max_tokens := os.getenv("KIMI_MODEL_MAX_TOKENS"):
                 try:
                     gen_kwargs["max_tokens"] = int(max_tokens)

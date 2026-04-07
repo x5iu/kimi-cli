@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Self
 
 import pytest
+
+from kimi_cli.eventbus import EventBus
+from kimi_cli.llm import LLM
+from kimi_cli.loop import run_agent_loop
+from kimi_cli.loop.agent import Agent, Runtime
+from kimi_cli.loop.context import Context
+from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
+from kimi_cli.utils.aioqueue import QueueShutDown
 from llmkit.chat_provider import (
     APIConnectionError,
     APIStatusError,
@@ -16,14 +24,6 @@ from llmkit.chat_provider import (
 from llmkit.message import Message, TextPart
 from llmkit.tooling import Tool
 from llmkit.tooling.simple import SimpleToolset
-
-from kimi_cli.eventbus import EventBus
-from kimi_cli.llm import LLM
-from kimi_cli.loop import run_agent_loop
-from kimi_cli.loop.agent import Agent, Runtime
-from kimi_cli.loop.context import Context
-from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
-from kimi_cli.utils.aioqueue import QueueShutDown
 
 
 class StaticStreamedMessage:
@@ -250,7 +250,9 @@ async def test_step_connection_error_recovery_only_retries_once(
     soul, _ = _make_soul(runtime, llm, tmp_path)
 
     with pytest.raises(APIConnectionError):
-        await run_agent_loop(soul, "trigger connection failure", _drain_ui_messages, asyncio.Event())
+        await run_agent_loop(
+            soul, "trigger connection failure", _drain_ui_messages, asyncio.Event()
+        )
 
     assert provider.generate_attempts == 2
     assert provider.recovery_calls == 1

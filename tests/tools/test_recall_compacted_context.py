@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from inline_snapshot import snapshot
-from llmkit.message import Message
 
 from kimi_cli.eventbus.types import TextPart, ThinkPart
 from kimi_cli.loop.compaction_archive import register_compaction_archive
 from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.tools.context.recall_compacted import Params, RecallCompactedContext
+from llmkit.message import Message
 
 
 def _write_archive(archive_file: Path, messages: list[Message]) -> None:
@@ -170,17 +170,13 @@ async def test_search_no_matches_returns_archive_list(
     )
     recall_compacted_context_tool.bind_context_file(lambda: context_file)
 
-    result = await recall_compacted_context_tool(
-        Params(query="zzz_nonexistent_term")
-    )
+    result = await recall_compacted_context_tool(Params(query="zzz_nonexistent_term"))
 
     assert not result.is_error
     assert "No matching excerpts" in result.output
     assert "c001" in result.output
     assert "Discussion about apples" in result.output
-    assert result.message == snapshot(
-        "No compacted-context matches found."
-    )
+    assert result.message == snapshot("No compacted-context matches found.")
 
 
 async def test_missing_archive_file_gracefully_handled(
@@ -201,9 +197,7 @@ async def test_missing_archive_file_gracefully_handled(
     recall_compacted_context_tool.bind_context_file(lambda: context_file)
 
     # Should not crash — _search_single_archive checks archive_path.exists()
-    result = await recall_compacted_context_tool(
-        Params(query="anything")
-    )
+    result = await recall_compacted_context_tool(Params(query="anything"))
 
     assert not result.is_error
     assert "No matching excerpts" in result.output

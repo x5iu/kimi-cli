@@ -158,4 +158,3 @@ def parse_attachment_kind(raw_kind: str) -> CachedAttachmentKind | None:
     if raw_kind == "image":
         return "image"
     return None
-

@@ -3,18 +3,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from llmkit.message import Message
-
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
+from llmkit.message import Message
 
 if TYPE_CHECKING:
     from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 
 _RECALL_NUDGE_TYPE = "recall_nudge_after_compaction"
 
-_COMPACTION_PREFIX = (
-    "<system>Previous context has been compacted"
-)
+_COMPACTION_PREFIX = "<system>Previous context has been compacted"
 
 # Agent must have done at least this many steps since
 # compaction before we fire the first nudge.
@@ -28,9 +25,7 @@ _COOLDOWN_MESSAGES = 15
 _MAX_FIRES_PER_COMPACTION = 2
 
 # Tool names that indicate "exploration mode"
-_EXPLORATION_TOOLS = frozenset(
-    {"Shell", "ReadFile", "Grep"}
-)
+_EXPLORATION_TOOLS = frozenset({"Shell", "ReadFile", "Grep"})
 
 
 class RecallNudgeAfterCompactionProvider(AttachmentProvider):
@@ -140,8 +135,7 @@ class RecallNudgeAfterCompactionProvider(AttachmentProvider):
         # cooldown messages after that.
         if (
             self._last_fired_at_step > 0
-            and assistant_step_count
-            < self._last_fired_at_step + self._cooldown
+            and assistant_step_count < self._last_fired_at_step + self._cooldown
         ):
             return []
 

@@ -4,10 +4,9 @@ import re
 from collections.abc import Mapping
 from typing import cast
 
-from llmkit.message import Message
-
 from kimi_cli.eventbus.types import TextPart
 from kimi_cli.loop.message import INTERNAL_USER_NAME
+from llmkit.message import Message
 
 CHECKPOINT_USER_PATTERN = re.compile(r"^<system>CHECKPOINT \d+</system>$")
 _LEGACY_INTERNAL_USER_PREFIXES = (

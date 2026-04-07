@@ -4,11 +4,11 @@ import sys
 from collections import deque
 from typing import Any, Literal, cast
 
-from kaos.path import KaosPath
 from prompt_toolkit.application.current import get_app_or_none as _ptk_get_app_or_none
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
 
+from kaos.path import KaosPath
 from kimi_cli.loop import StatusSnapshot, format_context_status
 
 from .prompt_constants import PROMPT_SYMBOL, PROMPT_SYMBOL_SHELL, PROMPT_SYMBOL_THINKING

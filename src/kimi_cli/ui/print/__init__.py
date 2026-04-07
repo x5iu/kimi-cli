@@ -6,14 +6,6 @@ import sys
 from functools import partial
 from pathlib import Path
 
-from llmkit.chat_provider import (
-    APIConnectionError,
-    APIEmptyResponseError,
-    APIStatusError,
-    APITimeoutError,
-    ChatProviderError,
-)
-from llmkit.message import Message
 from rich import print
 
 from kimi_cli.cli import ExitCode, InputFormat, OutputFormat
@@ -29,6 +21,14 @@ from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.ui.print.visualize import visualize
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.signals import install_sigint_handler
+from llmkit.chat_provider import (
+    APIConnectionError,
+    APIEmptyResponseError,
+    APIStatusError,
+    APITimeoutError,
+    ChatProviderError,
+)
+from llmkit.message import Message
 
 
 class Print:

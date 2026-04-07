@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import rich
-from llmkit.message import Message
 
 from kimi_cli.cli import OutputFormat
 from kimi_cli.eventbus import EventBus
@@ -18,6 +17,7 @@ from kimi_cli.eventbus.types import (
 )
 from kimi_cli.loop.message import tool_result_to_message
 from kimi_cli.utils.aioqueue import QueueShutDown
+from llmkit.message import Message
 
 
 class Printer(Protocol):

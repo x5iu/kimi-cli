@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from llmkit.message import Message
-
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
+from llmkit.message import Message
 
 if TYPE_CHECKING:
     from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
@@ -59,9 +58,7 @@ class ContextBudgetAttachmentProvider(AttachmentProvider):
             self._last_inject_index = -1
         if self._last_inject_index >= 0:
             assistant_since = sum(
-                1
-                for msg in history[self._last_inject_index :]
-                if msg.role == "assistant"
+                1 for msg in history[self._last_inject_index :] if msg.role == "assistant"
             )
             if assistant_since < self._cooldown:
                 return []

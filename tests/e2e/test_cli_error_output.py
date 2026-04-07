@@ -57,7 +57,6 @@ def _normalize_cli_error_output(text: str) -> str:
     return normalized
 
 
-
 def test_invalid_config_toml_is_reported(tmp_path: Path) -> None:
     share_dir = tmp_path / "share"
     config_path = tmp_path / "bad-config.toml"

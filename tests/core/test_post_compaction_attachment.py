@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from llmkit.message import Message, TextPart
-
 from kimi_cli.loop.attachments.post_compaction import (
     PostCompactionContinuityAttachmentProvider,
 )
 from kimi_cli.loop.message import internal_user_message, system
+from llmkit.message import Message, TextPart
 
 
 def _make_agent_loop_mock(*, compaction_generation: int = 0) -> MagicMock:
@@ -18,8 +17,10 @@ def _make_agent_loop_mock(*, compaction_generation: int = 0) -> MagicMock:
 
 def _compaction_summary_msg() -> Message:
     return internal_user_message(
-        [system("Previous context has been compacted. Here is the compaction output:"),
-         TextPart(text="Summary of prior context...")]
+        [
+            system("Previous context has been compacted. Here is the compaction output:"),
+            TextPart(text="Summary of prior context..."),
+        ]
     )
 
 
@@ -128,7 +129,5 @@ class TestPostCompactionContinuityAttachmentProvider:
     async def test_returns_empty_for_empty_history(self) -> None:
         provider = PostCompactionContinuityAttachmentProvider()
 
-        result = await provider.get_attachments(
-            [], _make_agent_loop_mock(compaction_generation=0)
-        )
+        result = await provider.get_attachments([], _make_agent_loop_mock(compaction_generation=0))
         assert result == []

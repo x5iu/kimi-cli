@@ -10,12 +10,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from kaos.local import LocalKaos
-from kaos.path import KaosPath
-from llmkit.chat_provider.mock import MockChatProvider
 from pydantic import SecretStr
 
 from kaos import get_current_kaos, reset_current_kaos, set_current_kaos
+from kaos.local import LocalKaos
+from kaos.path import KaosPath
 from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config, MoonshotSearchConfig, get_default_config
 from kimi_cli.eventbus.log import EventLog
@@ -40,6 +39,7 @@ from kimi_cli.tools.todo import SetTodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 from kimi_cli.utils.environment import Environment
+from llmkit.chat_provider.mock import MockChatProvider
 
 
 @pytest.fixture

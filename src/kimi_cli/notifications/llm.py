@@ -46,13 +46,13 @@ def _notification_text_lines(view: NotificationView, runtime: Runtime) -> list[s
                 lines.append(f"Failure reason: {task_view.runtime.failure_reason}")
             if chunk.line_too_large:
                 lines.append(
-                    f"Output: [Line too large — use TaskOutput(task_id=\"{task_view.spec.id}\") "
+                    f'Output: [Line too large — use TaskOutput(task_id="{task_view.spec.id}") '
                     f'or ReadFile(path="{chunk.output_path}") to inspect the output.]'
                 )
             elif chunk.text:
                 lines.extend(["Output tail:", "<output>", chunk.text, "</output>"])
             lines.append(
-                f"Full output: Use TaskOutput(task_id=\"{task_view.spec.id}\") "
+                f'Full output: Use TaskOutput(task_id="{task_view.spec.id}") '
                 f'or ReadFile(path="{chunk.output_path}") for the complete log.'
             )
             lines.append("</task-notification>")
@@ -72,13 +72,11 @@ def render_notification_text(view: NotificationView, runtime: Runtime) -> str:
                 status=task_view.runtime.status,
             )
             if chunk.line_too_large:
-                lines.append(
-                    "Output: [Line too large — use TaskOutput or ReadFile to inspect.]"
-                )
+                lines.append("Output: [Line too large — use TaskOutput or ReadFile to inspect.]")
             elif chunk.text:
                 lines.extend(["Output tail:", chunk.text])
             lines.append(
-                f"Full output: Use TaskOutput(task_id=\"{task_view.spec.id}\") "
+                f'Full output: Use TaskOutput(task_id="{task_view.spec.id}") '
                 f'or ReadFile(path="{chunk.output_path}") for the complete log.'
             )
     return "\n".join(lines)

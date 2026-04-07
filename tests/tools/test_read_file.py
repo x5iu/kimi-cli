@@ -7,8 +7,8 @@ from typing import Literal
 
 import pytest
 from inline_snapshot import snapshot
-from kaos.path import KaosPath
 
+from kaos.path import KaosPath
 from kimi_cli.tools.file.read import (
     MAX_BYTES,
     MAX_LINE_LENGTH,

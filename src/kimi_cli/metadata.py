@@ -4,11 +4,11 @@ import json
 from hashlib import md5
 from pathlib import Path
 
-from kaos.local import local_kaos
-from kaos.path import KaosPath
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from kaos import get_current_kaos
+from kaos.local import local_kaos
+from kaos.path import KaosPath
 from kimi_cli.share import get_share_dir
 from kimi_cli.utils.io import atomic_json_write
 from kimi_cli.utils.logging import logger

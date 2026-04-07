@@ -3,10 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from llmkit.message import Message
-
 from kimi_cli.eventbus.types import TextPart
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
+from llmkit.message import Message
 
 if TYPE_CHECKING:
     from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
@@ -30,6 +29,7 @@ class PostCompactionContinuityAttachmentProvider(AttachmentProvider):
     loop — each compaction increments the counter, so the provider fires exactly
     once per generation change when the compaction marker is present.
     """
+
     def __init__(self) -> None:
         self._last_seen_generation: int = 0
 
@@ -59,6 +59,7 @@ class PostCompactionContinuityAttachmentProvider(AttachmentProvider):
                 is_hint=False,  # system-reminder (authoritative)
             )
         ]
+
 
 def _is_compaction_summary(message: Message) -> bool:
     """Check if a message is a compaction summary."""

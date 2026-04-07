@@ -4,10 +4,9 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from llmkit.message import Message
-
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
 from kimi_cli.utils.turns import is_real_user_turn_start_message
+from llmkit.message import Message
 
 if TYPE_CHECKING:
     from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop

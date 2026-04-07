@@ -4,7 +4,6 @@ import uuid
 from pathlib import Path
 from typing import override
 
-from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.background import (
@@ -21,11 +20,10 @@ from kimi_cli.loop.agent import Runtime
 from kimi_cli.loop.approval import Approval
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
 TASK_OUTPUT_PREVIEW_BYTES = 32 << 10
 TASK_OUTPUT_READ_HINT_LINES = 300
-
-
 
 
 def _task_display(runtime: Runtime, task_id: str) -> BackgroundTaskDisplayBlock:
@@ -345,8 +343,7 @@ class TaskWrite(CallableTool2[TaskWriteParams]):
         if is_terminal_status(view.runtime.status):
             return ToolError(
                 message=(
-                    f"Task {params.task_id} has already finished "
-                    f"(status: {view.runtime.status})."
+                    f"Task {params.task_id} has already finished (status: {view.runtime.status})."
                 ),
                 brief="Task finished",
             )
@@ -354,8 +351,7 @@ class TaskWrite(CallableTool2[TaskWriteParams]):
         if not view.runtime.stdin_ready:
             return ToolError(
                 message=(
-                    f"Task {params.task_id} stdin is not ready yet "
-                    "(task may still be starting)."
+                    f"Task {params.task_id} stdin is not ready yet (task may still be starting)."
                 ),
                 brief="Stdin not ready",
             )

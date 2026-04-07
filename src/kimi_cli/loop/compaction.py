@@ -3,12 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
 
-import llmkit
-from llmkit.chat_provider import ChatProviderError, TokenUsage
-from llmkit.message import Message
-from llmkit.tooling.empty import EmptyToolset
-
 import kimi_cli.prompts as prompts
+import llmkit
 from kimi_cli.eventbus.types import (
     AudioURLPart,
     ContentPart,
@@ -22,6 +18,9 @@ from kimi_cli.loop.compaction_archive import stringify_tool_calls
 from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.turns import is_real_user_turn_start_message
+from llmkit.chat_provider import ChatProviderError, TokenUsage
+from llmkit.message import Message
+from llmkit.tooling.empty import EmptyToolset
 
 
 class CompactionResult(NamedTuple):
@@ -225,18 +224,14 @@ class SimpleCompaction:
             if msg.role == "tool" and msg.tool_call_id:
                 role_label = f"tool (call_id: {msg.tool_call_id})"
             compact_message.content.append(
-                TextPart(
-                    text=f"## Message {i + 1}\nRole: {role_label}\nContent:\n"
-                )
+                TextPart(text=f"## Message {i + 1}\nRole: {role_label}\nContent:\n")
             )
             compact_message.content.extend(
                 part for part in msg.content if not isinstance(part, ThinkPart)
             )
             if msg.tool_calls:
                 compact_message.content.append(
-                    TextPart(
-                        text=f"Tool calls: {stringify_tool_calls(msg.tool_calls)}"
-                    )
+                    TextPart(text=f"Tool calls: {stringify_tool_calls(msg.tool_calls)}")
                 )
         prompt_text = "\n" + prompts.COMPACT
         if custom_instruction:

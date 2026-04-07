@@ -1,7 +1,8 @@
 from typing import Literal
 
-from llmkit.tooling import DisplayBlock
 from pydantic import BaseModel
+
+from llmkit.tooling import DisplayBlock
 
 TodoStatus = Literal["pending", "in_progress", "done", "blocked"]
 TodoExecutor = Literal["main", "background_shell"]

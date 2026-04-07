@@ -3,11 +3,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import override
 
-from kaos.path import KaosPath
-from llmkit.chat_provider.kimi import Kimi
-from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kaos.path import KaosPath
 from kimi_cli.eventbus.types import ImageURLPart, VideoURLPart
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.tools import SkipThisTool
@@ -15,6 +13,8 @@ from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, FileType, detect_file_t
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.media_tags import wrap_media_part
 from kimi_cli.utils.path import is_within_workspace
+from llmkit.chat_provider.kimi import Kimi
+from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 MAX_MEDIA_MEGABYTES = 100
 

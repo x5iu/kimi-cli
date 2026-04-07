@@ -11,6 +11,18 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from loguru import logger
+
+from kimi_cli.eventbus.types import (
+    ContentPart,
+    ToolCall,
+    ToolCallRequest,
+    ToolResult,
+    ToolReturnValue,
+)
+from kimi_cli.exception import InvalidToolError, MCPRuntimeError
+from kimi_cli.tools import SkipThisTool
+from kimi_cli.tools.utils import ToolRejectedError
 from llmkit.tooling import (
     CallableTool,
     CallableTool2,
@@ -27,18 +39,6 @@ from llmkit.tooling.error import (
 )
 from llmkit.tooling.mcp import convert_mcp_content
 from llmkit.utils.typing import JsonType
-from loguru import logger
-
-from kimi_cli.eventbus.types import (
-    ContentPart,
-    ToolCall,
-    ToolCallRequest,
-    ToolResult,
-    ToolReturnValue,
-)
-from kimi_cli.exception import InvalidToolError, MCPRuntimeError
-from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolRejectedError
 
 if TYPE_CHECKING:
     import fastmcp
@@ -142,11 +142,9 @@ class KimiToolset:
                     return ToolResult(tool_call_id=tool_call.id, return_value=ret)
                 except Exception as e:
                     tool_name = (
-                        tool_call.function.name
-                        if hasattr(tool_call, 'function')
-                        else 'unknown'
+                        tool_call.function.name if hasattr(tool_call, "function") else "unknown"
                     )
-                    logger.exception('Tool %s raised unexpected error', tool_name)
+                    logger.exception("Tool %s raised unexpected error", tool_name)
                     return ToolResult(
                         tool_call_id=tool_call.id, return_value=ToolRuntimeError(str(e))
                     )

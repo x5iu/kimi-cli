@@ -8,10 +8,10 @@ from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kaos.path import KaosPath
 from pydantic import SecretStr
 
 import kaos
+from kaos.path import KaosPath
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.cli import InputFormat, OutputFormat
 from kimi_cli.config import Config, LLMModel, LLMProvider, load_config

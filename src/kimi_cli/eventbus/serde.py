@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from llmkit.utils.typing import JsonType
-
 from kimi_cli.eventbus.types import BusMessage, BusMessageEnvelope
+from llmkit.utils.typing import JsonType
 
 
 def serialize_bus_message(msg: BusMessage) -> dict[str, JsonType]:

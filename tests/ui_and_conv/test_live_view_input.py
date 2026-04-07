@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 
 import pytest
-from llmkit.tooling import ToolError, ToolOk
 
 from kimi_cli.eventbus.types import (
     ApprovalRequest,
@@ -25,6 +24,7 @@ from kimi_cli.eventbus.types import (
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl
 from kimi_cli.ui.shell.visualize import LiveView
+from llmkit.tooling import ToolError, ToolOk
 
 
 def test_live_view_renders_shell_output_tail_and_keeps_it_after_finish() -> None:
@@ -1007,7 +1007,9 @@ def test_live_view_compose_body_can_hide_previous_blocks_while_waiting_for_input
 
     view.append_content(TextPart(text="older block"))
     view.flush_content()
-    view._last_flushed_assistant_text = ""  # prevent body injection; this test targets tail_block_limit
+    view._last_flushed_assistant_text = (
+        ""  # prevent body injection; this test targets tail_block_limit
+    )
     view.request_question(
         QuestionRequest(
             id="question-hide-history",

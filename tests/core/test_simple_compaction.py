@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from inline_snapshot import snapshot
-from llmkit.chat_provider import TokenUsage
-from llmkit.message import Message
 
 import kimi_cli.prompts as prompts
 from kimi_cli.eventbus.types import TextPart, ThinkPart
 from kimi_cli.loop.compaction import CompactionResult, SimpleCompaction, should_auto_compact
 from kimi_cli.loop.message import internal_user_message, system
+from llmkit.chat_provider import TokenUsage
+from llmkit.message import Message
 
 
 def test_prepare_returns_original_when_not_enough_messages():
@@ -61,15 +61,19 @@ def test_prepare_builds_compact_message_and_preserves_tail():
             role="user",
             content=[
                 TextPart(text="## Message 1\nRole: system\nContent:\n"),
-                TextPart(text="System note"), TextPart(text="\n" + prompts.COMPACT),
+                TextPart(text="System note"),
+                TextPart(text="\n" + prompts.COMPACT),
             ],
         )
     )
     assert result.to_preserve == snapshot(
-        [Message(
-    role="user",
-    content=[TextPart(text="Old question"), ThinkPart(think="Hidden thoughts")],
-), Message(role="assistant", content=[TextPart(text="Old answer")]), Message(role="user", content=[TextPart(text="Latest question")]),
+        [
+            Message(
+                role="user",
+                content=[TextPart(text="Old question"), ThinkPart(think="Hidden thoughts")],
+            ),
+            Message(role="assistant", content=[TextPart(text="Old answer")]),
+            Message(role="user", content=[TextPart(text="Latest question")]),
             Message(role="assistant", content=[TextPart(text="Latest answer")]),
         ]
     )
@@ -227,17 +231,15 @@ def test_prepare_preserves_complete_turn_with_tool_messages():
     result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
 
     assert result.compact_message is not None
-    preserved_roles = [
-        (m.role, m.tool_call_id) for m in result.to_preserve
-    ]
+    preserved_roles = [(m.role, m.tool_call_id) for m in result.to_preserve]
     # The assistant(tool_calls) and its tool result are both preserved
     # as part of the complete turn alongside the 2 user turns.
     assert preserved_roles == [
-        ("user", None),       # Middle question
+        ("user", None),  # Middle question
         ("assistant", None),  # Middle reply
         ("assistant", None),  # assistant with tool_calls
-        ("tool", "call_abc"), # tool result
-        ("user", None),       # Latest question
+        ("tool", "call_abc"),  # tool result
+        ("user", None),  # Latest question
         ("assistant", None),  # Latest answer
     ]
     # Verify the tool message content is in preserved, not compacted
@@ -277,9 +279,7 @@ def test_prepare_includes_tool_calls_in_compact_message():
     result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
 
     assert result.compact_message is not None
-    text_parts = [
-        p.text for p in result.compact_message.content if isinstance(p, TextPart)
-    ]
+    text_parts = [p.text for p in result.compact_message.content if isinstance(p, TextPart)]
     full_text = "".join(text_parts)
     assert "Tool Call: read_file(" in full_text
 
@@ -315,9 +315,7 @@ def test_prepare_includes_tool_call_id_for_tool_messages():
     result = SimpleCompaction(max_preserved_messages=2).prepare(messages)
 
     assert result.compact_message is not None
-    text_parts = [
-        p.text for p in result.compact_message.content if isinstance(p, TextPart)
-    ]
+    text_parts = [p.text for p in result.compact_message.content if isinstance(p, TextPart)]
     full_text = "".join(text_parts)
     assert "tool (call_id: call_123)" in full_text
 
@@ -375,9 +373,7 @@ def test_prepare_does_not_count_internal_user_as_preserved_turn():
         Message(role="assistant", content=[TextPart(text="Oldest answer")]),
         Message(role="user", content=[TextPart(text="Old question")]),
         Message(role="assistant", content=[TextPart(text="Old answer")]),
-        internal_user_message(
-            [system("Compacted context archives are available")]
-        ),
+        internal_user_message([system("Compacted context archives are available")]),
         Message(role="user", content=[TextPart(text="Latest question")]),
         Message(role="assistant", content=[TextPart(text="Latest answer")]),
     ]

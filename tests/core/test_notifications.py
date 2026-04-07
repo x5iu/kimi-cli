@@ -5,8 +5,6 @@ import time
 from pathlib import Path
 
 import pytest
-from llmkit.message import Message, TextPart
-from llmkit.tooling.empty import EmptyToolset
 
 from kimi_cli.background import TaskRuntime, TaskSpec
 from kimi_cli.config import NotificationConfig
@@ -20,6 +18,8 @@ from kimi_cli.notifications import NotificationEvent, NotificationManager
 from kimi_cli.notifications.llm import build_notification_message, render_notification_text
 from kimi_cli.notifications.models import NotificationDelivery, NotificationView
 from kimi_cli.utils.aioqueue import QueueShutDown
+from llmkit.message import Message, TextPart
+from llmkit.tooling.empty import EmptyToolset
 
 
 class _StaticProvider:
@@ -324,9 +324,7 @@ def test_notification_text_empty_output(runtime: Runtime) -> None:
 
 def test_render_notification_text_includes_tail(runtime: Runtime) -> None:
     """render_notification_text includes bounded whole-line tail."""
-    nv = _make_task_notification_view(
-        runtime, "bnotif004", output="alpha\nbeta\n"
-    )
+    nv = _make_task_notification_view(runtime, "bnotif004", output="alpha\nbeta\n")
     text = render_notification_text(nv, runtime)
     assert "alpha" in text
     assert "beta" in text
@@ -347,9 +345,7 @@ def test_notification_tail_respects_byte_budget(runtime: Runtime) -> None:
     # Each line is ~50 bytes; with default budget of 3000 chars we fit ~60 lines
     line = "a" * 49 + "\n"
     line_count = 200  # 200 * 50 = 10,000 bytes > 3,000
-    nv = _make_task_notification_view(
-        runtime, "bnotif006", output=line * line_count
-    )
+    nv = _make_task_notification_view(runtime, "bnotif006", output=line * line_count)
     msg = build_notification_message(nv, runtime)
     text = msg.extract_text("\n")
     # The full 200-line payload must not be in the text

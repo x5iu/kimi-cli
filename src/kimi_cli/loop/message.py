@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from llmkit.message import Message
-from llmkit.tooling.error import ToolRuntimeError
-
 from kimi_cli.eventbus.types import (
     ContentPart,
     ImageURLPart,
@@ -14,6 +11,8 @@ from kimi_cli.eventbus.types import (
     VideoURLPart,
 )
 from kimi_cli.llm import ModelCapability
+from llmkit.message import Message
+from llmkit.tooling.error import ToolRuntimeError
 
 INTERNAL_USER_NAME = "_kimi_internal"
 

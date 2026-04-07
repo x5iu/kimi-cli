@@ -5,11 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from kaos.path import KaosPath
-from llmkit.message import Message
-from llmkit.tooling.empty import EmptyToolset
 
 import kimi_cli.loop.kimi_agent_loop as kimisoul_module
+from kaos.path import KaosPath
 from kimi_cli.eventbus.types import SkillReminderNotice
 from kimi_cli.loop.agent import Agent, Runtime
 from kimi_cli.loop.context import Context
@@ -21,6 +19,8 @@ from kimi_cli.loop.kimi_agent_loop import (
 )
 from kimi_cli.loop.message import INTERNAL_USER_NAME
 from kimi_cli.skill import Skill
+from llmkit.message import Message
+from llmkit.tooling.empty import EmptyToolset
 
 
 def _make_skill(tmp_path: Path, *, name: str, description: str) -> Skill:

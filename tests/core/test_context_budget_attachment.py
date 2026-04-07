@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, PropertyMock
 
-from llmkit.message import Message, TextPart
-
 from kimi_cli.loop.attachments.context_budget import ContextBudgetAttachmentProvider
+from llmkit.message import Message, TextPart
 
 
 def _make_agent_loop_mock(*, context_usage: float, compaction_generation: int = 0) -> MagicMock:
@@ -27,9 +26,7 @@ class TestContextBudgetAttachmentProvider:
         provider = ContextBudgetAttachmentProvider()
         history = [_user_msg(), _assistant_msg()]
 
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock(context_usage=0.50)
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock(context_usage=0.50))
 
         assert result == []
 
@@ -37,9 +34,7 @@ class TestContextBudgetAttachmentProvider:
         provider = ContextBudgetAttachmentProvider()
         history = [_user_msg(), _assistant_msg()]
 
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock(context_usage=0.65)
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock(context_usage=0.65))
 
         assert len(result) == 1
         assert result[0].is_hint is True
@@ -49,9 +44,7 @@ class TestContextBudgetAttachmentProvider:
         provider = ContextBudgetAttachmentProvider()
         history = [_user_msg(), _assistant_msg()]
 
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock(context_usage=0.85)
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock(context_usage=0.85))
 
         assert len(result) == 1
         assert result[0].is_hint is False
@@ -63,40 +56,29 @@ class TestContextBudgetAttachmentProvider:
         history = [_user_msg(), _assistant_msg()]
 
         # First call should inject
-        result1 = await provider.get_attachments(
-            history, _make_agent_loop_mock(context_usage=0.70)
-        )
+        result1 = await provider.get_attachments(history, _make_agent_loop_mock(context_usage=0.70))
         assert len(result1) == 1
 
         # Add fewer than cooldown assistant messages
         history.append(_assistant_msg())
         history.append(_assistant_msg())
 
-        result2 = await provider.get_attachments(
-            history, _make_agent_loop_mock(context_usage=0.70)
-        )
+        result2 = await provider.get_attachments(history, _make_agent_loop_mock(context_usage=0.70))
         assert result2 == []
 
         # Add enough to clear cooldown
         history.append(_assistant_msg())
 
-        result3 = await provider.get_attachments(
-            history, _make_agent_loop_mock(context_usage=0.70)
-        )
+        result3 = await provider.get_attachments(history, _make_agent_loop_mock(context_usage=0.70))
         assert len(result3) == 1
 
     async def test_custom_thresholds(self) -> None:
-        provider = ContextBudgetAttachmentProvider(
-            hint_threshold=0.40, reminder_threshold=0.70
-        )
+        provider = ContextBudgetAttachmentProvider(hint_threshold=0.40, reminder_threshold=0.70)
         history = [_user_msg()]
 
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock(context_usage=0.45)
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock(context_usage=0.45))
         assert len(result) == 1
         assert result[0].is_hint is True
-
 
     async def test_cooldown_resets_after_compaction(self) -> None:
         """After compaction (generation change), cooldown must not be permanently muted."""

@@ -110,9 +110,7 @@ class Approval:
         self._request_queue.put_nowait(request)
         self._requests[request.id] = (request, approved_future)
         try:
-            return await asyncio.wait_for(
-                asyncio.shield(approved_future), timeout=300.0
-            )
+            return await asyncio.wait_for(asyncio.shield(approved_future), timeout=300.0)
         except TimeoutError:
             logger.warning(
                 "Approval request {id} timed out after 300s",

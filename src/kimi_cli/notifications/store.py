@@ -83,9 +83,7 @@ class NotificationStore:
         if not path.exists():
             return NotificationDelivery()
         try:
-            return NotificationDelivery.model_validate_json(
-                path.read_text(encoding="utf-8")
-            )
+            return NotificationDelivery.model_validate_json(path.read_text(encoding="utf-8"))
         except (OSError, ValidationError, ValueError, UnicodeDecodeError) as exc:
             logger.warning(
                 "Failed to read notification delivery {path}; using defaults: {error}",

@@ -29,6 +29,7 @@ _SCAN_CHUNK = 1 << 16  # 64 KiB – chunk size for binary scanning
 # LineIndex – sidecar binary index mapping line numbers to byte offsets
 # ---------------------------------------------------------------------------
 
+
 class LineIndex:
     """Incremental line index for an append-only log file.
 
@@ -110,7 +111,8 @@ class LineIndex:
         data.extend(self._offsets)
         try:
             fd, tmp_path = tempfile.mkstemp(
-                dir=self._idx_path.parent, suffix=".lidx.tmp",
+                dir=self._idx_path.parent,
+                suffix=".lidx.tmp",
             )
             try:
                 with os.fdopen(fd, "wb") as f:
@@ -286,9 +288,7 @@ class BackgroundTaskStore:
             if not runtime_path.exists():
                 continue
             try:
-                runtime = TaskRuntime.model_validate_json(
-                    runtime_path.read_text(encoding="utf-8")
-                )
+                runtime = TaskRuntime.model_validate_json(runtime_path.read_text(encoding="utf-8"))
             except Exception:
                 continue
             if runtime.status not in TERMINAL_TASK_STATUSES:
@@ -399,10 +399,21 @@ class BackgroundTaskStore:
 
         if line_offset is not None:
             return self._read_forward(
-                path, index, line_offset, max_bytes, task_id, status, output_path_str,
+                path,
+                index,
+                line_offset,
+                max_bytes,
+                task_id,
+                status,
+                output_path_str,
             )
         return self._read_tail(
-            path, index, max_bytes, task_id, status, output_path_str,
+            path,
+            index,
+            max_bytes,
+            task_id,
+            status,
+            output_path_str,
         )
 
     # -- helpers for read_output_lines -----------------------------------------
@@ -556,9 +567,7 @@ class BackgroundTaskStore:
             if not runtime_path.exists():
                 continue
             try:
-                runtime = TaskRuntime.model_validate_json(
-                    runtime_path.read_text(encoding="utf-8")
-                )
+                runtime = TaskRuntime.model_validate_json(runtime_path.read_text(encoding="utf-8"))
             except Exception:
                 continue
             if runtime.status not in TERMINAL_TASK_STATUSES:
@@ -570,9 +579,7 @@ class BackgroundTaskStore:
         return pruned
 
 
-def _read_json_model[T: BaseModel](
-    path: Path, model: type[T], *, fallback: T, artifact: str
-) -> T:
+def _read_json_model[T: BaseModel](path: Path, model: type[T], *, fallback: T, artifact: str) -> T:
     try:
         return model.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValidationError, ValueError, UnicodeDecodeError) as exc:

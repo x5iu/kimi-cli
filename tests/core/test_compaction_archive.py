@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from llmkit.message import Message, ToolCall
-
 from kimi_cli.eventbus.types import (
     AudioURLPart,
     ImageURLPart,
@@ -31,6 +29,7 @@ from kimi_cli.loop.compaction_archive import (
     stringify_tool_calls,
 )
 from kimi_cli.loop.message import INTERNAL_USER_NAME
+from llmkit.message import Message, ToolCall
 
 # ---------------------------------------------------------------------------
 # sanitize_archive_text
@@ -72,27 +71,21 @@ def test_stringify_content_multiple_text_parts():
 
 def test_stringify_content_image_part():
     parts = [
-        ImageURLPart(
-            image_url=ImageURLPart.ImageURL(url="https://example.com/img.png")
-        ),
+        ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://example.com/img.png")),
     ]
     assert stringify_content_for_archive(parts) == "[image]"
 
 
 def test_stringify_content_audio_part():
     parts = [
-        AudioURLPart(
-            audio_url=AudioURLPart.AudioURL(url="https://example.com/a.mp3")
-        ),
+        AudioURLPart(audio_url=AudioURLPart.AudioURL(url="https://example.com/a.mp3")),
     ]
     assert stringify_content_for_archive(parts) == "[audio]"
 
 
 def test_stringify_content_video_part():
     parts = [
-        VideoURLPart(
-            video_url=VideoURLPart.VideoURL(url="https://example.com/v.mp4")
-        ),
+        VideoURLPart(video_url=VideoURLPart.VideoURL(url="https://example.com/v.mp4")),
     ]
     assert stringify_content_for_archive(parts) == "[video]"
 
@@ -117,9 +110,7 @@ def test_stringify_content_empty_think_stripped_even_when_included():
 def test_stringify_content_mixed_parts():
     parts = [
         TextPart(text="hello"),
-        ImageURLPart(
-            image_url=ImageURLPart.ImageURL(url="https://example.com/i.png")
-        ),
+        ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://example.com/i.png")),
         ThinkPart(think="thinking"),
     ]
     result = stringify_content_for_archive(parts, include_thinking=True)
@@ -131,9 +122,7 @@ def test_stringify_content_mixed_parts():
 # ---------------------------------------------------------------------------
 
 
-def _make_tool_call(
-    name: str, arguments: str | None, tc_id: str = "tc1"
-) -> ToolCall:
+def _make_tool_call(name: str, arguments: str | None, tc_id: str = "tc1") -> ToolCall:
     return ToolCall(
         id=tc_id,
         function=ToolCall.FunctionBody(name=name, arguments=arguments),
@@ -202,7 +191,7 @@ def test_stringify_message_tool_calls_only():
     msg = Message(
         role="assistant",
         content=[],
-        tool_calls=[_make_tool_call("ls", '{}')],
+        tool_calls=[_make_tool_call("ls", "{}")],
     )
     result = stringify_message_for_archive(msg)
     assert result == "Tool Call: ls({})"
@@ -214,10 +203,7 @@ def test_stringify_message_tool_calls_only():
 
 
 def test_build_compaction_summary_strips_prefix():
-    prefix = (
-        "[system] Previous context has been compacted."
-        " Here is the compaction output:"
-    )
+    prefix = "[system] Previous context has been compacted. Here is the compaction output:"
     msg = Message(
         role="assistant",
         content=[TextPart(text=f"{prefix}\nActual summary content")],
@@ -276,11 +262,7 @@ def test_is_checkpoint_message_false_for_regular_user():
 def test_is_checkpoint_message_false_no_text_parts():
     msg = Message(
         role="user",
-        content=[
-            ImageURLPart(
-                image_url=ImageURLPart.ImageURL(url="https://x.com/i.png")
-            )
-        ],
+        content=[ImageURLPart(image_url=ImageURLPart.ImageURL(url="https://x.com/i.png"))],
     )
     assert is_checkpoint_message(msg) is False
 
@@ -299,9 +281,7 @@ def test_load_archive_messages_skips_usage_and_checkpoint_roles(
     tmp_path: Path,
 ):
     archive = tmp_path / "archive.jsonl"
-    user_msg = Message(
-        role="user", content=[TextPart(text="hello")]
-    )
+    user_msg = Message(role="user", content=[TextPart(text="hello")])
     lines = [
         json.dumps({"role": "_usage", "content": []}),
         json.dumps({"role": "_checkpoint", "content": []}),
@@ -316,9 +296,7 @@ def test_load_archive_messages_skips_usage_and_checkpoint_roles(
 
 def test_load_archive_messages_skips_malformed_json(tmp_path: Path):
     archive = tmp_path / "archive.jsonl"
-    good = Message(
-        role="assistant", content=[TextPart(text="ok")]
-    )
+    good = Message(role="assistant", content=[TextPart(text="ok")])
     lines = [
         "NOT VALID JSON{{{",
         good.model_dump_json(exclude_none=True),
@@ -444,15 +422,11 @@ def test_register_compaction_archive_increments_ids(tmp_path: Path):
     archive2 = tmp_path / "archive_2.jsonl"
     archive2.touch()
 
-    res1 = register_compaction_archive(
-        ctx, archive1, message_count=5, summary="first"
-    )
+    res1 = register_compaction_archive(ctx, archive1, message_count=5, summary="first")
     assert res1.record.id == "c001"
     assert res1.total_archives == 1
 
-    res2 = register_compaction_archive(
-        ctx, archive2, message_count=3, summary="second"
-    )
+    res2 = register_compaction_archive(ctx, archive2, message_count=3, summary="second")
     assert res2.record.id == "c002"
     assert res2.total_archives == 2
 
@@ -466,9 +440,7 @@ def test_register_compaction_archive_truncates_long_summaries(
     archive.touch()
     long_summary = "A" * 800
 
-    result = register_compaction_archive(
-        ctx, archive, message_count=1, summary=long_summary
-    )
+    result = register_compaction_archive(ctx, archive, message_count=1, summary=long_summary)
     assert len(result.record.summary) <= _SUMMARY_WIDTH + len("...")
 
 
@@ -492,9 +464,7 @@ def test_register_compaction_archive_id_uses_max_existing(
 
     archive = tmp_path / "new.jsonl"
     archive.touch()
-    result = register_compaction_archive(
-        ctx, archive, message_count=2, summary="new"
-    )
+    result = register_compaction_archive(ctx, archive, message_count=2, summary="new")
     # Should be c006, not c002
     assert result.record.id == "c006"
     assert result.total_archives == 2
@@ -506,9 +476,7 @@ def test_register_compaction_archive_empty_summary(tmp_path: Path):
     archive = tmp_path / "archive.jsonl"
     archive.touch()
 
-    result = register_compaction_archive(
-        ctx, archive, message_count=1, summary=""
-    )
+    result = register_compaction_archive(ctx, archive, message_count=1, summary="")
     assert result.record.summary == ""
 
 
@@ -564,9 +532,7 @@ def test_archive_role_label_system():
 def test_manifest_path_for_context():
     ctx = Path("/data/sessions/context.jsonl")
     result = manifest_path_for_context(ctx)
-    assert result == Path(
-        "/data/sessions/context.compaction-archives.jsonl"
-    )
+    assert result == Path("/data/sessions/context.compaction-archives.jsonl")
 
 
 def test_manifest_path_for_context_preserves_parent():
@@ -598,10 +564,14 @@ def test_extract_archive_keywords_english_and_code():
     msgs = [
         Message(
             role="assistant",
-            content=[TextPart(text=(
-                "The CompactionArchive module lives in kimi_cli.loop.compaction_archive. "
-                "It raised a ValueError when the summary was empty."
-            ))],
+            content=[
+                TextPart(
+                    text=(
+                        "The CompactionArchive module lives in kimi_cli.loop.compaction_archive. "
+                        "It raised a ValueError when the summary was empty."
+                    )
+                )
+            ],
         ),
     ]
     keywords = extract_archive_keywords(msgs)
@@ -618,10 +588,9 @@ def test_extract_archive_keywords_cjk():
         ),
     ]
     keywords = extract_archive_keywords(msgs)
-    assert any(
-        all('\u4e00' <= c <= '\u9fff' for c in kw)
-        for kw in keywords
-    ), f"Expected CJK keywords, got: {keywords}"
+    assert any(all("\u4e00" <= c <= "\u9fff" for c in kw) for kw in keywords), (
+        f"Expected CJK keywords, got: {keywords}"
+    )
 
 
 def test_extract_archive_keywords_empty_messages():
@@ -630,6 +599,7 @@ def test_extract_archive_keywords_empty_messages():
 
 def test_word_re_matches_at_cjk_boundary():
     from kimi_cli.loop.compaction_archive import _WORD_RE
+
     assert _WORD_RE.findall("功能test模块") == ["test"]
     assert _WORD_RE.findall("test功能") == ["test"]
     assert _WORD_RE.findall("功能test") == ["test"]
@@ -670,6 +640,7 @@ def test_backfill_archive_keywords(tmp_path: Path):
 
 def test_truncate_summary_edge_cases():
     from kimi_cli.loop.compaction_archive import _truncate_summary
+
     assert _truncate_summary("") == ""
     assert _truncate_summary("   ") == ""
     text_at_limit = "A" * _SUMMARY_WIDTH
@@ -694,21 +665,14 @@ def test_backfill_does_not_clobber_concurrent_registration(
         ),
     ]
     archive1.write_text(
-        "\n".join(
-            m.model_dump_json(exclude_none=True) for m in msgs1
-        )
-        + "\n",
+        "\n".join(m.model_dump_json(exclude_none=True) for m in msgs1) + "\n",
         encoding="utf-8",
     )
-    register_compaction_archive(
-        ctx, archive1, message_count=1, summary="first"
-    )
+    register_compaction_archive(ctx, archive1, message_count=1, summary="first")
 
     archive2 = tmp_path / "context_2.jsonl"
     archive2.touch()
-    register_compaction_archive(
-        ctx, archive2, message_count=1, summary="second"
-    )
+    register_compaction_archive(ctx, archive2, message_count=1, summary="second")
 
     updated = backfill_archive_keywords(ctx)
     assert updated == 1

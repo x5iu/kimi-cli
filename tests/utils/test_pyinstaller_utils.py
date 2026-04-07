@@ -23,43 +23,43 @@ def test_pyinstaller_datas():
         for path, dst in datas
     ]
 
-    project_datas = sorted(
-        (p, d) for p, d in datas if "fastmcp" not in p and "deps/bin" not in p
-    )
+    project_datas = sorted((p, d) for p, d in datas if "fastmcp" not in p and "deps/bin" not in p)
     fastmcp_datas = [(p, d) for p, d in datas if "fastmcp" in p]
     deps_datas = [(p, d) for p, d in datas if "deps/bin" in p]
 
-    assert project_datas == snapshot([
-    ("src/kimi_cli/agents/default/agent.yaml", "kimi_cli/agents/default"),
-    ("src/kimi_cli/agents/default/system.md", "kimi_cli/agents/default"),
-    ("src/kimi_cli/prompts/compact.md", "kimi_cli/prompts"),
-    ("src/kimi_cli/prompts/init.md", "kimi_cli/prompts"),
-    ("src/kimi_cli/prompts/skill_recommender.md", "kimi_cli/prompts"),
-    ("src/kimi_cli/prompts/turn_end_question_detector.md", "kimi_cli/prompts"),
-    ("src/kimi_cli/skills/kimi-cli-help/SKILL.md", "kimi_cli/skills/kimi-cli-help"),
-    (
-        "src/kimi_cli/skills/kimi-code-worker/SKILL.md",
-        "kimi_cli/skills/kimi-code-worker",
-    ),
-    ("src/kimi_cli/skills/skill-creator/SKILL.md", "kimi_cli/skills/skill-creator"),
-    ("src/kimi_cli/tools/ask_user/description.md", "kimi_cli/tools/ask_user"),
-    ("src/kimi_cli/tools/background/list.md", "kimi_cli/tools/background"),
-    ("src/kimi_cli/tools/background/output.md", "kimi_cli/tools/background"),
-    ("src/kimi_cli/tools/background/stop.md", "kimi_cli/tools/background"),
-    ("src/kimi_cli/tools/background/write.md", "kimi_cli/tools/background"),
-    ("src/kimi_cli/tools/context/description.md", "kimi_cli/tools/context"),
-    ("src/kimi_cli/tools/file/edit.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/file/glob.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/file/grep.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/file/read.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/file/read_media.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/file/write.md", "kimi_cli/tools/file"),
-    ("src/kimi_cli/tools/shell/bash.md", "kimi_cli/tools/shell"),
-    ("src/kimi_cli/tools/shell/powershell.md", "kimi_cli/tools/shell"),
-    ("src/kimi_cli/tools/todo/set_todo_list.md", "kimi_cli/tools/todo"),
-    ("src/kimi_cli/tools/web/fetch.md", "kimi_cli/tools/web"),
-    ("src/kimi_cli/tools/web/search.md", "kimi_cli/tools/web"),
-])
+    assert project_datas == snapshot(
+        [
+            ("src/kimi_cli/agents/default/agent.yaml", "kimi_cli/agents/default"),
+            ("src/kimi_cli/agents/default/system.md", "kimi_cli/agents/default"),
+            ("src/kimi_cli/prompts/compact.md", "kimi_cli/prompts"),
+            ("src/kimi_cli/prompts/init.md", "kimi_cli/prompts"),
+            ("src/kimi_cli/prompts/skill_recommender.md", "kimi_cli/prompts"),
+            ("src/kimi_cli/prompts/turn_end_question_detector.md", "kimi_cli/prompts"),
+            ("src/kimi_cli/skills/kimi-cli-help/SKILL.md", "kimi_cli/skills/kimi-cli-help"),
+            (
+                "src/kimi_cli/skills/kimi-code-worker/SKILL.md",
+                "kimi_cli/skills/kimi-code-worker",
+            ),
+            ("src/kimi_cli/skills/skill-creator/SKILL.md", "kimi_cli/skills/skill-creator"),
+            ("src/kimi_cli/tools/ask_user/description.md", "kimi_cli/tools/ask_user"),
+            ("src/kimi_cli/tools/background/list.md", "kimi_cli/tools/background"),
+            ("src/kimi_cli/tools/background/output.md", "kimi_cli/tools/background"),
+            ("src/kimi_cli/tools/background/stop.md", "kimi_cli/tools/background"),
+            ("src/kimi_cli/tools/background/write.md", "kimi_cli/tools/background"),
+            ("src/kimi_cli/tools/context/description.md", "kimi_cli/tools/context"),
+            ("src/kimi_cli/tools/file/edit.md", "kimi_cli/tools/file"),
+            ("src/kimi_cli/tools/file/glob.md", "kimi_cli/tools/file"),
+            ("src/kimi_cli/tools/file/grep.md", "kimi_cli/tools/file"),
+            ("src/kimi_cli/tools/file/read.md", "kimi_cli/tools/file"),
+            ("src/kimi_cli/tools/file/read_media.md", "kimi_cli/tools/file"),
+            ("src/kimi_cli/tools/file/write.md", "kimi_cli/tools/file"),
+            ("src/kimi_cli/tools/shell/bash.md", "kimi_cli/tools/shell"),
+            ("src/kimi_cli/tools/shell/powershell.md", "kimi_cli/tools/shell"),
+            ("src/kimi_cli/tools/todo/set_todo_list.md", "kimi_cli/tools/todo"),
+            ("src/kimi_cli/tools/web/fetch.md", "kimi_cli/tools/web"),
+            ("src/kimi_cli/tools/web/search.md", "kimi_cli/tools/web"),
+        ]
+    )
     assert len(fastmcp_datas) > 0, "Expected at least one fastmcp dist-info data entry"
     assert all("fastmcp" in p and "dist-info" in p for p, _ in fastmcp_datas)
     # deps/bin/rg is only present when the bundled rg binary exists (CI builds).

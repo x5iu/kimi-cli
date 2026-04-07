@@ -7,15 +7,15 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from kaos.path import KaosPath
-from llmkit.message import Message
-from llmkit.tooling.empty import EmptyToolset
 
+from kaos.path import KaosPath
 from kimi_cli.eventbus.types import ImageURLPart, TextPart
 from kimi_cli.loop.agent import Agent, Runtime
 from kimi_cli.loop.context import Context
 from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.skill import Skill
+from llmkit.message import Message
+from llmkit.tooling.empty import EmptyToolset
 
 
 def _make_soul(runtime: Runtime, tmp_path: Path) -> KimiAgentLoop:
@@ -39,14 +39,10 @@ def _make_soul(runtime: Runtime, tmp_path: Path) -> KimiAgentLoop:
 
 
 @pytest.mark.asyncio
-async def test_skill_runner_forwards_image_content_parts(
-    runtime: Runtime, tmp_path: Path
-) -> None:
+async def test_skill_runner_forwards_image_content_parts(runtime: Runtime, tmp_path: Path) -> None:
     soul = _make_soul(runtime, tmp_path)
 
-    image_part = ImageURLPart(
-        image_url=ImageURLPart.ImageURL(url="data:image/png;base64,AAAA")
-    )
+    image_part = ImageURLPart(image_url=ImageURLPart.ImageURL(url="data:image/png;base64,AAAA"))
 
     # Simulate stashed content parts as if the slash-command dispatch had set them.
     soul._slash_command_content_parts = [image_part]

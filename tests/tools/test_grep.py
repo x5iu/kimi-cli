@@ -607,9 +607,7 @@ async def test_grep_content_always_has_line_numbers(grep_tool: Grep):
         (Path(temp_dir) / "a.txt").write_text("hello\nworld\n")
 
         result = await grep_tool(
-            Params.model_validate(
-                {"pattern": "hello", "path": temp_dir, "output_mode": "content"}
-            )
+            Params.model_validate({"pattern": "hello", "path": temp_dir, "output_mode": "content"})
         )
         assert not result.is_error
         assert isinstance(result.output, str)

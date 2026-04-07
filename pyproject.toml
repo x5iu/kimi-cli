@@ -79,6 +79,8 @@ select = [
     "SIM", # flake8-simplify
     "I",   # isort
 ]
+[tool.ruff.lint.isort]
+known-first-party = ["kimi_cli", "kaos", "llmkit"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E501"]

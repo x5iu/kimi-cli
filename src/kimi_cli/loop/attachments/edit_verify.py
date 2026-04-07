@@ -5,10 +5,9 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from llmkit.message import Message
-
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
 from kimi_cli.utils.turns import is_real_user_turn_start_message
+from llmkit.message import Message
 
 if TYPE_CHECKING:
     from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
@@ -99,15 +98,11 @@ class EditVerificationReminderProvider(AttachmentProvider):
             for tc in msg.tool_calls:
                 name = tc.function.name
                 if name in ("Edit", "WriteFile"):
-                    path = _extract_file_path(
-                        tc.function.arguments
-                    )
+                    path = _extract_file_path(tc.function.arguments)
                     if path and _is_source_file(path):
                         edited_source_files.add(path)
                 elif name == "Shell":
-                    cmd = _extract_command(
-                        tc.function.arguments
-                    )
+                    cmd = _extract_command(tc.function.arguments)
                     if cmd and _VERIFY_PATTERNS.search(cmd):
                         has_verification = True
 

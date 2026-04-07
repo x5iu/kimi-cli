@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from kaos.local import local_kaos
-
 from kimi_cli.config import BackgroundConfig
 from kimi_cli.notifications import NotificationEvent, NotificationManager, NotificationSink
 from kimi_cli.session import Session
@@ -220,7 +219,7 @@ class BackgroundTaskManager:
         )
         if chunk.line_too_large:
             return (
-                f"[Line too large — use TaskOutput(task_id=\"{task_id}\") "
+                f'[Line too large — use TaskOutput(task_id="{task_id}") '
                 f'or ReadFile(path="{chunk.output_path}") to inspect the output.]'
             )
         return chunk.text
@@ -349,10 +348,7 @@ class BackgroundTaskManager:
         self._observed_terminal_ids.add(task_id)
         # Ack any already-published LLM notification for this task.
         for view in self._notifications.store.list_views():
-            if (
-                view.event.source_kind == "background_task"
-                and view.event.source_id == task_id
-            ):
+            if view.event.source_kind == "background_task" and view.event.source_id == task_id:
                 sink_state = view.delivery.sinks.get("llm")
                 if sink_state is not None and sink_state.status != "acked":
                     self._notifications.ack("llm", view.event.id)

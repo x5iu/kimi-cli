@@ -2,7 +2,6 @@ import asyncio
 from pathlib import Path
 from typing import Literal, override
 
-from llmkit.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.loop.agent import Runtime
@@ -11,6 +10,7 @@ from kimi_cli.session_state import TodoStateItem
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
 from kimi_cli.tools.todo_text import todo_label
 from kimi_cli.tools.utils import load_desc
+from llmkit.tooling import CallableTool2, ToolReturnValue
 
 TodoStatus = Literal["pending", "in_progress", "done", "blocked"]
 TodoExecutor = Literal["main", "background_shell"]
@@ -46,8 +46,6 @@ def _todo_lock(session: Session) -> asyncio.Lock:
     if key not in _TODO_LOCKS:
         _TODO_LOCKS[key] = asyncio.Lock()
     return _TODO_LOCKS[key]
-
-
 
 
 def _todo_to_display_item(todo: Todo) -> TodoDisplayItem:
@@ -110,8 +108,7 @@ def _diff_todos(old: list[Todo], new: list[Todo]) -> str:
             added.append(f"'{_shorten_todo(Todo(title=title, status=status))}'")
         elif old_map[title] != status:
             transitions.append(
-                f"'{_shorten_todo(Todo(title=title, status=status))}' "
-                f"{old_map[title]} -> {status}"
+                f"'{_shorten_todo(Todo(title=title, status=status))}' {old_map[title]} -> {status}"
             )
         else:
             unchanged += 1
@@ -180,5 +177,3 @@ class SetTodoList(CallableTool2[Params]):
             message="Todo list updated",
             display=[_todo_display_block(params.todos)],
         )
-
-

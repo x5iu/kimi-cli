@@ -114,9 +114,7 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
         merged_args.update(agent_spec.system_prompt_args)
 
         merged_name = (
-            agent_spec.name
-            if not isinstance(agent_spec.name, Inherit)
-            else base_agent_spec.name
+            agent_spec.name if not isinstance(agent_spec.name, Inherit) else base_agent_spec.name
         )
         merged_prompt_path = (
             agent_spec.system_prompt_path
@@ -124,9 +122,7 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
             else base_agent_spec.system_prompt_path
         )
         merged_tools = (
-            agent_spec.tools
-            if not isinstance(agent_spec.tools, Inherit)
-            else base_agent_spec.tools
+            agent_spec.tools if not isinstance(agent_spec.tools, Inherit) else base_agent_spec.tools
         )
         merged_exclude = (
             agent_spec.exclude_tools

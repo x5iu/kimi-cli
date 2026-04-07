@@ -4,13 +4,12 @@ import asyncio
 import contextlib
 import copy
 
-from llmkit.message import MergeableMixin
-
 from kimi_cli.eventbus.log import EventLog
 from kimi_cli.eventbus.types import BusMessage, ContentPart, ToolCallPart, is_bus_message
 from kimi_cli.utils.aioqueue import Queue, QueueShutDown
 from kimi_cli.utils.broadcast import BroadcastQueue
 from kimi_cli.utils.logging import logger
+from llmkit.message import MergeableMixin
 
 BusMessageQueue = BroadcastQueue[BusMessage]
 

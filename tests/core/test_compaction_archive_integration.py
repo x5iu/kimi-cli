@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from llmkit.chat_provider import TokenUsage
-from llmkit.message import Message
-
 from kimi_cli.eventbus.types import TextPart
 from kimi_cli.loop.agent import Agent, Runtime
 from kimi_cli.loop.compaction import CompactionResult
@@ -15,6 +12,8 @@ from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.loop.toolset import KimiToolset
 from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.context.recall_compacted import Params
+from llmkit.chat_provider import TokenUsage
+from llmkit.message import Message
 
 
 class FakeCompaction:

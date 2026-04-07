@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from llmkit.chat_provider import APIStatusError, ChatProviderError
-from llmkit.message import Message
 from loguru import logger
 from rich.console import Group, RenderableType
 from rich.panel import Panel
@@ -48,6 +46,8 @@ from kimi_cli.utils.signals import install_sigint_handler
 from kimi_cli.utils.slashcmd import SlashCommand, SlashCommandCall, parse_slash_command_call
 from kimi_cli.utils.subprocess_env import get_clean_env
 from kimi_cli.utils.term import ensure_new_line, ensure_tty_sane
+from llmkit.chat_provider import APIStatusError, ChatProviderError
+from llmkit.message import Message
 
 
 class Shell:

@@ -6,8 +6,8 @@ import platform
 
 import pytest
 from inline_snapshot import snapshot
-from kaos.path import KaosPath
 
+from kaos.path import KaosPath
 from kimi_cli.tools.shell import Params, Shell
 
 pytestmark = pytest.mark.skipif(

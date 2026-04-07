@@ -16,10 +16,9 @@ from pathlib import Path
 from typing import override
 
 import aiohttp
-from kaos.path import KaosPath
-from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kaos.path import KaosPath
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.share import get_share_dir
 from kimi_cli.tools.file.rg_path import find_existing_rg, rg_binary_name
@@ -28,6 +27,7 @@ from kimi_cli.utils.aiohttp import new_client_session
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_workspace
 from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
 
 class Params(BaseModel):
@@ -350,7 +350,7 @@ def _strip_path_prefix(output: str, search_base: str) -> str:
     """Strip search_base prefix from each line to produce relative paths."""
     prefix = search_base.rstrip("/\\") + os.sep
     return "\n".join(
-        line[len(prefix):] if line.startswith(prefix) else line for line in output.split("\n")
+        line[len(prefix) :] if line.startswith(prefix) else line for line in output.split("\n")
     )
 
 
@@ -524,7 +524,7 @@ class Grep(CallableTool2[Params]):
                     idx = line.rfind(":")
                     if idx > 0:
                         try:
-                            total_matches += int(line[idx + 1:])
+                            total_matches += int(line[idx + 1 :])
                             total_files += 1
                         except ValueError:
                             pass
@@ -535,7 +535,7 @@ class Grep(CallableTool2[Params]):
 
             # Step 5: offset + head_limit pagination
             if params.offset > 0:
-                lines = lines[params.offset:]
+                lines = lines[params.offset :]
 
             effective_limit = params.head_limit
             if effective_limit and len(lines) > effective_limit:

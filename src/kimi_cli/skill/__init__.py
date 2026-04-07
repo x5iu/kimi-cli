@@ -6,12 +6,12 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Literal
 
-from kaos.local import local_kaos
-from kaos.path import KaosPath
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 from kaos import get_current_kaos
+from kaos.local import local_kaos
+from kaos.path import KaosPath
 from kimi_cli.utils.frontmatter import parse_frontmatter
 
 SkillType = Literal["standard"]

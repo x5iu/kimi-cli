@@ -2,15 +2,15 @@ from collections import deque
 from pathlib import Path
 from typing import override
 
-from kaos.path import KaosPath
-from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field, field_validator
 
+from kaos.path import KaosPath
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, detect_file_type
 from kimi_cli.tools.utils import load_desc, truncate_line
 from kimi_cli.utils.path import is_within_workspace
 from kimi_cli.utils.sensitive import is_sensitive_file
+from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 MAX_LINES = 1000
 MAX_LINE_LENGTH = 2000

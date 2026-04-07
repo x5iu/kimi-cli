@@ -533,7 +533,8 @@ def test_load_sidecar_bad_offsets_return_false(tmp_path: Path) -> None:
 
 
 def test_save_sidecar_with_replace_failure_no_double_close(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If os.replace fails, fd is already closed (by os.fdopen) and temp is cleaned."""
     p = tmp_path / "output.log"

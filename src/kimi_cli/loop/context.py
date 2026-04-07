@@ -7,13 +7,13 @@ from typing import Any, cast
 
 import aiofiles
 import aiofiles.os
-from llmkit.message import Message
 from pydantic import ValidationError
 
 from kimi_cli.loop.compaction import estimate_text_tokens
 from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import next_available_rotation
+from llmkit.message import Message
 
 
 class Context:
@@ -40,9 +40,7 @@ class Context:
             return False
 
         messages_after_last_usage: list[Message] = []
-        async with aiofiles.open(
-            self._file_backend, encoding="utf-8", errors="replace"
-        ) as f:
+        async with aiofiles.open(self._file_backend, encoding="utf-8", errors="replace") as f:
             line_no = 0
             async for line in f:
                 line_no += 1
@@ -146,9 +144,7 @@ class Context:
         self._last_turn_checkpoint_id = None
         messages_after_last_usage: list[Message] = []
         async with (
-            aiofiles.open(
-                rotated_file_path, encoding="utf-8", errors="replace"
-            ) as old_file,
+            aiofiles.open(rotated_file_path, encoding="utf-8", errors="replace") as old_file,
             aiofiles.open(self._file_backend, "w", encoding="utf-8") as new_file,
         ):
             line_no = 0
@@ -164,10 +160,7 @@ class Context:
                 )
                 if line_json is None:
                     continue
-                if (
-                    line_json.get("role") == "_checkpoint"
-                    and line_json.get("id") == checkpoint_id
-                ):
+                if line_json.get("role") == "_checkpoint" and line_json.get("id") == checkpoint_id:
                     break
 
                 keep_line = self._apply_context_record(

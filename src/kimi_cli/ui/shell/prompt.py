@@ -6,7 +6,6 @@ from contextlib import suppress
 from hashlib import md5
 from typing import Any
 
-from kaos.path import KaosPath
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
 from prompt_toolkit.application.current import get_app_or_none
@@ -35,6 +34,7 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame, TextArea
 from rich.style import Style as _RichStyle
 
+from kaos.path import KaosPath
 from kimi_cli.llm import ModelCapability
 from kimi_cli.loop import StatusSnapshot
 from kimi_cli.share import get_share_dir
@@ -171,11 +171,11 @@ class _ClearScreenRequest(Exception):
         self.buffer_text = buffer_text
         super().__init__()
 
+
 class _NotificationAutoTrigger(Exception):
     """Raised to interrupt the idle prompt when background task notifications arrive."""
 
     pass
-
 
 
 class CustomPromptSession(

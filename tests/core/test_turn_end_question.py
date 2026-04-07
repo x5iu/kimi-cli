@@ -8,10 +8,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from llmkit.message import ImageURLPart, Message
-from llmkit.message import TextPart as KosongTextPart
-from llmkit.message import ThinkPart as KosongThinkPart
-from llmkit.tooling.empty import EmptyToolset
 
 import kimi_cli.loop as soul_module
 import kimi_cli.loop.kimi_agent_loop as kimisoul_module
@@ -26,6 +22,10 @@ from kimi_cli.loop.kimi_agent_loop import (
     TurnEndQuestionOption,
     TurnOutcome,
 )
+from llmkit.message import ImageURLPart, Message
+from llmkit.message import TextPart as KosongTextPart
+from llmkit.message import ThinkPart as KosongThinkPart
+from llmkit.tooling.empty import EmptyToolset
 
 # -- Payload parsing tests --
 

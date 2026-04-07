@@ -12,19 +12,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
 
-import llmkit
 import tenacity
-from llmkit import StepResult
-from llmkit.chat_provider import (
-    APIConnectionError,
-    APIEmptyResponseError,
-    APIStatusError,
-    APITimeoutError,
-    RetryableChatProvider,
-)
-from llmkit.message import Message
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
+import llmkit
 from kimi_cli.background import build_active_task_snapshot
 from kimi_cli.eventbus.log import EventLog
 from kimi_cli.eventbus.types import (
@@ -103,6 +94,15 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import content_parts_stringify
 from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
 from kimi_cli.utils.turns import is_real_user_turn_start_message
+from llmkit import StepResult
+from llmkit.chat_provider import (
+    APIConnectionError,
+    APIEmptyResponseError,
+    APIStatusError,
+    APITimeoutError,
+    RetryableChatProvider,
+)
+from llmkit.message import Message
 
 if TYPE_CHECKING:
 

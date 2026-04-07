@@ -6,8 +6,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from llmkit.chat_provider import APIStatusError
-from llmkit.tooling.empty import EmptyToolset
 from rich.console import Console
 
 from kimi_cli.eventbus.types import ContentPart, ImageURLPart, TextPart
@@ -18,6 +16,8 @@ from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.ui.shell import Shell
 from kimi_cli.ui.shell.prompt import CustomPromptSession, PromptMode, TurnSubmitResult, UserInput
 from kimi_cli.utils.slashcmd import parse_slash_command_call
+from llmkit.chat_provider import APIStatusError
+from llmkit.tooling.empty import EmptyToolset
 
 
 def _fake_soul(**overrides: Any) -> AgentLoop:
@@ -71,7 +71,9 @@ async def test_slash_command_submitted_during_turn_is_treated_as_steer_text(
         assert "╭" in rendered
         assert "/help" in rendered
 
-    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
+    async def fake_run_agent_loop(
+        loop_obj, user_input, ui_loop_fn, cancel_event, event_log
+    ) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -134,7 +136,9 @@ async def test_image_reminder_submitted_during_turn_shows_image_marker(
         assert "[image]" in rendered
         assert "<image" not in rendered
 
-    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
+    async def fake_run_agent_loop(
+        loop_obj, user_input, ui_loop_fn, cancel_event, event_log
+    ) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -191,7 +195,9 @@ async def test_reminder_submitted_during_turn_rejects_when_llm_not_set(
             )
         )
 
-    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
+    async def fake_run_agent_loop(
+        loop_obj, user_input, ui_loop_fn, cancel_event, event_log
+    ) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -248,7 +254,9 @@ async def test_image_reminder_submitted_during_turn_rejects_when_model_lacks_cap
             )
         )
 
-    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
+    async def fake_run_agent_loop(
+        loop_obj, user_input, ui_loop_fn, cancel_event, event_log
+    ) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -443,7 +451,9 @@ async def test_turn_allowed_command_dispatches_to_shell_registry(
         )
         captured_results.append(result)
 
-    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
+    async def fake_run_agent_loop(
+        loop_obj, user_input, ui_loop_fn, cancel_event, event_log
+    ) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -494,7 +504,9 @@ async def test_skill_command_during_turn_queues_and_cancels(
         )
         captured_results.append(result)
 
-    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
+    async def fake_run_agent_loop(
+        loop_obj, user_input, ui_loop_fn, cancel_event, event_log
+    ) -> None:
         nonlocal cancel_was_set
 
         class _FakeWire:
@@ -571,9 +583,7 @@ async def test_async_turn_command_is_guarded(
     info_texts: list[str] = []
 
     async def fake_run_turn_ui(*, submit_handler, live_view, **kwargs) -> None:
-        monkeypatch.setattr(
-            live_view, "echo_info", lambda text: info_texts.append(text)
-        )
+        monkeypatch.setattr(live_view, "echo_info", lambda text: info_texts.append(text))
         result = submit_handler(
             UserInput(
                 mode=PromptMode.AGENT,
@@ -583,7 +593,9 @@ async def test_async_turn_command_is_guarded(
         )
         captured_results.append(result)
 
-    async def fake_run_agent_loop(loop_obj, user_input, ui_loop_fn, cancel_event, event_log) -> None:
+    async def fake_run_agent_loop(
+        loop_obj, user_input, ui_loop_fn, cancel_event, event_log
+    ) -> None:
         class _FakeWire:
             @staticmethod
             def ui_side(merge: bool = False):
@@ -674,9 +686,7 @@ async def test_slash_command_with_image_placeholder_expands_content(
 
     cast(Any, shell)._run_interactive_turn = fake_run_interactive_turn
 
-    image_part = ImageURLPart(
-        image_url=ImageURLPart.ImageURL(url="data:image/png;base64,AAAA")
-    )
+    image_part = ImageURLPart(image_url=ImageURLPart.ImageURL(url="data:image/png;base64,AAAA"))
     expanded_content: list[ContentPart] = [
         TextPart(text="/skill:orchestrator "),
         image_part,

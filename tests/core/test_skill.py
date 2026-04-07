@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 from inline_snapshot import snapshot
-from kaos.path import KaosPath
 
+from kaos.path import KaosPath
 from kimi_cli.skill import (
     Skill,
     discover_skills,

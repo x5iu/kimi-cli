@@ -1,8 +1,9 @@
 import asyncio
 from typing import override
 
-from llmkit.tooling import CallableTool2, ToolOk, ToolReturnValue
 from pydantic import BaseModel
+
+from llmkit.tooling import CallableTool2, ToolOk, ToolReturnValue
 
 
 class PlusParams(BaseModel):

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from io import StringIO
 
-from llmkit.tooling import ToolError, ToolReturnValue
 from rich.console import Console
 
 from kimi_cli.eventbus.types import (
@@ -12,6 +11,7 @@ from kimi_cli.eventbus.types import (
     ToolCall,
 )
 from kimi_cli.ui.shell.blocks import MAX_TOOL_ERROR_OUTPUT_LINES, ToolCallBlock
+from llmkit.tooling import ToolError, ToolReturnValue
 
 
 def _render_to_str(block: ToolCallBlock) -> str:

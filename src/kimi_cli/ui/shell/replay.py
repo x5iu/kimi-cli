@@ -7,9 +7,6 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from llmkit.message import ContentPart, Message
-from llmkit.tooling import ToolError, ToolOk
-
 from kimi_cli.eventbus import EventBus
 from kimi_cli.eventbus.log import EventLog
 from kimi_cli.eventbus.types import (
@@ -31,6 +28,8 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.slashcmd import parse_slash_command_call
 from kimi_cli.utils.turns import is_real_user_turn_start_message
+from llmkit.message import ContentPart, Message
+from llmkit.tooling import ToolError, ToolOk
 
 MAX_REPLAY_TURNS = 5
 

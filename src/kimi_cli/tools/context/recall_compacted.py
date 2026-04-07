@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import override
 
-from llmkit.message import Message
-from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.loop.agent import Runtime
@@ -20,6 +18,8 @@ from kimi_cli.loop.compaction_archive import (
 )
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.logging import logger
+from llmkit.message import Message
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
 MAX_RESULTS = 5
 EXCERPT_MAX_CHARS = 4000
@@ -104,9 +104,7 @@ class RecallCompactedContext(CallableTool2[Params]):
 
         query = params.query.strip()
         messages_cache: dict[str, list[Message]] = {}
-        hits = await self._search_archives(
-            selected_records, context_file, query, messages_cache
-        )
+        hits = await self._search_archives(selected_records, context_file, query, messages_cache)
         if not hits:
             builder.write(
                 f"No matching excerpts were found for query `{query}` in the selected archives.\n\n"
@@ -161,8 +159,12 @@ class RecallCompactedContext(CallableTool2[Params]):
                 summary_boosts[record.id] = s
         tasks = [
             asyncio.to_thread(
-                self._search_single_archive, record, context_file, query,
-                messages_cache, summary_boosts.get(record.id, 0),
+                self._search_single_archive,
+                record,
+                context_file,
+                query,
+                messages_cache,
+                summary_boosts.get(record.id, 0),
             )
             for record in records
         ]
@@ -224,10 +226,7 @@ class RecallCompactedContext(CallableTool2[Params]):
     def _query_tokens(query: str) -> list[str]:
         raw = _TOKEN_RE.findall(query)
         # Filter single-char ASCII tokens; keep single CJK characters
-        tokens = [
-            t for t in raw
-            if len(t) > 1 or '\u4e00' <= t <= '\u9fff'
-        ]
+        tokens = [t for t in raw if len(t) > 1 or "\u4e00" <= t <= "\u9fff"]
         if query and query not in tokens:
             tokens.append(query)
         return list(dict.fromkeys(tokens))
@@ -246,9 +245,7 @@ class RecallCompactedContext(CallableTool2[Params]):
         return list(dict.fromkeys(expanded))
 
     @staticmethod
-    def _expand_to_turn_boundary(
-        match_index: int, messages: Sequence[Message]
-    ) -> tuple[int, int]:
+    def _expand_to_turn_boundary(match_index: int, messages: Sequence[Message]) -> tuple[int, int]:
         """Expand around *match_index* to the nearest turn boundaries.
 
         Guarantees at least ±1 message (the old EXCERPT_WINDOW behaviour), then
@@ -299,17 +296,15 @@ class RecallCompactedContext(CallableTool2[Params]):
         if query in lowered:
             score += max(3, len(tokens) + 1)
             # Bonus for word-boundary match (query appears as a whole word)
-            if re.search(
-                r'(?:^|\W)' + re.escape(query) + r'(?:\W|$)', lowered
-            ):
+            if re.search(r"(?:^|\W)" + re.escape(query) + r"(?:\W|$)", lowered):
                 score += 2
         for token in tokens:
             # Use word boundary for ASCII tokens, substring for CJK
-            if token and all('\u4e00' <= c <= '\u9fff' for c in token):
+            if token and all("\u4e00" <= c <= "\u9fff" for c in token):
                 if token in lowered:
                     score += 1
             else:
-                if re.search(r'(?:^|\W)' + re.escape(token) + r'(?:\W|$)', lowered):
+                if re.search(r"(?:^|\W)" + re.escape(token) + r"(?:\W|$)", lowered):
                     score += 1
         # Length normalization: gently penalize very long messages
         if score > 0 and len(lowered) > 500:

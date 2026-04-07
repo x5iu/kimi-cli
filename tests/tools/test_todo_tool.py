@@ -38,5 +38,3 @@ async def test_set_todo_list_returns_summary_and_persists_state(
 
     assert runtime.session.state.todos[0].title == "Audit todo flow"
     assert runtime.session.state.todos[0].status == "in_progress"
-
-

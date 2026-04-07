@@ -1082,6 +1082,8 @@ def test_shell_turn_end_detected_question_keeps_original_reply_visible(
         assert list_turn_begin_inputs(home_dir, work_dir) == ["show detected turn-end question"]
     finally:
         shell.close()
+
+
 def test_shell_question_pager_quit_does_not_toggle_alternate_screen(tmp_path: Path) -> None:
     pager_script = tmp_path / "fake_pager.py"
     pager_script.write_text(

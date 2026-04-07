@@ -7,8 +7,8 @@ import platform
 
 import pytest
 from inline_snapshot import snapshot
-from kaos.path import KaosPath
 
+from kaos.path import KaosPath
 from kimi_cli.eventbus import EventBus
 from kimi_cli.eventbus.types import ToolCallOutput
 from kimi_cli.loop import _current_event_bus

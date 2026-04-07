@@ -7,8 +7,8 @@ from typing import cast
 
 import pytest
 from inline_snapshot import snapshot
-from kaos.path import KaosPath
 
+from kaos.path import KaosPath
 from kimi_cli.eventbus.types import ImageURLPart, TextPart, VideoURLPart
 from kimi_cli.llm import ModelCapability
 from kimi_cli.loop.agent import Runtime

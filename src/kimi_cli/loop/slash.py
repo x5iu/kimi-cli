@@ -118,7 +118,6 @@ async def yolo(agent_loop: KimiAgentLoop, args: str):
 async def add_dir(agent_loop: KimiAgentLoop, args: str):
     """Add a directory to the workspace. Usage: /add-dir <path>. Run without args to list added dirs"""  # noqa: E501
     from kaos.path import KaosPath
-
     from kimi_cli.utils.path import is_within_directory, list_directory
 
     args = sanitize_cli_path(args)

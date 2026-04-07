@@ -4,14 +4,14 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from llmkit.message import Message
-from llmkit.tooling.empty import EmptyToolset
 
 from kimi_cli.eventbus.types import ImageURLPart, TextPart
 from kimi_cli.loop.agent import Agent, Runtime
 from kimi_cli.loop.context import Context
 from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop, StepOutcome
 from kimi_cli.loop.message import INTERNAL_USER_NAME
+from llmkit.message import Message
+from llmkit.tooling.empty import EmptyToolset
 
 
 @pytest.mark.asyncio

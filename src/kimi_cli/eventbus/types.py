@@ -3,6 +3,16 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Literal, TypeGuard, cast
 
+from pydantic import BaseModel, Field
+
+from kimi_cli.tools.display import (
+    BackgroundTaskDisplayBlock,
+    DiffDisplayBlock,
+    ShellDisplayBlock,
+    TodoDisplayBlock,
+    TodoDisplayItem,
+)
+from kimi_cli.utils.typing import flatten_union
 from llmkit.chat_provider import TokenUsage
 from llmkit.message import (
     AudioURLPart,
@@ -22,16 +32,6 @@ from llmkit.tooling import (
     UnknownDisplayBlock,
 )
 from llmkit.utils.typing import JsonType
-from pydantic import BaseModel, Field
-
-from kimi_cli.tools.display import (
-    BackgroundTaskDisplayBlock,
-    DiffDisplayBlock,
-    ShellDisplayBlock,
-    TodoDisplayBlock,
-    TodoDisplayItem,
-)
-from kimi_cli.utils.typing import flatten_union
 
 
 class TurnBegin(BaseModel):

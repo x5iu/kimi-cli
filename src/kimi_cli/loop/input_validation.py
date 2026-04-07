@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from llmkit.message import Message
-
 from kimi_cli.eventbus.types import ContentPart
 from kimi_cli.loop import LLMNotSet, LLMNotSupported
 from kimi_cli.loop.message import check_message
+from llmkit.message import Message
 
 if TYPE_CHECKING:
     from kimi_cli.llm import LLM

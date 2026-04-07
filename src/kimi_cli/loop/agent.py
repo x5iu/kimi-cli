@@ -17,9 +17,8 @@ from jinja2 import (
     UndefinedError,
 )
 from jinja2 import Environment as JinjaEnvironment
-from kaos.path import KaosPath
-from llmkit.tooling import Toolset
 
+from kaos.path import KaosPath
 from kimi_cli.agentspec import load_agent_spec
 from kimi_cli.background import BackgroundTaskManager
 from kimi_cli.config import Config
@@ -34,6 +33,7 @@ from kimi_cli.skill import Skill, discover_skills_from_roots, index_skills, reso
 from kimi_cli.utils.environment import Environment
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_directory, list_directory
+from llmkit.tooling import Toolset
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
@@ -270,8 +270,7 @@ class Runtime:
             # Only expose skills roots outside the workspace for Glob access;
             # project-level roots are already within work_dir.
             skills_dirs=[
-                r for r in skills_roots_canonical
-                if not is_within_directory(r, session.work_dir)
+                r for r in skills_roots_canonical if not is_within_directory(r, session.work_dir)
             ],
             agents_md=agents_md or "",
         )

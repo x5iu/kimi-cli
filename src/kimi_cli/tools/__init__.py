@@ -2,10 +2,10 @@ import json
 from typing import Any, TypedDict, cast
 
 import streamingjson  # pyright: ignore[reportMissingTypeStubs]
-from kaos.path import KaosPath
-from llmkit.utils.typing import JsonType
 
+from kaos.path import KaosPath
 from kimi_cli.tools.todo_text import todo_label
+from llmkit.utils.typing import JsonType
 
 
 class SkipThisTool(Exception):

@@ -101,10 +101,13 @@ class PromptInputMixin:
         event.app.invalidate()
 
     def _try_paste_media(self, event: KeyPressEvent) -> bool:
-        result = cast(Callable[[], object | None], _prompt_module_attr(
-            "grab_media_from_clipboard",
-            _grab_media_from_clipboard,
-        ))()
+        result = cast(
+            Callable[[], object | None],
+            _prompt_module_attr(
+                "grab_media_from_clipboard",
+                _grab_media_from_clipboard,
+            ),
+        )()
         if result is None:
             return False
 

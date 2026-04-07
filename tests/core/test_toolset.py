@@ -6,12 +6,12 @@ import asyncio
 import contextlib
 import json
 
-from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from llmkit.tooling.error import ToolNotFoundError as KosongToolNotFoundError
 from pydantic import BaseModel
 
 from kimi_cli.eventbus.types import ToolCall, ToolResult
 from kimi_cli.loop.toolset import KimiToolset
+from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from llmkit.tooling.error import ToolNotFoundError as KosongToolNotFoundError
 
 
 class DummyParams(BaseModel):
@@ -168,7 +168,6 @@ async def test_nonexistent_tool_returns_not_found():
     assert isinstance(result.return_value, KosongToolNotFoundError)
 
 
-
 async def test_execution_guard_can_block_tool_call():
     ts = _make_toolset()
     ts.bind_execution_guard(
@@ -188,6 +187,7 @@ async def test_execution_guard_can_block_tool_call():
     assert isinstance(result, ToolResult)
     assert isinstance(result.return_value, ToolError)
     assert result.return_value.brief == "Blocked"
+
 
 # --- hide/unhide cycle ---
 

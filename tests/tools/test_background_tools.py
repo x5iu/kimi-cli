@@ -145,9 +145,7 @@ async def test_task_output_truncates_many_lines(runtime, task_output_tool):
         output=big_line * line_count,
     )
 
-    result = await task_output_tool(
-        task_output_tool.params(task_id=spec.id, block=True, timeout=1)
-    )
+    result = await task_output_tool(task_output_tool.params(task_id=spec.id, block=True, timeout=1))
 
     assert not result.is_error
     assert "output_truncated: true" in result.output
@@ -156,6 +154,7 @@ async def test_task_output_truncates_many_lines(runtime, task_output_tool):
     assert "[Truncated" in result.output
     # Wording should use inclusive range and line count, not half-open end
     import re
+
     m = re.search(r"\[Truncated — showing (\d+) lines \((\d+)–(\d+)\)", result.output)
     assert m, f"truncated message wording not found in output: {result.output[:500]}"
     n_lines = int(m.group(1))
@@ -198,9 +197,7 @@ async def test_task_output_line_too_large_tail_mode(runtime, task_output_tool):
     )
 
     # Default offset=None → tail mode
-    result = await task_output_tool(
-        task_output_tool.params(task_id=spec.id, block=True, timeout=1)
-    )
+    result = await task_output_tool(task_output_tool.params(task_id=spec.id, block=True, timeout=1))
 
     output_path = runtime.background_tasks.store.output_path(spec.id).resolve()
     assert not result.is_error

@@ -32,10 +32,12 @@ LLM friendly version: https://moonshotai.github.io/kimi-cli/llms.txt""",
 
 UIMode = Literal["shell", "print"]
 
+
 class ExitCode:
     SUCCESS = 0
     FAILURE = 1
     RETRYABLE = 75  # EX_TEMPFAIL from sysexits.h
+
 
 InputFormat = Literal["text", "stream-json"]
 OutputFormat = Literal["text", "stream-json"]
@@ -258,7 +260,6 @@ def kimi(
     del version  # handled in the callback
 
     from kaos.path import KaosPath
-
     from kimi_cli.app import KimiCLI, enable_logging
     from kimi_cli.config import Config
     from kimi_cli.metadata import load_metadata, save_metadata
@@ -516,8 +517,6 @@ def kimi(
             # In non-debug mode, print a concise error and point users to logs.
             _emit_fatal_error(f"{exc}\nSee logs: {log_path}")
         raise typer.Exit(code=1) from exc
-
-
 
 
 @cli.command(name="__background-task-worker", hidden=True)

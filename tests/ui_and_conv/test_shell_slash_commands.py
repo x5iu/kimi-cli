@@ -8,15 +8,15 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
-from kaos.path import KaosPath
-from llmkit.message import Message
 
+from kaos.path import KaosPath
 from kimi_cli.cli import Reload
 from kimi_cli.eventbus.types import TextPart
 from kimi_cli.session import Session
 from kimi_cli.ui.shell.slash import ShellSlashCmdFunc, shell_mode_registry
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.utils.slashcmd import SlashCommand
+from llmkit.message import Message
 
 
 async def _invoke_slash_command(command: SlashCommand[ShellSlashCmdFunc], shell: Any) -> None:

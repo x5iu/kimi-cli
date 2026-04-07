@@ -3,15 +3,16 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from llmkit.message import Message, TextPart, ToolCall
-
 from kimi_cli.loop.attachments.grep_read_nudge import (
     GrepThenTargetedReadNudgeProvider,
 )
+from llmkit.message import Message, TextPart, ToolCall
 
 
 def _make_agent_loop_mock(
-    *, compaction_generation: int = 0, active_turn_id: int = 1,
+    *,
+    compaction_generation: int = 0,
+    active_turn_id: int = 1,
 ) -> MagicMock:
     mock = MagicMock()
     mock._compaction_generation = compaction_generation
@@ -20,15 +21,11 @@ def _make_agent_loop_mock(
 
 
 def _user_msg(text: str = "hello") -> Message:
-    return Message(
-        role="user", content=[TextPart(text=text)]
-    )
+    return Message(role="user", content=[TextPart(text=text)])
 
 
 def _assistant_msg(text: str = "ok") -> Message:
-    return Message(
-        role="assistant", content=[TextPart(text=text)]
-    )
+    return Message(role="assistant", content=[TextPart(text=text)])
 
 
 def _tool_call_msg(
@@ -43,17 +40,13 @@ def _tool_call_msg(
         tool_calls=[
             ToolCall(
                 id=call_id,
-                function=ToolCall.FunctionBody(
-                    name=tool_name, arguments=arguments
-                ),
+                function=ToolCall.FunctionBody(name=tool_name, arguments=arguments),
             )
         ],
     )
 
 
-def _shell_call(
-    command: str, *, call_id: str = "c1"
-) -> Message:
+def _shell_call(command: str, *, call_id: str = "c1") -> Message:
     """Shell tool call with a specific command string."""
     return _tool_call_msg(
         "Shell",
@@ -71,9 +64,7 @@ def _grep_call(*, call_id: str = "c1") -> Message:
     )
 
 
-def _tool_result(
-    call_id: str = "c1", text: str = "ok"
-) -> Message:
+def _tool_result(call_id: str = "c1", text: str = "ok") -> Message:
     return Message(
         role="tool",
         content=[TextPart(text=text)],
@@ -89,9 +80,7 @@ class TestGrepThenTargetedReadNudgeProvider:
             _tool_call_msg("ReadFile", call_id="c1"),
             _tool_result("c1"),
         ]
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock()
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert result == []
 
     async def test_injection_after_shell_grep(self) -> None:
@@ -101,9 +90,7 @@ class TestGrepThenTargetedReadNudgeProvider:
             _shell_call("grep -rn TODO .", call_id="c1"),
             _tool_result("c1", "file.py:10:# TODO"),
         ]
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock()
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
         assert "ReadFile" in result[0].content
         assert "line_offset" in result[0].content
@@ -115,9 +102,7 @@ class TestGrepThenTargetedReadNudgeProvider:
             _shell_call("rg TODO .", call_id="c1"),
             _tool_result("c1", "file.py:10:# TODO"),
         ]
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock()
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
         assert "ReadFile" in result[0].content
 
@@ -128,9 +113,7 @@ class TestGrepThenTargetedReadNudgeProvider:
             _grep_call(call_id="c1"),
             _tool_result("c1", "match found"),
         ]
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock()
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
         assert "ReadFile" in result[0].content
 
@@ -141,9 +124,7 @@ class TestGrepThenTargetedReadNudgeProvider:
             _grep_call(call_id="c1"),
             _tool_result("c1"),
         ]
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock()
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
         assert result[0].is_hint is True
 
@@ -191,14 +172,10 @@ class TestGrepThenTargetedReadNudgeProvider:
         provider = GrepThenTargetedReadNudgeProvider()
         history = [
             _user_msg(),
-            _shell_call(
-                "rg --type py import", call_id="c1"
-            ),
+            _shell_call("rg --type py import", call_id="c1"),
             _tool_result("c1"),
         ]
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock()
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
 
     async def test_grep_tool_triggers(self) -> None:
@@ -209,7 +186,5 @@ class TestGrepThenTargetedReadNudgeProvider:
             _grep_call(call_id="c1"),
             _tool_result("c1"),
         ]
-        result = await provider.get_attachments(
-            history, _make_agent_loop_mock()
-        )
+        result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1

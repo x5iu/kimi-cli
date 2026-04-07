@@ -1,10 +1,9 @@
 from pathlib import Path
 from typing import Literal, override
 
-from kaos.path import KaosPath
-from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kaos.path import KaosPath
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.loop.approval import Approval
 from kimi_cli.tools.display import DisplayBlock
@@ -12,6 +11,7 @@ from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import is_within_workspace
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
 
 class Params(BaseModel):

@@ -7,7 +7,6 @@ from contextlib import suppress
 from io import StringIO
 from typing import Any, cast
 
-from llmkit.tooling import ToolError, ToolOk
 from rich import box
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
@@ -53,6 +52,7 @@ from kimi_cli.ui.shell.panels import (
 )
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.utils.logging import logger
+from llmkit.tooling import ToolError, ToolOk
 
 MAX_TOOL_ERROR_OUTPUT_LINES = 12
 MAX_TOOL_ERROR_OUTPUT_CHARS = 4000

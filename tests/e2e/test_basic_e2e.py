@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
 from kaos.path import KaosPath
 
 
@@ -85,6 +86,8 @@ def _run_shell_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tupl
         process.stdin.close()
     stdout_lines = _collect_stdout(process)
     return process.wait(), stdout_lines
+
+
 @pytest.mark.parametrize("mode", ["print", "shell"])
 async def test_scripted_echo_kimi_cli_agent_e2e(
     temp_work_dir: KaosPath, tmp_path: Path, mode: str

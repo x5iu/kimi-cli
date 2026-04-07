@@ -4,10 +4,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from llmkit.message import Message, TextPart
-
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
 from kimi_cli.tools.file.rg_path import find_existing_rg, format_rg_command
+from llmkit.message import Message, TextPart
 
 if TYPE_CHECKING:
     from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop

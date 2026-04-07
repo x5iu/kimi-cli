@@ -6,12 +6,12 @@ import time
 from pathlib import Path
 
 import pytest
-from kaos.path import KaosPath
-from llmkit.message import Message
 
+from kaos.path import KaosPath
 from kimi_cli.eventbus.log import BUS_PROTOCOL_VERSION, BusMessageRecord, EventLogMetadata
 from kimi_cli.eventbus.types import TextPart, TurnBegin
 from kimi_cli.session import Session
+from llmkit.message import Message
 
 
 @pytest.fixture

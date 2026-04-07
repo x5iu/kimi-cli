@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from inline_snapshot import snapshot
-from llmkit.chat_provider.echo import EchoChatProvider
-from llmkit.chat_provider.kimi import Kimi
 from pydantic import SecretStr
 
 from kimi_cli.config import LLMModel, LLMProvider
 from kimi_cli.llm import augment_provider_with_env_vars, create_llm
+from llmkit.chat_provider.echo import EchoChatProvider
+from llmkit.chat_provider.kimi import Kimi
 
 
 def test_augment_provider_with_env_vars_kimi(monkeypatch):

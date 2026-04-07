@@ -1,6 +1,7 @@
 import platform
 
 import pytest
+
 from kaos.path import KaosPath
 
 

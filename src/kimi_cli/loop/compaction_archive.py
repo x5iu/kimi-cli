@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
-from llmkit.message import Message, ToolCall
 from pydantic import BaseModel
 
 from kimi_cli.eventbus.types import (
@@ -20,9 +19,11 @@ from kimi_cli.eventbus.types import (
 )
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.turns import is_checkpoint_user_text, is_internal_user_message
+from llmkit.message import Message, ToolCall
 
 _MANIFEST_SUFFIX = ".compaction-archives.jsonl"
 _SUMMARY_WIDTH = 600
+
 
 def _truncate_summary(summary: str) -> str:
     """Truncate summary to at most _SUMMARY_WIDTH characters, adding '...' if truncated."""
@@ -32,7 +33,6 @@ def _truncate_summary(summary: str) -> str:
     if len(stripped) <= _SUMMARY_WIDTH:
         return stripped
     return stripped[:_SUMMARY_WIDTH] + "..."
-
 
 
 class CompactionArchiveRecord(BaseModel):
@@ -83,12 +83,7 @@ def load_compaction_archives(context_file: Path) -> list[CompactionArchiveRecord
             first_seen[rec.id] = idx
         last_content[rec.id] = rec
     if len(first_seen) < len(records):
-        records = [
-            last_content[rid]
-            for rid, _ in sorted(
-                first_seen.items(), key=lambda x: x[1]
-            )
-        ]
+        records = [last_content[rid] for rid, _ in sorted(first_seen.items(), key=lambda x: x[1])]
 
     return records
 
@@ -210,18 +205,76 @@ _WORD_RE = re.compile(r"\b[a-zA-Z]{4,}\b", re.ASCII)
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
 
-_STOP_KEYWORDS = frozenset({
-    "true", "false", "none", "null", "self", "return", "import",
-    "from", "class", "async", "await", "with", "that", "this",
-    "have", "been", "will", "would", "could", "should", "about",
-    "there", "their", "which", "when", "what", "were", "them",
-    "then", "than", "each", "make", "like", "just", "over",
-    "such", "into", "only", "also", "some", "very", "here",
-    "more", "after", "before", "other", "these", "first",
-    "using", "file", "line", "code", "output", "error", "tool",
-    "call", "type", "text", "content", "message", "role",
-    "user", "assistant", "system", "function", "the",
-})
+_STOP_KEYWORDS = frozenset(
+    {
+        "true",
+        "false",
+        "none",
+        "null",
+        "self",
+        "return",
+        "import",
+        "from",
+        "class",
+        "async",
+        "await",
+        "with",
+        "that",
+        "this",
+        "have",
+        "been",
+        "will",
+        "would",
+        "could",
+        "should",
+        "about",
+        "there",
+        "their",
+        "which",
+        "when",
+        "what",
+        "were",
+        "them",
+        "then",
+        "than",
+        "each",
+        "make",
+        "like",
+        "just",
+        "over",
+        "such",
+        "into",
+        "only",
+        "also",
+        "some",
+        "very",
+        "here",
+        "more",
+        "after",
+        "before",
+        "other",
+        "these",
+        "first",
+        "using",
+        "file",
+        "line",
+        "code",
+        "output",
+        "error",
+        "tool",
+        "call",
+        "type",
+        "text",
+        "content",
+        "message",
+        "role",
+        "user",
+        "assistant",
+        "system",
+        "function",
+        "the",
+    }
+)
 
 _MAX_KEYWORDS = 10
 
@@ -332,17 +385,17 @@ def backfill_archive_keywords(context_file: Path) -> int:
     for record in records:
         if record.keywords:
             continue
-        archive_path = resolve_compaction_archive_path(
-            context_file, record
-        )
+        archive_path = resolve_compaction_archive_path(context_file, record)
         if not archive_path.exists():
             continue
         messages = load_archive_messages(archive_path)
         new_keywords = extract_archive_keywords(messages)
         if new_keywords:
-            updated_records.append(record.model_copy(
-                update={"keywords": new_keywords},
-            ))
+            updated_records.append(
+                record.model_copy(
+                    update={"keywords": new_keywords},
+                )
+            )
 
     if not updated_records:
         return 0

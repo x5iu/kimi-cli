@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 
 import pytest
-from llmkit.message import Message, Role
 
 from kimi_cli.eventbus.types import TextPart
 from kimi_cli.loop.context import Context
+from llmkit.message import Message, Role
 
 
 def _msg(role: Role, text: str) -> Message:
@@ -36,8 +36,7 @@ async def test_is_error_written_to_jsonl(context_file: Path):
     await ctx.append_message(msgs, message_metadata=metadata)
 
     lines = [
-        json.loads(line)
-        for line in context_file.read_text(encoding="utf-8").strip().splitlines()
+        json.loads(line) for line in context_file.read_text(encoding="utf-8").strip().splitlines()
     ]
 
     assert len(lines) == 2
@@ -54,8 +53,7 @@ async def test_append_without_metadata_has_no_extra_fields(context_file: Path):
     await ctx.append_message(_msg("assistant", "hello"))
 
     lines = [
-        json.loads(line)
-        for line in context_file.read_text(encoding="utf-8").strip().splitlines()
+        json.loads(line) for line in context_file.read_text(encoding="utf-8").strip().splitlines()
     ]
 
     assert len(lines) == 1

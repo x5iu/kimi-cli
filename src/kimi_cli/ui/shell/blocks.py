@@ -72,13 +72,15 @@ def _set_todo_list_activity_argument(argument: str | None) -> str | None:
     return f"ready: {argument.split(marker, 1)[1]}"
 
 
-_SELF_CLOSING_BLOCKS = frozenset({
-    "fence",
-    "code_block",
-    "hr",
-    "html_block",
-    "table",
-})
+_SELF_CLOSING_BLOCKS = frozenset(
+    {
+        "fence",
+        "code_block",
+        "hr",
+        "html_block",
+        "table",
+    }
+)
 
 _md_parser_instance: Any = None
 
@@ -174,7 +176,7 @@ class _ContentBlock:
         """Return the portion of text that has not been committed yet."""
         full = self.raw_text
         if self._committed_text:
-            return full[len(self._committed_text):]
+            return full[len(self._committed_text) :]
         return full
 
     def _compose_incremental(self) -> RenderableType:

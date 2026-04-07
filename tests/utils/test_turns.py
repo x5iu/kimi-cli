@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from llmkit.message import Message
-
 from kimi_cli.eventbus.types import TextPart
 from kimi_cli.loop.message import INTERNAL_USER_NAME, internal_user_message, system
 from kimi_cli.utils.turns import (
@@ -10,6 +8,7 @@ from kimi_cli.utils.turns import (
     is_real_user_turn_start_message,
     is_real_user_turn_start_record,
 )
+from llmkit.message import Message
 
 
 def test_named_internal_user_message_is_not_real_turn() -> None:

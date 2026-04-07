@@ -4,7 +4,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, Self, override
 
-from llmkit.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
 
 import kaos
@@ -20,6 +19,7 @@ from kimi_cli.tools.file.rg_path import find_existing_rg, format_rg_command
 from kimi_cli.tools.utils import ToolRejectedError, ToolResultBuilder, load_desc
 from kimi_cli.utils.environment import Environment
 from kimi_cli.utils.subprocess_env import get_noninteractive_env
+from llmkit.tooling import CallableTool2, ToolReturnValue
 
 MAX_FOREGROUND_TIMEOUT = 5 * 60
 MAX_BACKGROUND_TIMEOUT = 24 * 60 * 60
@@ -42,10 +42,7 @@ def _build_rg_preference_guidance(*, is_powershell: bool) -> str:
                 "- When you need to search file contents, prefer Shell with "
                 f"`{command}` instead of the Grep tool."
             ),
-            (
-                "- If you need to verify or rediscover the binary, run "
-                f"`{path_lookup} rg`."
-            ),
+            (f"- If you need to verify or rediscover the binary, run `{path_lookup} rg`."),
         ]
     )
 

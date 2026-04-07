@@ -34,7 +34,10 @@ def test_default_config_dump():
                 "max_steps_per_turn": 100,
                 "max_retries_per_step": 3,
                 "max_ralph_iterations": 0,
-                "reserved_context_size": 50000, "max_preserved_messages": 2, "auto_compact_enabled": True, "compaction_trigger_ratio": 0.85,
+                "reserved_context_size": 50000,
+                "max_preserved_messages": 2,
+                "auto_compact_enabled": True,
+                "compaction_trigger_ratio": 0.85,
                 "turn_end_question_detection": True,
             },
             "background": {
@@ -50,7 +53,9 @@ def test_default_config_dump():
             },
             "notifications": {"claim_stale_after_ms": 15000},
             "services": {"moonshot_search": None, "moonshot_fetch": None},
-            "mcp": {"client": {"tool_call_timeout_ms": 60000}}, "merge_all_available_skills": False, "env": {},
+            "mcp": {"client": {"tool_call_timeout_ms": 60000}},
+            "merge_all_available_skills": False,
+            "env": {},
         }
     )
 

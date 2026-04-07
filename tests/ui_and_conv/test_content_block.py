@@ -167,7 +167,7 @@ class TestContentBlockIncremental:
         pending = block._pending_text
         # Committed text should be set (2 self-closing blocks)
         assert block._committed_text != ""
-        assert pending == block.raw_text[len(block._committed_text):]
+        assert pending == block.raw_text[len(block._committed_text) :]
         assert "Trailing text." in pending
 
     def test_pending_text_equals_full_text_when_nothing_committed(self):

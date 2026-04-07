@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import override
 from uuid import uuid4
 
-from llmkit.tooling import BriefDisplayBlock, CallableTool2, Tool, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.eventbus.types import (
@@ -19,6 +18,7 @@ from kimi_cli.eventbus.types import (
 from kimi_cli.loop import bus_send, get_event_bus_or_none
 from kimi_cli.loop.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import load_desc
+from llmkit.tooling import BriefDisplayBlock, CallableTool2, Tool, ToolError, ToolReturnValue
 
 logger = logging.getLogger(__name__)
 

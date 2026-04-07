@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal, override
 
-from kaos.path import KaosPath
-from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
+from kaos.path import KaosPath
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.loop.approval import Approval
 from kimi_cli.tools.display import DisplayBlock
@@ -15,6 +14,7 @@ from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import is_within_workspace
+from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -409,9 +409,7 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
 
         for start in range(max(len(content_lines) - window + 1, 1)):
             candidate = content_lines[start : start + window]
-            ratio = difflib.SequenceMatcher(
-                None, "".join(candidate), needle
-            ).ratio()
+            ratio = difflib.SequenceMatcher(None, "".join(candidate), needle).ratio()
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_start = start
@@ -437,8 +435,7 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
 
         lines_info: list[str] = []
         lines_info.append(
-            f"\nClosest match (similarity {best_ratio:.0%}) "
-            f"near line {best_start + 1}:"
+            f"\nClosest match (similarity {best_ratio:.0%}) near line {best_start + 1}:"
         )
         if diff_str:
             lines_info.append(diff_str)

@@ -9,13 +9,12 @@ from pathlib import Path
 from textwrap import shorten
 
 from kaos.path import KaosPath
-from llmkit.message import Message
-
 from kimi_cli.eventbus.log import EventLog
 from kimi_cli.eventbus.types import TurnBegin
 from kimi_cli.metadata import WorkDirMeta, load_metadata, save_metadata
 from kimi_cli.session_state import SessionState, load_session_state, save_session_state
 from kimi_cli.utils.logging import logger
+from llmkit.message import Message
 
 
 @dataclass(slots=True, kw_only=True)

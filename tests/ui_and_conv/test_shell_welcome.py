@@ -72,6 +72,7 @@ async def test_shell_run_does_not_start_background_update(monkeypatch: pytest.Mo
 
         async def prompt(self):
             raise EOFError
+
         def execute_deferred_erase(self):
             pass
 

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from llmkit.message import Message, TextPart
-
 from kimi_cli.loop.attachments.goal_tracking import GoalTrackingAttachmentProvider
+from llmkit.message import Message, TextPart
 
 
 def _make_agent_loop_mock() -> MagicMock:
