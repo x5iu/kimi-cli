@@ -503,17 +503,23 @@ async def test_grep_offset_beyond_results(grep_tool: Grep):
 
 
 async def test_grep_hidden_files(grep_tool: Grep):
-    """Hidden files like .env are searchable."""
+    """Hidden files are searchable, but .env is filtered by sensitive file protection."""
     with tempfile.TemporaryDirectory() as temp_dir:
         (Path(temp_dir) / ".env").write_text("SECRET_KEY=abc123\n")
+        (Path(temp_dir) / ".gitlab-ci.yml").write_text("SECRET_KEY=ci\n")
         (Path(temp_dir) / "visible.txt").write_text("SECRET_KEY=xyz\n")
 
         result = await grep_tool(
             Params(pattern="SECRET_KEY", path=temp_dir, output_mode="files_with_matches")
         )
         assert not result.is_error
-        assert ".env" in result.output
+        # .env is filtered out by sensitive file protection
+        assert ".env" not in result.output
+        # Other hidden files are still searchable
+        assert ".gitlab-ci.yml" in result.output
         assert "visible.txt" in result.output
+        # Warning message mentions the filtered file
+        assert "sensitive" in (result.message or "").lower()
 
 
 async def test_grep_vcs_exclusion(grep_tool: Grep):
