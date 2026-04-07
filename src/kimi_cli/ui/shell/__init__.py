@@ -272,7 +272,7 @@ class Shell:
             and shell_slash_registry.find_command(slash_cmd_call.name) is not None
         ):
             prompt_session.execute_deferred_erase()
-            await self._run_slash_command(slash_cmd_call)
+            await self._run_slash_command(slash_cmd_call, resolved_content=user_input.content)
             return True
 
         # Pre-render the user echo *before* the turn starts.  The prompt
@@ -284,10 +284,7 @@ class Shell:
         if echo and user_input.mode == PromptMode.AGENT:
             pre_rendered_echo = self._pre_render_user_echo(self._display_user_input(user_input))
 
-        if slash_cmd_call is not None and slash_cmd_call.name in self._slash_command_lookup:
-            agent_loop_input: str | list[ContentPart] = slash_cmd_call.raw_input
-        else:
-            agent_loop_input: str | list[ContentPart] = user_input.content
+        agent_loop_input: str | list[ContentPart] = user_input.content
         keep_running = await self._run_interactive_turn(
             prompt_session,
             agent_loop_input,
@@ -638,7 +635,12 @@ class Shell:
             task.cancel()
         self._background_tasks.clear()
 
-    async def _run_slash_command(self, command_call: SlashCommandCall) -> None:
+    async def _run_slash_command(
+        self,
+        command_call: SlashCommandCall,
+        *,
+        resolved_content: list[ContentPart] | None = None,
+    ) -> None:
         from kimi_cli.cli import Reload
 
         if command_call.name not in self._slash_command_lookup:
@@ -652,7 +654,9 @@ class Shell:
         command = shell_slash_registry.find_command(command_call.name)
         if command is None:
             # the input is an agent-loop-level slash command call
-            await self.run_agent_loop_command(command_call.raw_input)
+            await self.run_agent_loop_command(
+                resolved_content if resolved_content is not None else command_call.raw_input
+            )
             return
 
         logger.debug(

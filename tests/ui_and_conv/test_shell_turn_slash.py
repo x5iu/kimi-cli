@@ -307,7 +307,7 @@ async def test_top_level_slash_command_is_not_echoed_as_user_input(
     shell = Shell(_fake_soul(status=SimpleNamespace()))
     calls: list[str | list[object]] = []
 
-    async def fake_run_slash_command(command_call) -> None:
+    async def fake_run_slash_command(command_call, **kwargs) -> None:
         calls.append(command_call.name)
 
     cast(Any, shell)._run_slash_command = fake_run_slash_command
@@ -353,7 +353,7 @@ async def test_top_level_soul_slash_command_uses_interactive_turn(
     )
 
     assert keep_running is True
-    assert received == ["/reset"]
+    assert received == [[TextPart(text="/reset")]]
 
 
 @pytest.mark.asyncio
@@ -598,3 +598,103 @@ async def test_async_turn_command_is_guarded(
 
     assert captured_results[0].accepted is True
     assert any("cannot run during a turn" in t for t in info_texts)
+
+
+@pytest.mark.asyncio
+async def test_slash_command_with_pasted_text_placeholder_expands_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When a slash command contains a pasted-text placeholder, the agent loop
+    must receive the expanded content parts, not the raw placeholder string."""
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module.console, "print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(shell_module.shell_slash_registry, "find_command", lambda name: None)
+
+    shell = Shell(
+        _fake_soul(
+            available_slash_commands=[SimpleNamespace(name="skill:orchestrator", aliases=[])],
+            status=SimpleNamespace(),
+        )
+    )
+    prompt_session = _fake_prompt_session()
+    received: list[object] = []
+
+    async def fake_run_interactive_turn(prompt_session_arg, user_input, **kwargs) -> bool:
+        received.append(user_input)
+        return True
+
+    cast(Any, shell)._run_interactive_turn = fake_run_interactive_turn
+
+    pasted_text = "line1\nline2\nline3\nline4\nline5"
+    expanded_content: list[ContentPart] = [
+        TextPart(text="/skill:orchestrator "),
+        TextPart(text=pasted_text),
+    ]
+
+    keep_running = await shell._handle_agent_input(
+        prompt_session,
+        UserInput(
+            mode=PromptMode.AGENT,
+            command="/skill:orchestrator [Pasted text #1 +5 lines]",
+            content=expanded_content,
+        ),
+    )
+
+    assert keep_running is True
+    assert len(received) == 1
+    assert received[0] == expanded_content
+    # Verify the actual pasted text is present, not the placeholder
+    texts = [p.text for p in received[0] if isinstance(p, TextPart)]
+    assert any(pasted_text in t for t in texts)
+    assert "[Pasted text" not in " ".join(texts)
+
+
+@pytest.mark.asyncio
+async def test_slash_command_with_image_placeholder_expands_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When a slash command contains an image placeholder, the agent loop
+    must receive the resolved ImageURLPart, not the raw placeholder string."""
+    shell_module = importlib.import_module("kimi_cli.ui.shell")
+    monkeypatch.setattr(shell_module.console, "print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(shell_module.shell_slash_registry, "find_command", lambda name: None)
+
+    shell = Shell(
+        _fake_soul(
+            available_slash_commands=[SimpleNamespace(name="skill:orchestrator", aliases=[])],
+            status=SimpleNamespace(),
+        )
+    )
+    prompt_session = _fake_prompt_session()
+    received: list[object] = []
+
+    async def fake_run_interactive_turn(prompt_session_arg, user_input, **kwargs) -> bool:
+        received.append(user_input)
+        return True
+
+    cast(Any, shell)._run_interactive_turn = fake_run_interactive_turn
+
+    image_part = ImageURLPart(
+        image_url=ImageURLPart.ImageURL(url="data:image/png;base64,AAAA")
+    )
+    expanded_content: list[ContentPart] = [
+        TextPart(text="/skill:orchestrator "),
+        image_part,
+    ]
+
+    keep_running = await shell._handle_agent_input(
+        prompt_session,
+        UserInput(
+            mode=PromptMode.AGENT,
+            command="/skill:orchestrator [image:test.png,100x100]",
+            content=expanded_content,
+        ),
+    )
+
+    assert keep_running is True
+    assert len(received) == 1
+    assert received[0] == expanded_content
+    # Verify the image part is present
+    image_parts = [p for p in received[0] if isinstance(p, ImageURLPart)]
+    assert len(image_parts) == 1
+    assert image_parts[0].image_url.url == "data:image/png;base64,AAAA"
