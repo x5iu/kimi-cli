@@ -430,7 +430,7 @@ class BackgroundTaskManager:
                 targets = [t for t in targets if t != "llm"]
                 if not targets:
                     continue
-            event.targets = targets
+            event.targets = targets  # pyright: ignore[reportAttributeAccessIssue]
             notification = self._notifications.publish(event)
             if notification.event.id == event.id:
                 published.append(notification.event.id)

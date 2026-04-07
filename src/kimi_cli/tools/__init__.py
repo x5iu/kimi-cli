@@ -20,7 +20,7 @@ class _TodoSummaryDict(TypedDict, total=False):
     executor: object
 
 
-def _todo_label_from_dict(todo: _TodoSummaryDict) -> str | None:
+def _todo_label_from_dict(todo: _TodoSummaryDict) -> str | None:  # pyright: ignore[reportUnusedFunction]
     title = todo.get("title")
     if not isinstance(title, str) or not title:
         return None

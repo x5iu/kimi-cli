@@ -47,7 +47,7 @@ class PostCompactionContinuityAttachmentProvider(AttachmentProvider):
             return []
 
         # Fire exactly once per compaction event.
-        gen = agent_loop._compaction_generation  # noqa: SLF001
+        gen = agent_loop._compaction_generation  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         if gen == self._last_seen_generation:
             return []
 

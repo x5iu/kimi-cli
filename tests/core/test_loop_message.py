@@ -341,7 +341,7 @@ def test_tool_ok_sanitizes_system_reminder_tags_in_string_output():
 
     message = tool_result_to_message(tool_result)
 
-    result_text = message.content[0].text
+    result_text = message.content[0].text  # pyright: ignore[reportAttributeAccessIssue]
     assert "<system-reminder>" not in result_text
     assert "‹system-reminder›" in result_text
     assert "‹/system-reminder›" in result_text
@@ -355,7 +355,7 @@ def test_tool_ok_sanitizes_system_hint_tags_in_string_output():
 
     message = tool_result_to_message(tool_result)
 
-    result_text = message.content[0].text
+    result_text = message.content[0].text  # pyright: ignore[reportAttributeAccessIssue]
     assert "<system-hint>" not in result_text
     assert "‹system-hint›" in result_text
 
@@ -368,7 +368,7 @@ def test_tool_ok_sanitizes_tags_in_text_part_output():
 
     message = tool_result_to_message(tool_result)
 
-    result_text = message.content[0].text
+    result_text = message.content[0].text  # pyright: ignore[reportAttributeAccessIssue]
     assert "<system-reminder>" not in result_text
     assert "‹system-reminder›" in result_text
 
@@ -379,7 +379,7 @@ def test_tool_ok_sanitizes_tags_in_sequence_output():
         TextPart(text="first <system-reminder>x</system-reminder>"),
         TextPart(text="second <system-hint>y</system-hint>"),
     ]
-    tool_ok = ToolOk(output=parts)
+    tool_ok = ToolOk(output=parts)  # pyright: ignore[reportArgumentType]
     tool_result = ToolResult(tool_call_id="call_san4", return_value=tool_ok)
 
     message = tool_result_to_message(tool_result)

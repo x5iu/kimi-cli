@@ -207,7 +207,7 @@ def test_prepare_preserves_complete_turn_with_tool_messages():
     tc = ToolCall(
         id="call_abc",
         type="function",
-        function={"name": "grep", "arguments": '{"q":"x"}'},
+        function={"name": "grep", "arguments": '{"q":"x"}'},  # pyright: ignore[reportArgumentType]
     )
     messages = [
         Message(role="user", content=[TextPart(text="Earliest")]),
@@ -256,7 +256,7 @@ def test_prepare_includes_tool_calls_in_compact_message():
     tc = ToolCall(
         id="call_xyz",
         type="function",
-        function={"name": "read_file", "arguments": '{"path":"a.py"}'},
+        function={"name": "read_file", "arguments": '{"path":"a.py"}'},  # pyright: ignore[reportArgumentType]
     )
     messages = [
         Message(role="user", content=[TextPart(text="Old question")]),
@@ -292,7 +292,7 @@ def test_prepare_includes_tool_call_id_for_tool_messages():
     tc = ToolCall(
         id="call_123",
         type="function",
-        function={"name": "bash", "arguments": '{"cmd":"ls"}'},
+        function={"name": "bash", "arguments": '{"cmd":"ls"}'},  # pyright: ignore[reportArgumentType]
     )
     messages = [
         Message(role="user", content=[TextPart(text="Old question")]),

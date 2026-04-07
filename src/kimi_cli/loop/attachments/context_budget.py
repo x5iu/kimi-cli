@@ -46,13 +46,13 @@ class ContextBudgetAttachmentProvider(AttachmentProvider):
         history: Sequence[Message],
         agent_loop: KimiAgentLoop,
     ) -> list[Attachment]:
-        usage = agent_loop._context_usage  # noqa: SLF001
+        usage = agent_loop._context_usage  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         if usage < self._hint_threshold:
             return []
 
         # Cooldown: count assistant messages since last injection.
         # Reset if compaction happened (generation changed).
-        gen = agent_loop._compaction_generation  # noqa: SLF001
+        gen = agent_loop._compaction_generation  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         if gen != self._last_seen_generation:
             self._last_seen_generation = gen
             self._last_inject_index = -1

@@ -16,7 +16,7 @@ from kimi_cli.loop.context import Context
 from kimi_cli.loop.kimi_agent_loop import KimiAgentLoop
 from kimi_cli.notifications import NotificationEvent, NotificationManager
 from kimi_cli.notifications.llm import build_notification_message, render_notification_text
-from kimi_cli.notifications.models import NotificationDelivery, NotificationView
+from kimi_cli.notifications.models import NotificationDelivery, NotificationSink, NotificationView
 from kimi_cli.utils.aioqueue import QueueShutDown
 from llmkit.message import Message, TextPart
 from llmkit.tooling.empty import EmptyToolset
@@ -187,7 +187,7 @@ def _make_notification_manager(tmp_path: Path) -> NotificationManager:
 def _make_event(
     mgr: NotificationManager,
     *,
-    targets: list[str] | None = None,
+    targets: list[NotificationSink] | None = None,
 ) -> NotificationEvent:
     return NotificationEvent(
         id=mgr.new_id(),

@@ -72,7 +72,7 @@ class RecallNudgeAfterCompactionProvider(AttachmentProvider):
         if not history:
             return []
 
-        gen = agent_loop._compaction_generation  # noqa: SLF001
+        gen = agent_loop._compaction_generation  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
         # New compaction event → reset counters
         if gen != self._last_seen_generation:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
 from kimi_cli.utils.turns import is_real_user_turn_start_message
@@ -51,8 +51,8 @@ class TaskPollEscalationAttachmentProvider(AttachmentProvider):
 
         # Use _active_turn_id (monotonic, compaction-immune) for turn
         # detection.  Only preserve _fired_task_ids on same-turn compaction.
-        turn_id = agent_loop._active_turn_id  # noqa: SLF001
-        gen = agent_loop._compaction_generation  # noqa: SLF001
+        turn_id = agent_loop._active_turn_id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        gen = agent_loop._compaction_generation  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         if turn_id != self._last_turn_id:
             # New turn — always reset (covers between-turn /compact too)
             self._last_turn_id = turn_id
@@ -102,7 +102,8 @@ def _extract_task_id(arguments: str | None) -> str | None:
     except (json.JSONDecodeError, TypeError):
         return None
     if isinstance(args, dict):
-        task_id = args.get("task_id")
+        d = cast(dict[str, Any], args)
+        task_id: str | None = d.get("task_id")
         if isinstance(task_id, str):
             return task_id
     return None

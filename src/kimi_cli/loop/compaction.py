@@ -165,7 +165,7 @@ class SimpleCompaction:
 
         # Guard: ensure the LLM produced meaningful content (skip our system prefix)
         if not any(
-            isinstance(p, TextPart) and p.text.strip()
+            isinstance(p, TextPart) and p.text.strip()  # pyright: ignore[reportUnnecessaryIsInstance]
             for p in compacted_msg.content
             if isinstance(p, TextPart)
         ):

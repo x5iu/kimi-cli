@@ -277,7 +277,7 @@ def parse_skill_text(content: str, *, dir_path: KaosPath) -> Skill:
     )
 
 
-def _iter_fenced_codeblocks(content: str) -> Iterator[tuple[str, str]]:
+def _iter_fenced_codeblocks(content: str) -> Iterator[tuple[str, str]]:  # pyright: ignore[reportUnusedFunction]
     fence = ""
     fence_char = ""
     lang = ""

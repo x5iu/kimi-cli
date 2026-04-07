@@ -99,7 +99,7 @@ def test_open_live_view_expansion_invalidates_current_app() -> None:
     calls: list[str] = []
     live_view = SimpleNamespace(show_more=lambda: calls.append("expand") or True)
 
-    app.invalidate = lambda: calls.append("invalidate")
+    app.invalidate = lambda: calls.append("invalidate")  # pyright: ignore[reportAttributeAccessIssue]
 
     prompt_session._open_live_view_expansion(cast(KeyPressEvent, event), live_view)
 

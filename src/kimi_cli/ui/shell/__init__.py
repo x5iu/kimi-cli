@@ -1,3 +1,4 @@
+# pyright: standard
 from __future__ import annotations
 
 import asyncio
@@ -5,7 +6,7 @@ import shlex
 from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 from rich.console import Group, RenderableType
@@ -237,7 +238,7 @@ class Shell:
         _C(
             file=sio,
             force_terminal=True,
-            color_system=console.color_system,
+            color_system=cast(Any, console.color_system),
             width=console.width,
             highlight=False,
         ).print(render_user_prompt_block(text))
@@ -346,7 +347,7 @@ class Shell:
                         with console.capture() as capture:
                             ret = cmd.func(self, slash_call.args)
                         if isinstance(ret, Awaitable):
-                            ret.close()  # prevent 'coroutine never awaited' warning
+                            cast(Coroutine[Any, Any, Any], ret).close()  # noqa: E501  # prevent 'coroutine never awaited' warning
                             logger.error(
                                 "Async command /%s cannot run during a turn",
                                 slash_call.name,

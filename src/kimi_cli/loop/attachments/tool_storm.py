@@ -69,7 +69,7 @@ class ToolStormBreakerAttachmentProvider(AttachmentProvider):
         # Compaction replaces history (removing the tool-call sequence),
         # and turn change means a new user request.  Both require a full
         # reset of streak tracking.
-        gen = agent_loop._compaction_generation  # noqa: SLF001
+        gen = agent_loop._compaction_generation  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         if gen != self._last_seen_generation or turn_start != self._last_turn_start_index:
             self._last_seen_generation = gen
             self._last_turn_start_index = turn_start

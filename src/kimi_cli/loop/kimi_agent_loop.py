@@ -573,7 +573,7 @@ class KimiAgentLoop:
                 else:
                     # Stash non-text content parts (e.g. images) so slash-command
                     # handlers like skill runners can include them in their turn.
-                    if isinstance(user_message.content, list):
+                    if isinstance(user_message.content, list):  # pyright: ignore[reportUnnecessaryIsInstance]
                         self._slash_command_content_parts = [
                             p for p in user_message.content if not isinstance(p, TextPart)
                         ]

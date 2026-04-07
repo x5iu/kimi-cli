@@ -243,8 +243,8 @@ def collect_diff_hunks(
         block_hunks = _build_diff_lines(
             b.old_text,
             b.new_text,
-            b.old_start,
-            b.new_start,
+            b.old_start_line,
+            b.new_start_line,
         )
         for hunk in block_hunks:
             for dl in hunk:

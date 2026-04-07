@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
 from kimi_cli.utils.turns import is_real_user_turn_start_message
@@ -51,7 +51,7 @@ class GrepThenTargetedReadNudgeProvider(AttachmentProvider):
                 break
 
         # Reset on turn change
-        turn_id = agent_loop._active_turn_id  # noqa: SLF001
+        turn_id = agent_loop._active_turn_id  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         if turn_id != self._last_turn_id:
             self._last_turn_id = turn_id
             self._fired_this_turn = False
@@ -121,8 +121,9 @@ def _shell_args_contain_grep(
     except (json.JSONDecodeError, TypeError):
         return False
     if isinstance(args, dict):
-        cmd = args.get("command", "")
-        if not isinstance(cmd, str):
+        d = cast(dict[str, Any], args)
+        cmd: str = d.get("command", "")
+        if not isinstance(cmd, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             return False
         return "rg " in cmd or "grep " in cmd
     return False

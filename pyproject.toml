@@ -94,6 +94,15 @@ include = [
     "tests_ai/scripts/**/*.py",
 ]
 strict = ["src/kimi_cli/**/*.py"]
+# These mixin files use cross-class attribute references that are only valid
+# when mixed into the host class. Under strict mode they produce 300+ false-
+# positive errors because pyright cannot resolve the mixin's implicit deps.
+exclude = [
+    "src/kimi_cli/ui/shell/toolbar.py",
+    "src/kimi_cli/ui/shell/turn_ui.py",
+    "src/kimi_cli/ui/shell/prompt_input.py",
+    "src/kimi_cli/ui/shell/terminal_compat.py",
+]
 
 [tool.ty.environment]
 python-version = "3.14"

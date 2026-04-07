@@ -29,7 +29,7 @@ async def test_is_error_written_to_jsonl(context_file: Path):
         _msg("tool", "success output"),
         _msg("tool", "failure output"),
     ]
-    metadata = [
+    metadata: list[dict[str, object]] = [
         {"is_error": False},
         {"is_error": True},
     ]

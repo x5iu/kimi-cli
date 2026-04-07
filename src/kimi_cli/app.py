@@ -132,7 +132,7 @@ class KimiCLI:
         # try overwrite with environment variables
         if provider is None:
             raise ConfigError("No LLM provider configured; check config or environment variables")
-        if model is None:
+        if model is None:  # pyright: ignore[reportUnnecessaryComparison]
             raise ConfigError("No LLM model configured; check config or environment variables")
         env_overrides = augment_provider_with_env_vars(provider, model)
 
@@ -332,7 +332,7 @@ class KimiCLI:
         command: str | None = None,
         *,
         final_only: bool = False,
-    ) -> bool:
+    ) -> int:
         """Run the Kimi Code CLI instance with print UI."""
         from kimi_cli.ui.print import Print
 

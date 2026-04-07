@@ -194,9 +194,9 @@ async def test_yolo_no_wire_auto_dismisses(ask_user_tool: AskUserQuestion):
         result = await ask_user_tool(params)
 
         assert not result.is_error
-        parsed = json.loads(result.output)
+        parsed = json.loads(result.output)  # pyright: ignore[reportArgumentType]
         assert parsed["answers"] == {}
-        assert "yolo" in result.output.lower() or "non-interactive" in result.output.lower()
+        assert "yolo" in result.output.lower() or "non-interactive" in result.output.lower()  # pyright: ignore[reportAttributeAccessIssue]
         assert result.message == "Non-interactive mode, auto-dismissed."
     finally:
         _current_event_bus.reset(bus_token)
@@ -229,7 +229,7 @@ async def test_yolo_with_bus_sends_question(ask_user_tool: AskUserQuestion):
 
         result = await asyncio.wait_for(tool_task, timeout=2.0)
         assert not result.is_error
-        parsed = json.loads(result.output)
+        parsed = json.loads(result.output)  # pyright: ignore[reportArgumentType]
         assert parsed["answers"] == {"Which option?": "Option B"}
     finally:
         wire.shutdown()

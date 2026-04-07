@@ -279,9 +279,12 @@ def _render_table(table: Tag, parts: list[str]) -> None:
     """Render an HTML <table> as pipe-separated plain text."""
     parts.append("")
     for tr in table.find_all("tr"):
-        cells = [(cell.get_text(separator=" ", strip=True)) for cell in tr.find_all(["th", "td"])]
-        if any(cells):
-            parts.append(" | ".join(cells))
+        cells: list[str] = [  # pyright: ignore[reportUnknownVariableType]
+            (cell.get_text(separator=" ", strip=True))  # pyright: ignore[reportUnknownMemberType]
+            for cell in tr.find_all(["th", "td"])  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+        ]
+        if any(cells):  # pyright: ignore[reportUnknownArgumentType]
+            parts.append(" | ".join(cells))  # pyright: ignore[reportUnknownArgumentType]
     parts.append("")
 
 

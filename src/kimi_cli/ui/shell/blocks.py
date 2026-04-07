@@ -1,3 +1,4 @@
+# pyright: standard
 from __future__ import annotations
 
 import json
@@ -91,7 +92,7 @@ def _get_md_parser() -> Any:
         return None
     global _md_parser_instance
     if _md_parser_instance is None:
-        _md_parser_instance = _MarkdownIt()
+        _md_parser_instance = _MarkdownIt()  # pyright: ignore[reportPossiblyUnbound, reportPossiblyUnboundVariable]
     return _md_parser_instance
 
 

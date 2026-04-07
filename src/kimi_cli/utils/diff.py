@@ -153,7 +153,7 @@ def _build_diff_blocks_sync(
                 new_start_line=j1 + 1 if new_chunk else 0,
             )
         )
-    return blocks
+    return blocks  # pyright: ignore[reportReturnType]
 
 
 async def build_diff_blocks(

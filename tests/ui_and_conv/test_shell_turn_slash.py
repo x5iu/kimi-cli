@@ -656,7 +656,7 @@ async def test_slash_command_with_pasted_text_placeholder_expands_content(
     assert len(received) == 1
     assert received[0] == expanded_content
     # Verify the actual pasted text is present, not the placeholder
-    texts = [p.text for p in received[0] if isinstance(p, TextPart)]
+    texts = [p.text for p in cast(list[ContentPart], received[0]) if isinstance(p, TextPart)]
     assert any(pasted_text in t for t in texts)
     assert "[Pasted text" not in " ".join(texts)
 
@@ -705,6 +705,6 @@ async def test_slash_command_with_image_placeholder_expands_content(
     assert len(received) == 1
     assert received[0] == expanded_content
     # Verify the image part is present
-    image_parts = [p for p in received[0] if isinstance(p, ImageURLPart)]
+    image_parts = [p for p in cast(list[ContentPart], received[0]) if isinstance(p, ImageURLPart)]
     assert len(image_parts) == 1
     assert image_parts[0].image_url.url == "data:image/png;base64,AAAA"

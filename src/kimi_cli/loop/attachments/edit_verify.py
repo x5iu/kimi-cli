@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
 from kimi_cli.utils.turns import is_real_user_turn_start_message
@@ -140,7 +140,8 @@ def _extract_file_path(
     except (json.JSONDecodeError, TypeError):
         return None
     if isinstance(args, dict):
-        fp = args.get("path") or args.get("file_path")
+        d = cast(dict[str, Any], args)
+        fp: str | None = d.get("path") or d.get("file_path")
         if isinstance(fp, str):
             return fp
     return None
@@ -157,7 +158,8 @@ def _extract_command(
     except (json.JSONDecodeError, TypeError):
         return None
     if isinstance(args, dict):
-        cmd = args.get("command")
+        d = cast(dict[str, Any], args)
+        cmd: str | None = d.get("command")
         if isinstance(cmd, str):
             return cmd
     return None
