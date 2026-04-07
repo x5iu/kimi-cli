@@ -13,7 +13,6 @@ datas = (
             "prompts/**/*.md",
             "skills/**",
             "tools/**/*.md",
-            "CHANGELOG.md",
         ],
         excludes=[
             "tools/*.md",
