@@ -182,6 +182,7 @@ class LiveView:
         self._current_content_block: ContentBlock | None = None
         self._tool_call_blocks: dict[str, ToolCallBlock] = {}
         self._last_tool_call_block: ToolCallBlock | None = None
+        self._last_flushed_assistant_text: str = ""
         self._approval_request_queue = deque[ApprovalRequest]()
         """
         It is possible that multiple tools request approvals at the same time,
@@ -923,6 +924,7 @@ class LiveView:
         match msg:
             case TurnBegin():
                 self.flush_content()
+                self._last_flushed_assistant_text = ""
                 self._turn_spinner = Spinner("dots", "Running...")
                 self.refresh_active()
             case TurnEnd():
@@ -1162,6 +1164,8 @@ class LiveView:
     def flush_content(self) -> None:
         """Flush the current content block."""
         if self._current_content_block is not None:
+            if not self._current_content_block.is_think:
+                self._last_flushed_assistant_text = self._current_content_block.raw_text
             rendered = self._current_content_block.compose_final()
             if self._flush_to_console:
                 console.print(rendered)
@@ -1274,7 +1278,7 @@ class LiveView:
     def request_question(self, request: QuestionRequest) -> None:
         # During replay, answers are pre-filled by _build_replay_turns_from_wire.
         # Render the Answer panel directly without creating an interactive panel.
-        replay_answers = getattr(request, '_replay_answers', None)
+        replay_answers = getattr(request, "_replay_answers", None)
         if replay_answers is not None:
             self.flush_content()
             self.echo_question_answers(request, replay_answers)
@@ -1287,7 +1291,7 @@ class LiveView:
             self.show_next_question_request()
 
     def _question_request_allows_exit(self, request: QuestionRequest) -> bool:
-        return request.tool_call_id.startswith("turn-end-")
+        return True
 
     def show_next_question_request(self) -> None:
         """Show the next question request from the queue."""
@@ -1303,6 +1307,15 @@ class LiveView:
             request = self._question_request_queue.popleft()
             if request.resolved:
                 continue
+            # Inject assistant text as body for ToolCall-originated questions
+            # so they get the same body preview + Ctrl-E expand as EndTurn questions.
+            if (
+                not request.tool_call_id.startswith("turn-end-")
+                and self._last_flushed_assistant_text
+            ):
+                for q in request.questions:
+                    if not q.body:
+                        q.body = self._last_flushed_assistant_text
             self._current_question_panel = QuestionRequestPanel(
                 request,
                 allow_exit=self._question_request_allows_exit(request),

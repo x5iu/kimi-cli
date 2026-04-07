@@ -187,7 +187,7 @@ async def test_live_view_accepts_custom_single_select_answer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_live_view_tool_call_ask_user_question_does_not_show_exit_option() -> None:
+async def test_live_view_tool_call_ask_user_question_shows_exit_option() -> None:
     view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
     view.append_tool_call(
         ToolCall(
@@ -212,8 +212,8 @@ async def test_live_view_tool_call_ask_user_question_does_not_show_exit_option()
     view.request_question(request)
 
     rendered = view.render_ansi(80, include_running_indicators=False)
-    assert "Exit" not in rendered
-    assert "Select Exit to dismiss" not in view.input_hint
+    assert "Exit" in rendered
+    assert "Select Exit to dismiss" in view.input_hint
 
 
 @pytest.mark.asyncio
@@ -1007,6 +1007,7 @@ def test_live_view_compose_body_can_hide_previous_blocks_while_waiting_for_input
 
     view.append_content(TextPart(text="older block"))
     view.flush_content()
+    view._last_flushed_assistant_text = ""  # prevent body injection; this test targets tail_block_limit
     view.request_question(
         QuestionRequest(
             id="question-hide-history",
