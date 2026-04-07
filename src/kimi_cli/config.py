@@ -198,6 +198,13 @@ class Config(BaseModel):
     )
     services: Services = Field(default_factory=Services, description="Services configuration")
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
+    merge_all_available_skills: bool = Field(
+        default=False,
+        description=(
+            "Merge skills from all existing brand directories (kimi/claude/codex) "
+            "instead of using only the first one found"
+        ),
+    )
     env: dict[str, str] = Field(default_factory=dict, description="Environment variables")
 
     @model_validator(mode="after")

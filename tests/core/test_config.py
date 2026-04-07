@@ -50,8 +50,7 @@ def test_default_config_dump():
             },
             "notifications": {"claim_stale_after_ms": 15000},
             "services": {"moonshot_search": None, "moonshot_fetch": None},
-            "mcp": {"client": {"tool_call_timeout_ms": 60000}},
-            "env": {},
+            "mcp": {"client": {"tool_call_timeout_ms": 60000}}, "merge_all_available_skills": False, "env": {},
         }
     )
 
