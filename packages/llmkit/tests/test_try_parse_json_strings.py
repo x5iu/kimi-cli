@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false, reportOptionalSubscript=false, reportIndexIssue=false, reportCallIssue=false, reportPrivateUsage=false, reportUnknownVariableType=false, reportMissingTypeArgument=false
 """Tests for _try_parse_json_strings with model-aware str field skipping."""
 
 from __future__ import annotations
@@ -129,6 +130,7 @@ def test_mixed_fields():
         "extra": '{"also": "parsed"}',
     }
     result = _try_parse_json_strings(args, model=_StrModel)
+    assert isinstance(result, dict)
     assert isinstance(result["text"], str)
     assert result["data"] == {"parse": True}
     assert result["extra"] == {"also": "parsed"}

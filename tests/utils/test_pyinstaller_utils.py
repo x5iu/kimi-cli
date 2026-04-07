@@ -23,8 +23,11 @@ def test_pyinstaller_datas():
         for path, dst in datas
     ]
 
-    project_datas = sorted((p, d) for p, d in datas if "fastmcp" not in p)
+    project_datas = sorted(
+        (p, d) for p, d in datas if "fastmcp" not in p and "deps/bin" not in p
+    )
     fastmcp_datas = [(p, d) for p, d in datas if "fastmcp" in p]
+    deps_datas = [(p, d) for p, d in datas if "deps/bin" in p]
 
     assert project_datas == snapshot([
     ("src/kimi_cli/agents/default/agent.yaml", "kimi_cli/agents/default"),
@@ -59,6 +62,8 @@ def test_pyinstaller_datas():
 ])
     assert len(fastmcp_datas) > 0, "Expected at least one fastmcp dist-info data entry"
     assert all("fastmcp" in p and "dist-info" in p for p, _ in fastmcp_datas)
+    # deps/bin/rg is only present when the bundled rg binary exists (CI builds).
+    assert all("deps/bin" in p for p, _ in deps_datas)
 
 
 def test_pyinstaller_hiddenimports():

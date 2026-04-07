@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Tests for _convert_error in the Anthropic chat provider."""
 
 from __future__ import annotations
