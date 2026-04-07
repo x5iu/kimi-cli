@@ -131,15 +131,20 @@ class Shell:
         ) as prompt_session:
             _MAX_BG_AUTO_TRIGGER_FAILURES = 3
             bg_auto_failures = 0
+            background_autotrigger_armed = False
             try:
                 while True:
                     ensure_tty_sane()
 
                     # Auto-trigger: check for pending LLM notifications from
                     # completed background tasks before showing the prompt.
+                    # Only fire when armed (i.e. after the user has sent at
+                    # least one foreground turn since session resume) so that
+                    # stale pending notifications don't hijack the prompt.
                     if (
                         isinstance(self.agent_loop, KimiAgentLoop)
                         and bg_auto_failures < _MAX_BG_AUTO_TRIGGER_FAILURES
+                        and background_autotrigger_armed
                     ):
                         self.agent_loop.runtime.background_tasks.reconcile()
                         if self.agent_loop.runtime.notifications.has_pending_for_sink("llm"):
@@ -195,6 +200,7 @@ class Shell:
                         continue
                     logger.debug("Got user input: {user_input}", user_input=user_input)
                     bg_auto_failures = 0
+                    background_autotrigger_armed = True
 
                     if not await self._handle_agent_input(prompt_session, user_input):
                         break
@@ -578,8 +584,14 @@ class Shell:
         self,
         prompt_session: CustomPromptSession,
         interval: float = 2.0,
+        grace_period: float = 0.75,
     ) -> None:
-        """Poll for pending LLM notifications and interrupt the idle prompt."""
+        """Poll for pending LLM notifications and interrupt the idle prompt.
+
+        When a pending notification is detected, wait an extra *grace_period*
+        before interrupting so that a user who is actively typing is not
+        disrupted mid-keystroke.
+        """
         assert isinstance(self.agent_loop, KimiAgentLoop)
         max_failures = 3
         failures = 0
@@ -588,6 +600,9 @@ class Shell:
             try:
                 self.agent_loop.runtime.background_tasks.reconcile()
                 if self.agent_loop.runtime.notifications.has_pending_for_sink("llm"):
+                    # Grace period: wait briefly to avoid interrupting the
+                    # user if they are in the middle of typing.
+                    await asyncio.sleep(grace_period)
                     logger.debug("Pending LLM notification detected, interrupting prompt")
                     prompt_session.trigger_notification_auto_turn()
                     return

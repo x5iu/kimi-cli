@@ -556,8 +556,11 @@ class KimiAgentLoop:
 
     async def run(self, user_input: str | list[ContentPart]):
         turn_id = self._begin_turn()
+        turn_started = False
+        turn_finished = False
         try:
             bus_send(TurnBegin(user_input=user_input))
+            turn_started = True
             user_message = Message(role="user", content=user_input)
             text_input = user_message.extract_text(" ").strip()
 
@@ -600,7 +603,10 @@ class KimiAgentLoop:
                     )
 
             bus_send(TurnEnd())
+            turn_finished = True
         finally:
+            if turn_started and not turn_finished:
+                bus_send(TurnEnd())
             self._end_turn(turn_id)
 
     async def _turn(
