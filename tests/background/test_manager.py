@@ -317,7 +317,7 @@ def test_tail_output_respects_byte_budget(runtime):
     returned_lines = result.strip().split("\n")
     assert 0 < len(returned_lines) < line_count
     # Each returned line should be the original content
-    assert all(l == "x" * 100 for l in returned_lines)
+    assert all(line == "x" * 100 for line in returned_lines)
 
 
 def test_tail_output_single_newline_file(runtime):

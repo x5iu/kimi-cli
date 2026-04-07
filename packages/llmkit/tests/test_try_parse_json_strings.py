@@ -30,7 +30,7 @@ def test_no_model_parses_json_object_string():
 
 
 def test_no_model_parses_json_array_string():
-    args = {"items": '[1, 2, 3]'}
+    args = {"items": "[1, 2, 3]"}
     result = _try_parse_json_strings(args)
     assert result["items"] == [1, 2, 3]
 
@@ -59,10 +59,10 @@ def test_str_field_not_parsed():
 
 
 def test_str_field_with_json_array_not_parsed():
-    args = {"text": '[1, 2, 3]'}
+    args = {"text": "[1, 2, 3]"}
     result = _try_parse_json_strings(args, model=_StrModel)
     assert isinstance(result["text"], str)
-    assert result["text"] == '[1, 2, 3]'
+    assert result["text"] == "[1, 2, 3]"
 
 
 def test_annotated_str_field_not_parsed():

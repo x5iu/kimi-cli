@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import Literal, override
 
-from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
+from llmkit.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.loop.agent import Runtime

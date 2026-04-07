@@ -884,7 +884,7 @@ class KimiAgentLoop:
         """Use a side-channel LLM call to check if *assistant_message* asks the user
         to choose between options.  Returns the parsed detection or ``None`` on
         failure.  Retries up to ``_TURN_END_DETECT_MAX_ATTEMPTS`` when the LLM
-        returns unparseable output.  The entire detection is capped at
+        returns unparsable output.  The entire detection is capped at
         ``_TURN_END_DETECT_TIMEOUT`` seconds."""
         try:
             return await asyncio.wait_for(
@@ -1155,13 +1155,13 @@ class KimiAgentLoop:
 
             if attempt < self._TURN_END_DETECT_MAX_ATTEMPTS:
                 logger.debug(
-                    "Turn-end question detection returned unparseable output "
+                    "Turn-end question detection returned unparsable output "
                     "(attempt {attempt}), retrying",
                     attempt=attempt,
                 )
             else:
                 logger.warning(
-                    "Turn-end question detection returned unparseable output "
+                    "Turn-end question detection returned unparsable output "
                     "after {attempts} attempts; giving up",
                     attempts=self._TURN_END_DETECT_MAX_ATTEMPTS,
                 )

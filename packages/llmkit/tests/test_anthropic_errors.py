@@ -141,8 +141,7 @@ def test_anthropic_api_connection_error():
     assert isinstance(result, APIConnectionError)
 
 
-def test_anthropic_timeout_before_connection(
-):
+def test_anthropic_timeout_before_connection():
     """AnthropicAPITimeoutError is a subclass of AnthropicAPIConnectionError.
 
     _convert_error must check for timeout *before* connection to avoid

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import pytest
 
-from kimi_cli.background.store import LineIndex
+from kimi_cli.background.models import TaskRuntime, TaskSpec
+from kimi_cli.background.store import BackgroundTaskStore, LineIndex
 
 
 def _write(path: Path, content: str) -> None:
@@ -331,11 +333,6 @@ def test_double_refresh_is_noop(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Store-level read_output_lines integration (forward & tail via LineIndex)
 # ---------------------------------------------------------------------------
-
-import time
-
-from kimi_cli.background.models import TaskRuntime, TaskSpec
-from kimi_cli.background.store import BackgroundTaskStore
 
 
 def _make_store_task(tmp_path: Path, task_id: str, output: str) -> BackgroundTaskStore:

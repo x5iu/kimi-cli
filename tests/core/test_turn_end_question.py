@@ -613,7 +613,7 @@ async def test_run_sends_follow_up_input_on_user_choice(
     assert turn_call_count == 2
 
 
-# -- Retry on unparseable output test --
+# -- Retry on unparsable output test --
 
 
 @pytest.mark.asyncio
@@ -669,7 +669,7 @@ async def test_detect_turn_end_question_gives_up_after_max_attempts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When all retry attempts return unparseable output, detection returns None."""
+    """When all retry attempts return unparsable output, detection returns None."""
     soul = KimiAgentLoop(
         Agent(
             name="Test",

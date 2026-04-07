@@ -100,9 +100,11 @@ class TestFindCommittedBoundary:
         assert _find_committed_boundary(text) is None
 
     def test_returns_none_when_markdown_it_unavailable(self):
-        with patch("kimi_cli.ui.shell.blocks._HAS_MARKDOWN_IT", False):
-            with patch("kimi_cli.ui.shell.blocks._md_parser_instance", None):
-                assert _find_committed_boundary("---\n\n---\n\nParagraph.") is None
+        with (
+            patch("kimi_cli.ui.shell.blocks._HAS_MARKDOWN_IT", False),
+            patch("kimi_cli.ui.shell.blocks._md_parser_instance", None),
+        ):
+            assert _find_committed_boundary("---\n\n---\n\nParagraph.") is None
 
 
 # ── _get_md_parser tests ────────────────────────────────────────────────────
@@ -114,9 +116,11 @@ class TestGetMdParser:
         assert parser is not None
 
     def test_returns_none_when_markdown_it_unavailable(self):
-        with patch("kimi_cli.ui.shell.blocks._HAS_MARKDOWN_IT", False):
-            with patch("kimi_cli.ui.shell.blocks._md_parser_instance", None):
-                assert _get_md_parser() is None
+        with (
+            patch("kimi_cli.ui.shell.blocks._HAS_MARKDOWN_IT", False),
+            patch("kimi_cli.ui.shell.blocks._md_parser_instance", None),
+        ):
+            assert _get_md_parser() is None
 
 
 # ── _ContentBlock incremental streaming tests ──────────────────────────────

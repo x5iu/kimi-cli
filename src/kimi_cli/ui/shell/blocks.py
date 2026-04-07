@@ -111,9 +111,12 @@ def _find_committed_boundary(text: str) -> int | None:
             depth += 1
         elif tok.nesting == -1:
             depth -= 1
-        if depth == 0 and (tok.type.endswith("_close") or tok.type in _SELF_CLOSING_BLOCKS):
-            if tok.map is not None:
-                block_ends.append(tok.map[1])
+        if (
+            depth == 0
+            and (tok.type.endswith("_close") or tok.type in _SELF_CLOSING_BLOCKS)
+            and tok.map is not None
+        ):
+            block_ends.append(tok.map[1])
 
     # Need at least 2 closed blocks to commit the earlier ones
     if len(block_ends) < 2:
