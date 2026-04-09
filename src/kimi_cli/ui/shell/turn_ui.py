@@ -1039,6 +1039,11 @@ class PromptTurnUIMixin:
 
         app.after_render.add_handler(_follow_turn_output)
 
+        def _exit_app_if_pending() -> None:
+            """Exit the prompt_toolkit Application only if its future is still pending."""
+            if app.future is not None and not app.future.done():
+                app.exit()
+
         async def _consume_wire() -> None:
             nonlocal feedback_message
             while True:
@@ -1048,14 +1053,14 @@ class PromptTurnUIMixin:
                     live_view.cleanup(is_interrupt=False)
                     live_view.finish_turn()
                     _refresh_turn_view(app)
-                    app.exit()
+                    _exit_app_if_pending()
                     return
 
                 if isinstance(msg, StepInterrupted):
                     live_view.cleanup(is_interrupt=True)
                     live_view.finish_turn()
                     _refresh_turn_view(app)
-                    app.exit()
+                    _exit_app_if_pending()
                     return
 
                 _clear_turn_output_reveal()
