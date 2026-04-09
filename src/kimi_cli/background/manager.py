@@ -18,6 +18,7 @@ from kimi_cli.utils.logging import logger
 
 from .ids import generate_task_id
 from .models import (
+    TaskOutputLineChunk,
     TaskRuntime,
     TaskSpec,
     TaskStatus,
@@ -233,6 +234,55 @@ class BackgroundTaskManager:
             if time.monotonic() >= end_time:
                 return view
             await asyncio.sleep(self._config.wait_poll_interval_ms / 1000)
+
+    async def wait_for_output(
+        self,
+        task_id: str,
+        *,
+        offset: int,
+        max_bytes: int,
+        timeout_s: int = 30,
+    ) -> TaskOutputLineChunk:
+        """Wait until output beyond *offset* appears, or *timeout_s* elapses.
+
+        Unlike :meth:`wait` (which waits for terminal status), this method
+        returns as soon as new output lines are available beyond the given
+        line offset.  Designed for interactive tasks where the process stays
+        alive between turns.
+
+        Returns the latest :class:`TaskOutputLineChunk` (which may have
+        ``end_line == offset`` if no new output appeared before the timeout).
+        """
+        end_time = time.monotonic() + timeout_s
+        view = await asyncio.to_thread(self._store.merged_view, task_id)
+        status = view.runtime.status
+        chunk = await asyncio.to_thread(
+            self._store.read_output_lines,
+            task_id,
+            offset,
+            max_bytes,
+            status=status,
+        )
+        while True:
+            if chunk.end_line > offset:
+                return chunk
+            if is_terminal_status(status):
+                return chunk
+            if time.monotonic() >= end_time:
+                return chunk
+            await asyncio.sleep(self._config.wait_poll_interval_ms / 1000)
+            view = await asyncio.to_thread(
+                self._store.merged_view,
+                task_id,
+            )
+            status = view.runtime.status
+            chunk = await asyncio.to_thread(
+                self._store.read_output_lines,
+                task_id,
+                offset,
+                max_bytes,
+                status=status,
+            )
 
     def _best_effort_kill(self, runtime: TaskRuntime) -> None:
         try:

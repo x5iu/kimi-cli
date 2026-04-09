@@ -15,6 +15,10 @@ def _make_agent_loop_mock(
     mock = MagicMock()
     mock._compaction_generation = compaction_generation
     mock._active_turn_id = active_turn_id
+    # Default: tasks are non-interactive so escalation fires normally
+    task_view = MagicMock()
+    task_view.spec.interactive = False
+    mock._runtime.background_tasks.get_task.return_value = task_view
     return mock
 
 

@@ -1,8 +1,9 @@
+import json
 import os
 import time
 import uuid
 from pathlib import Path
-from typing import override
+from typing import Any, cast, override
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +25,41 @@ from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
 TASK_OUTPUT_PREVIEW_BYTES = 32 << 10
 TASK_OUTPUT_READ_HINT_LINES = 300
+
+
+def _is_interactive_turn_complete(text: str) -> bool:
+    """Detect whether an interactive task's current turn has completed.
+
+    Scans the output text (NDJSON lines) for signals that indicate the
+    sub-agent has finished processing the current input:
+
+    * Claude Code (``--output-format stream-json``): emits a
+      ``{"type":"result",...}`` line at the end of each turn.
+    * Kimi Code worker: emits an ``assistant`` message without
+      ``tool_calls`` as the last line of each turn.
+
+    Returns ``True`` when a turn-complete signal is found.
+    """
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            obj = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        data = cast(dict[str, Any], obj)
+        # Claude Code: {"type": "result", ...}
+        if data.get("type") == "result":
+            return True
+        # Kimi Code worker / generic: assistant message without tool_calls
+        if data.get("role") == "assistant" and "tool_calls" not in data:
+            return True
+        # Only inspect the last meaningful JSON line
+        break
+    return False
 
 
 def _task_display(runtime: Runtime, task_id: str) -> BackgroundTaskDisplayBlock:
@@ -226,13 +262,90 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
         )
         return chunk, output_available
 
+    async def _wait_for_interactive_turn(
+        self,
+        task_id: str,
+        *,
+        offset: int,
+        timeout_s: int,
+    ) -> tuple[TaskOutputLineChunk, bool, str]:
+        """Block until the interactive task's current turn completes or *timeout_s*.
+
+        Returns ``(chunk, full_output_available, retrieval_status)``.
+        The method internally advances through output lines looking for a
+        turn-complete signal (NDJSON ``"type":"result"`` event) so that a
+        single tool call covers an entire interactive turn.
+        """
+        end_time = time.monotonic() + timeout_s
+        current_offset = offset
+        last_chunk: TaskOutputLineChunk | None = None
+        full_output_available = False
+
+        while True:
+            remaining = max(0, int(end_time - time.monotonic()))
+            if remaining <= 0 and last_chunk is not None:
+                break
+
+            chunk = await self._runtime.background_tasks.wait_for_output(
+                task_id,
+                offset=current_offset,
+                max_bytes=TASK_OUTPUT_PREVIEW_BYTES,
+                timeout_s=min(remaining, 30) if remaining > 0 else 1,
+            )
+            output_path = self._runtime.background_tasks.store.output_path(task_id)
+            full_output_available = output_path.exists()
+
+            if chunk.end_line > current_offset:
+                last_chunk = chunk
+                # Check for turn-complete signal in new output
+                if _is_interactive_turn_complete(chunk.text):
+                    return chunk, full_output_available, "success"
+                # Advance offset past consumed lines
+                if chunk.next_offset is not None:
+                    current_offset = chunk.next_offset
+                else:
+                    current_offset = chunk.end_line
+
+            # Task reached terminal status while we were waiting
+            view = self._runtime.background_tasks.get_task(task_id)
+            if view is not None and is_terminal_status(view.runtime.status):
+                if last_chunk is not None:
+                    return last_chunk, full_output_available, "success"
+                break
+
+            if time.monotonic() >= end_time:
+                break
+
+        # Timeout — return whatever we have
+        if last_chunk is not None:
+            return last_chunk, full_output_available, "timeout"
+
+        # No output at all — fall back to a normal read
+        view = self._runtime.background_tasks.get_task(task_id)
+        status = view.runtime.status if view else "running"
+        chunk, full_output_available = self._render_output_preview(
+            task_id,
+            status=status,
+            offset=offset if offset > 0 else None,
+        )
+        return chunk, full_output_available, "timeout"
+
     @override
     async def __call__(self, params: TaskOutputParams) -> ToolReturnValue:
         view = self._runtime.background_tasks.get_task(params.task_id)
         if view is None:
             return ToolError(message=f"Task not found: {params.task_id}", brief="Task not found")
 
-        if params.block:
+        # Interactive task + block: wait for turn-complete instead of
+        # terminal status (interactive tasks never reach terminal on their own).
+        if params.block and view.spec.interactive and not is_terminal_status(view.runtime.status):
+            chunk, full_output_available, retrieval_status = await self._wait_for_interactive_turn(
+                params.task_id,
+                offset=params.offset or 0,
+                timeout_s=params.timeout,
+            )
+            view = self._runtime.background_tasks.get_task(params.task_id) or view
+        elif params.block:
             view = await self._runtime.background_tasks.wait(
                 params.task_id,
                 timeout_s=params.timeout,
@@ -242,23 +355,27 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
                 if view.runtime.status in {"completed", "failed", "killed", "lost"}
                 else "timeout"
             )
+            chunk, full_output_available = self._render_output_preview(
+                params.task_id,
+                status=view.runtime.status,
+                offset=params.offset,
+            )
         else:
             retrieval_status = (
                 "success"
                 if view.runtime.status in {"completed", "failed", "killed", "lost"}
                 else "not_ready"
             )
+            chunk, full_output_available = self._render_output_preview(
+                params.task_id,
+                status=view.runtime.status,
+                offset=params.offset,
+            )
 
         # Suppress the LLM completion reminder when TaskOutput already
         # delivers the terminal result to the model.
-        if retrieval_status == "success":
+        if retrieval_status == "success" and is_terminal_status(view.runtime.status):
             self._runtime.background_tasks.mark_terminal_output_observed(params.task_id)
-
-        chunk, full_output_available = self._render_output_preview(
-            params.task_id,
-            status=view.runtime.status,
-            offset=params.offset,
-        )
 
         return ToolReturnValue(
             is_error=False,

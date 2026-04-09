@@ -4,6 +4,7 @@ Use this after `Shell(run_in_background=true)` when you need to inspect progress
 
 Guidelines:
 - Prefer relying on automatic completion notifications. Use this tool only when you need task output before the automatic notification arrives.
+- For interactive tasks (`interactive=true`), `block=true` waits for the current turn to complete (not task termination). This is the expected workflow — completion notifications do not apply to interactive tasks because they never exit on their own.
 - Use `block=true` to wait for completion or timeout.
 - Use `block=false` for a non-blocking status and output check.
 - `timeout` (default 30s, max 3600s): How long to wait when `block=true`. If the task does not finish within this time, `retrieval_status` will be `timeout` (task still running). With `block=false`, a still-running task yields `not_ready`.

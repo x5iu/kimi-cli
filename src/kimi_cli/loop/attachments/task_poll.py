@@ -78,6 +78,12 @@ class TaskPollEscalationAttachmentProvider(AttachmentProvider):
         attachments: list[Attachment] = []
         for task_id, count in poll_counts.items():
             if count >= self._threshold and task_id not in self._fired_task_ids:
+                # Skip escalation for interactive tasks — polling is the
+                # expected workflow since they never reach terminal status
+                # and automatic completion notifications do not apply.
+                view = agent_loop._runtime.background_tasks.get_task(task_id)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                if view is not None and view.spec.interactive:
+                    continue
                 self._fired_task_ids.add(task_id)
                 attachments.append(
                     Attachment(
