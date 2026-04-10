@@ -635,6 +635,18 @@ class CustomPromptSession(
             terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
         self._install_deferred_erase(app)
+
+        def _on_idle_resize_settled() -> None:
+            if not app.is_running:
+                return
+            if self._redraw_callback is not None:
+                with suppress(Exception):
+                    app.exit(exception=_ClearScreenRequest(text_area.buffer.text))
+            else:
+                self._hard_redraw(app)
+
+        self._install_resize_handler(app, _on_idle_resize_settled)
+
         last_layout_signature = _prompt_layout_signature()
         return app, text_area
 
@@ -645,6 +657,9 @@ class CustomPromptSession(
 
     def _prepare_prompt_application(self) -> tuple[Application[str], TextArea]:
         app, text_area = self._get_prompt_application()
+        # Cancel any stale debounced resize timer left over from a previous
+        # prompt cycle so it cannot fire unexpectedly in this new cycle.
+        self._cancel_pending_resize(app)
         self._apply_mode_to_buffer(text_area.buffer)
         text_area.buffer.reset()
         self._hard_redraw(app)

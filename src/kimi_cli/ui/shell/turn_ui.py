@@ -1028,6 +1028,13 @@ class PromptTurnUIMixin:
             mouse_support=Condition(lambda: history_view_enabled),
             terminal_size_polling_interval=_TERMINAL_SIZE_POLLING_INTERVAL,
         )
+
+        def _on_turn_resize_settled() -> None:
+            if app.is_running:
+                self._hard_redraw(app)
+
+        self._install_resize_handler(app, _on_turn_resize_settled)
+
         last_layout_signature = _turn_layout_signature()
 
         def _follow_turn_output(_: object) -> None:
@@ -1132,6 +1139,7 @@ class PromptTurnUIMixin:
             ):
                 await app.run_async()
         finally:
+            self._uninstall_resize_handler(app)
             if not _first_render_flushed:
                 output.flush = _original_flush  # type: ignore[method-assign]
                 output.flush()

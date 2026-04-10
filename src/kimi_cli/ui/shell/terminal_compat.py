@@ -9,7 +9,12 @@ from prompt_toolkit.keys import Keys
 
 from kimi_cli.utils.logging import logger
 
-from .prompt_constants import _FOCUS_IN_SEQ, _INDICATOR_FRAMES, _REFRESH_INTERVAL
+from .prompt_constants import (
+    _FOCUS_IN_SEQ,
+    _INDICATOR_FRAMES,
+    _REFRESH_INTERVAL,
+    _RESIZE_DEBOUNCE_SECONDS,
+)
 from .toast import current_toast as _current_toast
 
 
@@ -153,6 +158,59 @@ class PromptTerminalCompatMixin:
             return False
         app.invalidate()
         return True
+
+    @staticmethod
+    def _install_resize_handler(
+        app: Any,
+        on_resize_settled: Any,
+        debounce: float = _RESIZE_DEBOUNCE_SECONDS,
+    ) -> None:
+        """Monkey-patch ``app._on_resize`` to fire *on_resize_settled* after a debounce.
+
+        The original ``_on_resize`` still runs immediately (erase + redraw)
+        so prompt_toolkit's differential renderer stays in sync.  The
+        callback fires only after no further resize events arrive within
+        *debounce* seconds.
+
+        The handle is stored on the app so ``_uninstall_resize_handler``
+        can cancel it and restore the original method.
+        """
+        original = app._on_resize
+        app._kimi_resize_original = original
+        app._kimi_resize_handle: asyncio.TimerHandle | None = None
+
+        def _patched_on_resize() -> None:
+            original()
+            handle: asyncio.TimerHandle | None = app._kimi_resize_handle
+            if handle is not None:
+                handle.cancel()
+            try:
+                loop = asyncio.get_running_loop()
+                app._kimi_resize_handle = loop.call_later(debounce, on_resize_settled)
+            except RuntimeError:
+                pass
+
+        app._on_resize = _patched_on_resize
+
+    @staticmethod
+    def _cancel_pending_resize(app: Any) -> None:
+        """Cancel any pending debounced resize callback without removing the handler."""
+        handle: asyncio.TimerHandle | None = getattr(app, "_kimi_resize_handle", None)
+        if handle is not None:
+            handle.cancel()
+            app._kimi_resize_handle = None
+
+    @staticmethod
+    def _uninstall_resize_handler(app: Any) -> None:
+        """Restore the original ``_on_resize`` and cancel any pending timer."""
+        handle: asyncio.TimerHandle | None = getattr(app, "_kimi_resize_handle", None)
+        if handle is not None:
+            handle.cancel()
+            app._kimi_resize_handle = None
+        original = getattr(app, "_kimi_resize_original", None)
+        if original is not None:
+            app._on_resize = original
+            app._kimi_resize_original = None
 
     def _install_focus_repaint(self) -> None:
         """Monkey-patch the shared Vt100 parser to detect focus-in events."""
