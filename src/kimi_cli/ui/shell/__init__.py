@@ -174,6 +174,7 @@ class Shell:
                     if (
                         isinstance(self.agent_loop, KimiAgentLoop)
                         and bg_auto_failures < _MAX_BG_AUTO_TRIGGER_FAILURES
+                        and background_autotrigger_armed
                     ):
                         _npoll = asyncio.create_task(
                             self._notification_auto_trigger_poll(prompt_session)
