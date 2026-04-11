@@ -106,6 +106,53 @@ async def test_continue_without_last_returns_none(isolated_share_dir: Path, work
     assert result is None
 
 
+async def test_continue_returns_most_recently_modified_session(
+    isolated_share_dir: Path, work_dir: KaosPath
+):
+    """continue_ should return the session with the latest file mtime,
+    regardless of what last_session_id says in metadata."""
+    old = await Session.create(work_dir)
+    new = await Session.create(work_dir)
+
+    _write_context_message(old.context_file, "old message")
+    _write_context_message(new.context_file, "new message")
+    _write_wire_turn(old.dir, "old turn")
+    _write_wire_turn(new.dir, "new turn")
+
+    # Make 'old' appear as the most recently modified
+    now = time.time()
+    os.utime(new.context_file, (now - 10, now - 10))
+    os.utime(new.dir / "events.jsonl", (now - 10, now - 10))
+    os.utime(old.context_file, (now, now))
+    os.utime(old.dir / "events.jsonl", (now, now))
+
+    result = await Session.continue_(work_dir)
+    assert result is not None
+    assert result.id == old.id
+
+
+async def test_continue_uses_event_log_mtime(isolated_share_dir: Path, work_dir: KaosPath):
+    """continue_ should consider event log mtime, not only context file mtime."""
+    first = await Session.create(work_dir)
+    second = await Session.create(work_dir)
+
+    _write_context_message(first.context_file, "first message")
+    _write_context_message(second.context_file, "second message")
+    _write_wire_turn(first.dir, "first turn")
+    _write_wire_turn(second.dir, "second turn")
+
+    # Context files both old, but first's event log is newest
+    now = time.time()
+    os.utime(first.context_file, (now - 20, now - 20))
+    os.utime(second.context_file, (now - 10, now - 10))
+    os.utime(second.dir / "events.jsonl", (now - 10, now - 10))
+    os.utime(first.dir / "events.jsonl", (now, now))
+
+    result = await Session.continue_(work_dir)
+    assert result is not None
+    assert result.id == first.id
+
+
 async def test_list_ignores_empty_sessions(isolated_share_dir: Path, work_dir: KaosPath):
     empty = await Session.create(work_dir)
     populated = await Session.create(work_dir)

@@ -72,7 +72,15 @@ class Session:
 
     async def refresh(self) -> None:
         self.title = f"Untitled ({self.id})"
-        self.updated_at = self.context_file.stat().st_mtime if self.context_file.exists() else 0.0
+        # Use the most recent mtime across context and event log files so that
+        # ``continue_`` (which sorts by ``updated_at``) always picks the session
+        # with the latest *actual* interaction, not just the latest context write.
+        mtimes: builtins.list[float] = []
+        if self.context_file.exists():
+            mtimes.append(self.context_file.stat().st_mtime)
+        if self.event_log.path.exists():
+            mtimes.append(self.event_log.path.stat().st_mtime)
+        self.updated_at = max(mtimes) if mtimes else 0.0
 
         try:
             async for record in self.event_log.iter_records():
@@ -240,24 +248,26 @@ class Session:
 
     @staticmethod
     async def continue_(work_dir: KaosPath) -> Session | None:
-        """Get the last session for a work directory."""
+        """Get the most recently interacted session for a work directory.
+
+        Instead of relying on the ``last_session_id`` metadata field (which is
+        only updated on a successful exit), we pick the session with the latest
+        file-system modification time so that ``-C`` always resumes the session
+        the user actually talked to most recently.
+        """
         work_dir = work_dir.canonical()
         logger.debug("Continuing session for work directory: {work_dir}", work_dir=work_dir)
 
-        metadata = load_metadata()
-        work_dir_meta = metadata.get_work_dir_meta(work_dir)
-        if work_dir_meta is None:
-            logger.debug("Work directory never been used")
-            return None
-        if work_dir_meta.last_session_id is None:
-            logger.debug("Work directory never had a session")
+        sessions = await Session.list(work_dir)
+        if not sessions:
+            logger.debug("No non-empty sessions found for work directory")
             return None
 
         logger.debug(
-            "Found last session for work directory: {session_id}",
-            session_id=work_dir_meta.last_session_id,
+            "Found most recent session for work directory: {session_id}",
+            session_id=sessions[0].id,
         )
-        return await Session.find(work_dir, work_dir_meta.last_session_id)
+        return sessions[0]
 
 
 def _resolve_event_log_path(session_dir: Path) -> Path:
