@@ -262,7 +262,6 @@ class _StackedRichRenderableControl(UIControl):
         )
 
 
-
 _BLOCK_LIST_GC_INTERVAL = 20
 
 
@@ -372,6 +371,7 @@ class _BlockListControl(UIControl):
     def invalidate_width_cache(self) -> None:
         """Drop all cached renders (e.g. after a terminal resize)."""
         self._block_cache.clear()
+
 
 RichRenderableControl = _RichRenderableControl
 BlockListRenderableControl = _BlockListControl

@@ -1143,6 +1143,7 @@ class LiveView:
         """Cleanup the live view on step end or interruption."""
         self._reset_inline_panel_expansion()
         self.flush_content()
+        self._last_flushed_assistant_text = ""
 
         for block in self._tool_call_blocks.values():
             if not block.finished:

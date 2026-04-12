@@ -1451,3 +1451,86 @@ def test_live_view_toolcall_question_no_body_panel_render_no_ctrl_e() -> None:
     assert "Pick a database?" in rendered
     assert "Ctrl-E" not in rendered
     assert "/more" not in rendered
+
+
+def test_live_view_cross_step_question_does_not_leak_previous_step_text() -> None:
+    """ToolCall question in step N+1 must NOT inherit assistant text from step N.
+
+    Regression test: when step N outputs text content and step N+1 directly
+    calls AskUserQuestion without any text, the question panel body must be
+    empty — not populated with step N's stale text.
+    """
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    # Step 1: assistant outputs text content
+    view.dispatch_wire_message(StepBegin(n=1))
+    view.append_content(TextPart(text="Here is step 1 analysis."))
+    view.flush_content()
+
+    # Step 2: assistant directly calls AskUserQuestion (no text content)
+    view.dispatch_wire_message(StepBegin(n=2))
+    view.append_tool_call(
+        ToolCall(
+            id="tool-ask",
+            function=ToolCall.FunctionBody(name="AskUserQuestion", arguments="{}"),
+        )
+    )
+    request = QuestionRequest(
+        id="q-cross-step",
+        tool_call_id="tool-ask",
+        questions=[
+            QuestionItem(
+                question="Which option?",
+                options=[
+                    QuestionOption(label="A"),
+                    QuestionOption(label="B"),
+                ],
+            )
+        ],
+    )
+    view.request_question(request)
+
+    panel = view._current_question_panel
+    assert panel is not None
+    # Body must be empty — step 1 text must NOT leak
+    assert panel.request.questions[0].body == ""
+    assert "Ctrl-E" not in view.input_hint
+
+
+def test_live_view_same_step_question_inherits_current_step_text() -> None:
+    """ToolCall question in the same step SHOULD inherit the step's assistant text.
+
+    When the assistant outputs text and then calls AskUserQuestion within the
+    same step, the question panel body should contain that text for context.
+    """
+    view = LiveView(StatusUpdate(context_usage=0.0), flush_to_console=False)
+
+    # Single step: assistant outputs text then calls AskUserQuestion
+    view.dispatch_wire_message(StepBegin(n=1))
+    view.append_content(TextPart(text="Let me ask you something."))
+    view.append_tool_call(
+        ToolCall(
+            id="tool-ask-same",
+            function=ToolCall.FunctionBody(name="AskUserQuestion", arguments="{}"),
+        )
+    )
+    request = QuestionRequest(
+        id="q-same-step",
+        tool_call_id="tool-ask-same",
+        questions=[
+            QuestionItem(
+                question="Which option?",
+                options=[
+                    QuestionOption(label="X"),
+                    QuestionOption(label="Y"),
+                ],
+            )
+        ],
+    )
+    view.request_question(request)
+
+    panel = view._current_question_panel
+    assert panel is not None
+    # Body should contain the current step's text
+    assert panel.request.questions[0].body == "Let me ask you something."
+    assert "Ctrl-E" in view.input_hint
