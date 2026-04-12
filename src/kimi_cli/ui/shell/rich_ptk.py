@@ -155,7 +155,7 @@ class _StackedRichRenderableControl(UIControl):
 
     def __init__(
         self,
-        sections: Sequence[_RichRenderableControl],
+        sections: Sequence[_RichRenderableControl | _BlockListControl],
         *,
         get_cursor_line: Callable[[int], int | None] | None = None,
         get_max_line_count: Callable[[int], int | None] | None = None,
@@ -262,7 +262,119 @@ class _StackedRichRenderableControl(UIControl):
         )
 
 
+
+_BLOCK_LIST_GC_INTERVAL = 20
+
+
+class _BlockListControl(UIControl):
+    """Render a list of Rich renderables with **per-block** caching.
+
+    Unlike ``_RichRenderableControl`` which renders *all* blocks as a single
+    Rich ``Group`` (forcing a full re-render whenever any block is added or
+    removed), this control renders each block independently and caches the
+    result keyed by the block's ``id()`` and the terminal width.  Adding a
+    new block only requires rendering that single new block – previously
+    cached blocks are reused verbatim.
+
+    This makes the rendering cost *O(new blocks)* instead of *O(total blocks)*
+    after history grows long, eliminating the input-lag that was caused by
+    re-rendering the entire history on every cache invalidation.
+    """
+
+    def __init__(
+        self,
+        get_blocks: Callable[[], list[RenderableType]],
+    ) -> None:
+        self._get_blocks = get_blocks
+        self._console = RichConsole(force_terminal=True, color_system="truecolor", highlight=False)
+        # Per-block cache: id(block) -> {normalized_width -> rendered_line_tuples}
+        self._block_cache: dict[int, dict[int, tuple[tuple[tuple[str, str], ...], ...]]] = {}
+        self._gc_counter = 0
+
+    @staticmethod
+    def _convert_segments(
+        lines: list[list[Segment]],
+    ) -> tuple[tuple[tuple[str, str], ...], ...]:
+        rendered: list[tuple[tuple[str, str], ...]] = []
+        for line in lines or [[]]:
+            fragments: list[tuple[str, str]] = []
+            for segment in Segment.simplify(line):
+                if segment.control or not segment.text:
+                    continue
+                fragments.append((_rich_style_to_prompt_toolkit(segment.style), segment.text))
+            rendered.append(tuple(fragments))
+        return tuple(rendered)
+
+    def _render_single_block(
+        self, block: RenderableType, width: int
+    ) -> tuple[tuple[tuple[str, str], ...], ...]:
+        options = self._console.options.update_width(width)
+        lines = self._console.render_lines(block, options=options, pad=False, new_lines=False)
+        return self._convert_segments(lines)
+
+    def _render_lines(self, width: int) -> tuple[tuple[tuple[str, str], ...], ...]:
+        normalized_width = max(20, width - RIGHT_PADDING)
+        blocks = self._get_blocks()
+        if not blocks:
+            return ()
+
+        all_lines: list[tuple[tuple[str, str], ...]] = []
+        live_ids: set[int] = set()
+
+        for block in blocks:
+            bid = id(block)
+            live_ids.add(bid)
+            width_cache = self._block_cache.get(bid)
+            if width_cache is None:
+                width_cache = {}
+                self._block_cache[bid] = width_cache
+
+            cached = width_cache.get(normalized_width)
+            if cached is None:
+                cached = self._render_single_block(block, normalized_width)
+                width_cache[normalized_width] = cached
+            all_lines.extend(cached)
+
+        # Periodic GC: remove entries for blocks that have scrolled out of the
+        # visible tail and are no longer referenced by the block list.
+        self._gc_counter += 1
+        if self._gc_counter >= _BLOCK_LIST_GC_INTERVAL:
+            self._gc_counter = 0
+            stale = [k for k in self._block_cache if k not in live_ids]
+            for k in stale:
+                del self._block_cache[k]
+
+        return tuple(all_lines)
+
+    def render_lines(self, width: int) -> tuple[tuple[tuple[str, str], ...], ...]:
+        return self._render_lines(width)
+
+    def line_count(self, width: int) -> int:
+        return len(self._render_lines(width))
+
+    def preferred_height(
+        self,
+        width: int,
+        max_available_height: int,
+        wrap_lines: bool,
+        get_line_prefix: Any,
+    ) -> int | None:
+        return min(self.line_count(width), max_available_height)
+
+    def create_content(self, width: int, height: int | None) -> UIContent:
+        key_lines = self._render_lines(max(20, width))
+        return UIContent(
+            get_line=lambda i: list(key_lines[i]) if 0 <= i < len(key_lines) else [],
+            line_count=len(key_lines),
+            show_cursor=False,
+        )
+
+    def invalidate_width_cache(self) -> None:
+        """Drop all cached renders (e.g. after a terminal resize)."""
+        self._block_cache.clear()
+
 RichRenderableControl = _RichRenderableControl
+BlockListRenderableControl = _BlockListControl
 StackedRichRenderableControl = _StackedRichRenderableControl
 rich_from_ansi = _rich_from_ansi
 rich_style_to_prompt_toolkit = _rich_style_to_prompt_toolkit

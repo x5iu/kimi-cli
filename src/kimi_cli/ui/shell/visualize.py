@@ -839,6 +839,15 @@ class LiveView:
             return False
         return bool(history_blocks or active_blocks)
 
+    def history_blocks(
+        self,
+        *,
+        tail_block_limit: int | None = None,
+    ) -> list[RenderableType]:
+        """Return the visible flushed history blocks (without wrapping in a Group)."""
+        blocks, _ = self._history_blocks(tail_block_limit=tail_block_limit)
+        return blocks
+
     def compose_history_body(
         self,
         *,

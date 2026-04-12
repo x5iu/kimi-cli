@@ -27,6 +27,9 @@ from kimi_cli.eventbus.types import StepInterrupted, TextPart, ThinkPart, ToolCa
 from kimi_cli.ui.shell.console import console as _console
 from kimi_cli.ui.shell.keyboard import KeyEvent
 from kimi_cli.ui.shell.rich_ptk import (
+    BlockListRenderableControl as _BlockListControl,
+)
+from kimi_cli.ui.shell.rich_ptk import (
     RichRenderableControl as _RichRenderableControl,
 )
 from kimi_cli.ui.shell.rich_ptk import (
@@ -413,20 +416,13 @@ class PromptTurnUIMixin:
             top_line = history_view_scroll_offset + 1 if total_lines > 0 else 0
             return top_line, total_lines
 
-        history_body_control = _RichRenderableControl(
+        history_body_control = _BlockListControl(
             lambda: (
                 history_view_snapshot
                 if history_view_enabled
-                else live_view.compose_history_body(
+                else live_view.history_blocks(
                     tail_block_limit=_turn_tail_block_limit(),
                 )
-            ),
-            get_cache_revision=lambda: (
-                history_view_enabled,
-                history_view_revision
-                if history_view_enabled
-                else getattr(live_view, "history_revision", 0),
-                None if history_view_enabled else _turn_tail_block_limit(),
             ),
         )
         active_body_control = _RichRenderableControl(
@@ -651,7 +647,7 @@ class PromptTurnUIMixin:
             _clear_turn_output_reveal()
             history_view_enabled = not history_view_enabled
             if history_view_enabled:
-                history_view_snapshot = live_view.compose_history_body(tail_block_limit=None)
+                history_view_snapshot = live_view.history_blocks(tail_block_limit=None)
                 history_view_scroll_offset = 0
                 cast(Callable[..., None], _prompt_module_attr("toast", _toast))(
                     "history view ON",
@@ -1031,6 +1027,7 @@ class PromptTurnUIMixin:
 
         def _on_turn_resize_settled() -> None:
             if app.is_running:
+                history_body_control.invalidate_width_cache()
                 self._hard_redraw(app)
 
         self._install_resize_handler(app, _on_turn_resize_settled)
