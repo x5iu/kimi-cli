@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import pydoc
+import re
+from io import StringIO
 
-from rich.console import Console, ConsoleDimensions, PagerContext
+from rich.console import Console, ConsoleDimensions, PagerContext, RenderableType
 from rich.pager import Pager
 from rich.theme import Theme
 
@@ -87,3 +89,24 @@ console = _PaddedConsole(highlight=False, theme=_NEUTRAL_MARKDOWN_THEME)
 
 
 RIGHT_PADDING = _RIGHT_PADDING
+
+_OSC8_RE = re.compile(r"\x1b\]8;[^\x07\x1b]*(?:\x1b\\|\x07)")
+
+
+def _wrap_osc8_as_zero_width(m: re.Match[str]) -> str:
+    return f"\x01{m.group(0)}\x02"
+
+
+def render_to_ansi(renderable: RenderableType, *, columns: int) -> str:
+    width = max(20, columns)
+    buf = StringIO()
+    temp = Console(
+        file=buf,
+        force_terminal=True,
+        width=width,
+        theme=_NEUTRAL_MARKDOWN_THEME,
+        highlight=False,
+    )
+    temp.print(renderable, end="")
+    result = buf.getvalue()
+    return _OSC8_RE.sub(_wrap_osc8_as_zero_width, result)

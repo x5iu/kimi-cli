@@ -53,6 +53,17 @@ class TurnEnd(BaseModel):
     pass
 
 
+class BtwBegin(BaseModel):
+    id: str
+    question: str
+
+
+class BtwEnd(BaseModel):
+    id: str
+    response: str | None = None
+    error: str | None = None
+
+
 class FollowUpInput(BaseModel):
     """Announce a synthesized follow-up user input (e.g. from turn-end question
     selection) so clients can decide whether and how to surface what was sent
@@ -372,6 +383,8 @@ class ToolCallRequest(BaseModel):
 type Event = (
     TurnBegin
     | TurnEnd
+    | BtwBegin
+    | BtwEnd
     | FollowUpInput
     | StepBegin
     | StepInterrupted
@@ -459,6 +472,8 @@ class BusMessageEnvelope(BaseModel):
 __all__ = [
     # `BusMessage` variants
     "TurnBegin",
+    "BtwBegin",
+    "BtwEnd",
     "FollowUpInput",
     "StepBegin",
     "StepInterrupted",

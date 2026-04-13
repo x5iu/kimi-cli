@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import deque
 from collections.abc import Sequence
 from typing import Any, cast
@@ -31,10 +32,11 @@ from kimi_cli.eventbus.types import (
     ToolCall,
     ToolReturnValue,
 )
-from kimi_cli.loop import format_context_status
+from kimi_cli.loop import format_context_status, format_token_count
 from kimi_cli.tools import extract_key_argument
 from kimi_cli.tools.todo_text import todo_label
 from kimi_cli.tools.utils import truncate_line
+from kimi_cli.utils.datetime import format_elapsed
 from kimi_cli.utils.rich.columns import BulletColumns
 from kimi_cli.utils.rich.diff import SOURCE_LINE_NUMBER_DIFF_TOOLS, render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
@@ -85,6 +87,32 @@ _SELF_CLOSING_BLOCKS = frozenset(
 
 _md_parser_instance: Any = None
 
+_BULLET_FRAMES = (".  ", ".. ", "...", " ..", "  .", "   ")
+_BULLET_FRAME_INTERVAL = 0.13
+
+
+def _bullet_frame_for(elapsed: float) -> str:
+    idx = int(elapsed / _BULLET_FRAME_INTERVAL) % len(_BULLET_FRAMES)
+    return _BULLET_FRAMES[idx]
+
+
+def _estimate_tokens(text: str) -> float:
+    cjk = 0
+    other = 0
+    for ch in text:
+        cp = ord(ch)
+        if (
+            0x4E00 <= cp <= 0x9FFF
+            or 0x3400 <= cp <= 0x4DBF
+            or 0xF900 <= cp <= 0xFAFF
+            or 0x3000 <= cp <= 0x303F
+            or 0xFF00 <= cp <= 0xFFEF
+        ):
+            cjk += 1
+        else:
+            other += 1
+    return cjk * 1.5 + other / 4
+
 
 def _get_md_parser() -> Any:
     """Lazy-initialise and return a markdown-it-py parser instance."""
@@ -133,11 +161,12 @@ def _find_committed_boundary(text: str) -> int | None:
 class _ContentBlock:
     def __init__(self, is_think: bool):
         self.is_think = is_think
-        self._spinner = Spinner("dots", self.status_text)
+        self._spinner = Spinner("dots", "")
         self._chunks: list[str] = []
         self._raw_text_cache: str | None = ""
         self._raw_text_length = 0
-        # Incremental markdown streaming state
+        self._token_count: float = 0.0
+        self._start_time = time.monotonic()
         self._committed_text: str = ""
         self._committed_renderable: RenderableType | None = None
         self._last_boundary_check_len: int = 0
@@ -193,9 +222,13 @@ class _ContentBlock:
         return Group(*parts) if len(parts) > 1 else parts[0]
 
     def compose(self, *, show_indicator: bool = True) -> RenderableType:
+        if self.is_think:
+            line = self._compose_thinking()
+            if show_indicator:
+                return line
+            return BulletColumns(line, bullet_style="grey50")
         if show_indicator:
-            return self._spinner
-        # Use incremental rendering when committed content exists
+            return self._compose_spinner()
         if self._committed_renderable is not None:
             return BulletColumns(
                 self._compose_incremental(),
@@ -204,7 +237,15 @@ class _ContentBlock:
         return self.compose_final()
 
     def compose_final(self) -> RenderableType:
-        # On final compose, render the full text (no incremental needed)
+        if self.is_think:
+            if not self.raw_text:
+                return Text("")
+            elapsed_str = format_elapsed(time.monotonic() - self._start_time)
+            count_str = format_token_count(int(self._token_count))
+            return Text(
+                f"Thought for {elapsed_str} · {count_str} tokens",
+                style="grey50 italic",
+            )
         return BulletColumns(
             Markdown(
                 self.raw_text,
@@ -219,8 +260,13 @@ class _ContentBlock:
         max_chars: int,
         show_indicator: bool = True,
     ) -> tuple[RenderableType, bool]:
+        if self.is_think:
+            line = self._compose_thinking()
+            if show_indicator:
+                return line, False
+            return BulletColumns(line, bullet_style="grey50"), False
         if show_indicator:
-            return self._spinner, False
+            return self._compose_spinner(), False
 
         text, truncated = self._tail_text(max_chars)
         if truncated:
@@ -255,7 +301,38 @@ class _ContentBlock:
         self._chunks.append(content)
         self._raw_text_cache = None
         self._raw_text_length += len(content)
-        self._try_advance_commit()
+        self._token_count += _estimate_tokens(content)
+        if not self.is_think:
+            self._try_advance_commit()
+
+    def _compose_spinner(self) -> Spinner:
+        elapsed = time.monotonic() - self._start_time
+        elapsed_str = format_elapsed(elapsed)
+        count_str = f"{format_token_count(int(self._token_count))} tokens"
+        self._spinner.text = Text.assemble(
+            ("Composing...", ""),
+            (f" {elapsed_str}", "grey50"),
+            (f" · {count_str}", "grey50"),
+        )
+        return self._spinner
+
+    def _compose_thinking(self) -> Text:
+        elapsed = time.monotonic() - self._start_time
+        elapsed_str = format_elapsed(elapsed)
+        tokens_int = int(self._token_count)
+        count_str = f"{format_token_count(tokens_int)} tokens"
+        frame = _bullet_frame_for(elapsed)
+        parts: list[tuple[str, str | Style]] = [
+            ("Thinking", "italic"),
+            (f" {frame}", "cyan"),
+            (f"  {elapsed_str}", "grey50"),
+            (f" · {count_str}", "grey50"),
+        ]
+        if elapsed > 0.5 and tokens_int > 0:
+            rate = int(tokens_int / elapsed)
+            if rate > 0:
+                parts.append((f" · {rate} tok/s", "grey50"))
+        return Text.assemble(*parts)
 
 
 class _ToolCallBlock:

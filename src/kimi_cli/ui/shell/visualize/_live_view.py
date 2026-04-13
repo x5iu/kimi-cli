@@ -5,11 +5,13 @@ from collections import deque
 from collections.abc import Sequence
 from contextlib import suppress
 from io import StringIO
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from rich.live import Live
 
 from rich import box
 from rich.console import Console, Group, RenderableType
-from rich.live import Live
 from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
@@ -18,6 +20,8 @@ from kimi_cli.eventbus import EventBusConsumer
 from kimi_cli.eventbus.types import (
     ApprovalRequest,
     ApprovalResponse,
+    BtwBegin,
+    BtwEnd,
     BusMessage,
     CompactionBegin,
     CompactionEnd,
@@ -64,26 +68,9 @@ LIVE_VIEW_REFRESH_INTERVAL = 1.0
 
 def is_significant_for_render(msg: object) -> bool:
     """Whether a wire message should trigger an immediate repaint."""
-    return not isinstance(msg, (ToolCallOutput, StatusUpdate, ApprovalResponse))
-
-
-async def visualize(
-    wire: EventBusConsumer,
-    *,
-    initial_status: StatusUpdate,
-    cancel_event: asyncio.Event | None = None,
-    live_view: LiveView | None = None,
-):
-    """
-    A loop to consume agent events and visualize the agent behavior.
-
-    Args:
-        wire: Communication channel with the agent
-        initial_status: Initial status snapshot
-        cancel_event: Event that can be set (e.g., by ESC key) to cancel the run
-    """
-    view = live_view or LiveView(initial_status, cancel_event)
-    await view.visualize_loop(wire)
+    return not isinstance(
+        msg, (ToolCallOutput, StatusUpdate, ApprovalResponse, BtwBegin, BtwEnd)
+    )
 
 
 def _render_prompt_block(
@@ -214,7 +201,11 @@ class LiveView:
         cast(Any, live)._live_render._shape = None
 
     async def visualize_loop(self, wire: EventBusConsumer):
-        with Live(
+        import importlib
+
+        _visualize_pkg = importlib.import_module("kimi_cli.ui.shell.visualize")
+
+        with _visualize_pkg.Live(
             self.compose(),
             console=console,
             auto_refresh=False,
@@ -980,6 +971,8 @@ class LiveView:
                 self.request_question(msg)
             case ToolCallRequest():
                 logger.warning("Unexpected ToolCallRequest in shell UI: {msg}", msg=msg)
+            case BtwBegin() | BtwEnd():
+                pass
 
     def _try_submit_question(self) -> None:
         """Submit the current question answer; if all done, resolve and advance."""

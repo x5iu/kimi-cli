@@ -841,17 +841,17 @@ def test_live_view_can_hide_running_indicators_in_body() -> None:
     view.dispatch_wire_message(ThinkPart(think="analyzing"))
     rendered = view.render_ansi(80, include_running_indicators=False)
     assert "Thinking..." not in rendered
-    assert "analyzing" in rendered
+    assert "Thinking" in rendered
 
     view.dispatch_wire_message(StepBegin(n=1))
     assert "Running..." not in view.render_ansi(80, include_running_indicators=False)
 
 
 def test_live_view_accepts_expand_command_for_question(monkeypatch: pytest.MonkeyPatch) -> None:
-    visualize_module = importlib.import_module("kimi_cli.ui.shell.visualize")
+    live_view_module = importlib.import_module("kimi_cli.ui.shell.visualize._live_view")
     shown: list[str] = []
     monkeypatch.setattr(
-        visualize_module,
+        live_view_module,
         "show_question_body_in_pager",
         lambda panel: shown.append(panel.current_question_text),
     )
