@@ -55,13 +55,13 @@ class _DenyAllToolset:
 def _build_btw_context(
     agent_loop: KimiAgentLoop, question: str
 ) -> tuple[str, list[Message], _DenyAllToolset]:
-    system_prompt = agent_loop._agent.system_prompt
+    system_prompt = agent_loop.agent.system_prompt
     effective_history = normalize_history(agent_loop.context.history)
     wrapped = (
         f"<system-reminder>\n{SIDE_QUESTION_SYSTEM_REMINDER}\n</system-reminder>\n\n{question}"
     )
     side_message = internal_user_message(TextPart(text=wrapped))
-    toolset = _DenyAllToolset(agent_loop._agent.toolset.tools)
+    toolset = _DenyAllToolset(agent_loop.agent.toolset.tools)
     return system_prompt, [*effective_history, side_message], toolset
 
 
@@ -70,11 +70,11 @@ async def execute_side_question(
     question: str,
     on_text_chunk: Callable[[str], None] | None = None,
 ) -> tuple[str | None, str | None]:
-    if agent_loop._runtime.llm is None:
+    if agent_loop.runtime.llm is None:
         return None, "LLM is not set."
 
     try:
-        chat_provider = agent_loop._runtime.llm.chat_provider
+        chat_provider = agent_loop.runtime.llm.chat_provider
         system_prompt, history, toolset = _build_btw_context(agent_loop, question)
 
         text_chunks: list[str] = []
@@ -124,7 +124,7 @@ async def execute_side_question(
 
 
 async def run_side_question(agent_loop: KimiAgentLoop, question: str) -> None:
-    if agent_loop._runtime.llm is None:
+    if agent_loop.runtime.llm is None:
         raise LLMNotSet()
 
     btw_id = uuid.uuid4().hex[:12]

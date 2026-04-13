@@ -71,7 +71,9 @@ class TestConvertErrorBaseAPIError:
             ("Something completely unrelated", ChatProviderError),
         ],
     )
-    def test_base_api_error_mapping(self, message, expected_type):
+    def test_base_api_error_mapping(
+        self, message: str, expected_type: type[ChatProviderError]
+    ) -> None:
         err = openai.APIError(message=message, request=_DUMMY_REQUEST, body=None)
         result = convert_error(err)
         assert type(result) is expected_type

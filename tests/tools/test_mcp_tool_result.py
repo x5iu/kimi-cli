@@ -57,7 +57,7 @@ class TestMCPTruncation:
         out = convert_mcp_tool_result(result)
         assert isinstance(out, ToolError)
         assert len(out.output) == 2
-        assert "truncated" in out.output[1].text.lower()
+        assert "truncated" in _text(out.output[1]).lower()
 
 
 class TestMCPUnsupportedContent:

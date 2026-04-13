@@ -32,9 +32,10 @@ from kimi_cli.utils.path import shorten_home
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
+    from loguru import Record
 
 
-def _patch_session_id(record: dict[str, Any]) -> None:
+def _patch_session_id(record: Record) -> None:
     try:
         from kimi_cli.loop.toolset import get_session_id
 
