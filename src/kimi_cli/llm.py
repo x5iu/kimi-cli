@@ -10,6 +10,7 @@ from pydantic import SecretStr
 
 from kimi_cli.constant import USER_AGENT
 from kimi_cli.exception import ConfigError
+from kimi_cli.utils.logging import logger
 from llmkit.chat_provider import ChatProvider
 
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ def model_display_name(model_name: str | None) -> str:
     if not model_name:
         return ""
     if model_name in ("kimi-for-coding", "kimi-code"):
-        return f"{model_name} (powered by kimi-k2.5)"
+        return "Kimi for Code"
     return model_name
 
 
@@ -119,6 +120,10 @@ def create_llm(
     if provider.type not in {"_echo", "_scripted_echo"} and (
         not provider.base_url or not model.model
     ):
+        logger.warning(
+            "Cannot create LLM: missing base_url or model (provider_type={provider_type})",
+            provider_type=provider.type,
+        )
         return None
 
     resolved_api_key = provider.api_key.get_secret_value()
