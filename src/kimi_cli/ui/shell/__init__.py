@@ -40,14 +40,22 @@ from kimi_cli.ui.shell.slash import TURN_ALLOWED_COMMANDS as _TURN_ALLOWED_COMMA
 from kimi_cli.ui.shell.slash import registry as shell_slash_registry
 from kimi_cli.ui.shell.slash import shell_mode_registry
 from kimi_cli.ui.shell.toast import toast
+from kimi_cli.ui.shell.update import LATEST_VERSION_FILE, UPGRADE_COMMAND, semver_tuple
 from kimi_cli.ui.shell.visualize import LiveView, render_user_prompt_block, visualize
+from kimi_cli.utils.envvar import get_env_bool
 from kimi_cli.utils.logging import open_original_stderr
 from kimi_cli.utils.message import message_stringify
 from kimi_cli.utils.signals import install_sigint_handler
 from kimi_cli.utils.slashcmd import SlashCommand, SlashCommandCall, parse_slash_command_call
 from kimi_cli.utils.subprocess_env import get_clean_env
 from kimi_cli.utils.term import ensure_new_line, ensure_tty_sane
-from llmkit.chat_provider import APIStatusError, ChatProviderError
+from llmkit.chat_provider import (
+    APIConnectionError,
+    APIEmptyResponseError,
+    APIStatusError,
+    APITimeoutError,
+    ChatProviderError,
+)
 from llmkit.message import Message
 
 
@@ -250,6 +258,44 @@ class Shell:
             return
         console.print(render_user_prompt_block(self._display_user_input(user_input)))
 
+    async def _run_btw_modal(self, question: str, prompt_session: CustomPromptSession) -> None:
+        from rich.console import Group
+        from rich.live import Live
+        from rich.panel import Panel
+        from rich.spinner import Spinner
+        from rich.text import Text
+
+        from kimi_cli.loop.btw import execute_side_question
+        from kimi_cli.utils.rich.markdown import Markdown
+
+        if not isinstance(self.agent_loop, KimiAgentLoop):
+            return
+        body: list[str] = [""]
+        spin = Spinner("dots", style="yellow")
+
+        def render_panel() -> Panel:
+            inner: object = Text(body[0]) if body[0].strip() else spin
+            return Panel(
+                Group(Text(f"Q: {question}", style="bold cyan"), Text(""), inner),
+                title="[bold]btw[/bold]",
+                border_style="cyan",
+            )
+
+        with Live(render_panel(), console=console, refresh_per_second=12, transient=True) as live:
+
+            def on_chunk_update(c: str) -> None:
+                body[0] += c
+                live.update(render_panel())
+
+            resp, err = await execute_side_question(
+                self.agent_loop, question, on_text_chunk=on_chunk_update
+            )
+
+        if err:
+            console.print(Panel(Text(err, style="red"), title="btw", border_style="red"))
+        elif resp:
+            console.print(Panel(Markdown(resp), title="btw", border_style="green"))
+
     async def _handle_agent_input(
         self,
         prompt_session: CustomPromptSession,
@@ -267,6 +313,20 @@ class Shell:
             prompt_session.execute_deferred_erase()
             await self._run_shell_command(user_input.command)
             return True
+
+        if user_input.mode == PromptMode.AGENT:
+            from kimi_cli.ui.shell.visualize import InputAction, classify_input
+
+            input_text = user_input.resolved_command or user_input.command
+            action = classify_input(input_text, is_streaming=False)
+            if action.kind == InputAction.BTW and isinstance(self.agent_loop, KimiAgentLoop):
+                prompt_session.execute_deferred_erase()
+                await self._run_btw_modal(action.args, prompt_session)
+                return True
+            if action.kind == InputAction.IGNORED:
+                prompt_session.execute_deferred_erase()
+                console.print(f"[dim]{action.args}[/dim]")
+                return True
 
         slash_cmd_call = parse_slash_command_call(user_input.command)
         if (
@@ -436,20 +496,49 @@ class Shell:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
                 console.print(
-                    f"[red]Authorization failed, please check your login status: {e}[/red]"
+                    "[red]Authorization failed. Your session may have expired.[/red]\n"
+                    "[dim]Type [bold]/login[/bold] to re-authenticate.[/dim]\n"
+                    f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
-                console.print("[red]Membership expired, please renew your plan[/red]")
+                console.print(
+                    f"[red]Membership expired, please renew your plan[/red]\n[dim]Server: {e}[/dim]"
+                )
             elif isinstance(e, APIStatusError) and e.status_code == 403:
                 console.print(
-                    f"[red]Quota exceeded, please upgrade your plan or retry later: {e}[/red]"
+                    "[red]Quota exceeded, please upgrade your plan or retry later[/red]\n"
+                    f"[dim]Server: {e}[/dim]"
+                )
+            elif isinstance(e, APIConnectionError):
+                console.print(
+                    f"[red]Network connection failed: {e}[/red]\n"
+                    "[dim]Please check your network and try again.[/dim]"
+                )
+            elif isinstance(e, APITimeoutError):
+                console.print(
+                    f"[red]Request timed out: {e}[/red]\n"
+                    "[dim]The server may be slow or unreachable. Please try again later.[/dim]"
+                )
+            elif isinstance(e, APIEmptyResponseError):
+                console.print(
+                    "[red]The server returned an empty response.[/red]\n"
+                    "[dim]This is usually a temporary issue. Please try again.[/dim]"
                 )
             else:
                 console.print(f"[red]LLM provider error: {e}[/red]")
+            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403):
+                console.print(
+                    "[dim]If this persists, run [bold]kimi export[/bold] and send the "
+                    "exported data to support for assistance. "
+                    "Please do not share the exported file publicly.[/dim]"
+                )
             keep_running = True
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
-            console.print(f"[yellow]{e}[/yellow]")
+            console.print(
+                f"[yellow]{e}[/yellow]\n"
+                "[dim]Send another message to continue where it left off.[/dim]"
+            )
             keep_running = False
         except RunCancelled:
             logger.info("Cancelled by user")
@@ -457,7 +546,11 @@ class Shell:
                 console.print("[red]Interrupted by user[/red]")
         except Exception as e:
             logger.exception("Unexpected error:")
-            console.print(f"[red]Unexpected error: {e}[/red]")
+            console.print(
+                f"[red]Unexpected error: {e}[/red]\n"
+                "[dim]Run [bold]kimi export[/bold] and send the exported data to support "
+                "for assistance. Please do not share the exported file publicly.[/dim]"
+            )
             raise
 
         if queued_input is not None:
@@ -500,25 +593,58 @@ class Shell:
             logger.exception("LLM provider error:")
             if isinstance(e, APIStatusError) and e.status_code == 401:
                 console.print(
-                    f"[red]Authorization failed, please check your login status: {e}[/red]"
+                    "[red]Authorization failed. Your session may have expired.[/red]\n"
+                    "[dim]Type [bold]/login[/bold] to re-authenticate.[/dim]\n"
+                    f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
-                console.print("[red]Membership expired, please renew your plan[/red]")
+                console.print(
+                    f"[red]Membership expired, please renew your plan[/red]\n[dim]Server: {e}[/dim]"
+                )
             elif isinstance(e, APIStatusError) and e.status_code == 403:
                 console.print(
-                    f"[red]Quota exceeded, please upgrade your plan or retry later: {e}[/red]"
+                    "[red]Quota exceeded, please upgrade your plan or retry later[/red]\n"
+                    f"[dim]Server: {e}[/dim]"
+                )
+            elif isinstance(e, APIConnectionError):
+                console.print(
+                    f"[red]Network connection failed: {e}[/red]\n"
+                    "[dim]Please check your network and try again.[/dim]"
+                )
+            elif isinstance(e, APITimeoutError):
+                console.print(
+                    f"[red]Request timed out: {e}[/red]\n"
+                    "[dim]The server may be slow or unreachable. Please try again later.[/dim]"
+                )
+            elif isinstance(e, APIEmptyResponseError):
+                console.print(
+                    "[red]The server returned an empty response.[/red]\n"
+                    "[dim]This is usually a temporary issue. Please try again.[/dim]"
                 )
             else:
                 console.print(f"[red]LLM provider error: {e}[/red]")
+            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403):
+                console.print(
+                    "[dim]If this persists, run [bold]kimi export[/bold] and send the "
+                    "exported data to support for assistance. "
+                    "Please do not share the exported file publicly.[/dim]"
+                )
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
-            console.print(f"[yellow]{e}[/yellow]")
+            console.print(
+                f"[yellow]{e}[/yellow]\n"
+                "[dim]Send another message to continue where it left off.[/dim]"
+            )
         except RunCancelled:
             logger.info("Cancelled by user")
             console.print("[red]Interrupted by user[/red]")
         except Exception as e:
             logger.exception("Unexpected error:")
-            console.print(f"[red]Unexpected error: {e}[/red]")
+            console.print(
+                f"[red]Unexpected error: {e}[/red]\n"
+                "[dim]Run [bold]kimi export[/bold] and send the exported data to support "
+                "for assistance. Please do not share the exported file publicly.[/dim]"
+            )
             raise
         return False
 
@@ -747,6 +873,32 @@ def _print_welcome_info(name: str, info_items: list[WelcomeInfoItem]) -> None:
         rows.append(Text(""))  # empty line
     for item in info_items:
         rows.append(Text(f"{item.name}: {item.value}", style=item.level.value))
+
+    if LATEST_VERSION_FILE.exists():
+        from kimi_cli.constant import VERSION as current_version
+        from kimi_cli.ui.shell.update import SKIPPED_VERSION_FILE
+
+        if not get_env_bool("KIMI_CLI_NO_AUTO_UPDATE"):
+            try:
+                latest_version = LATEST_VERSION_FILE.read_text(encoding="utf-8").strip()
+            except OSError:
+                latest_version = ""
+            if latest_version and semver_tuple(latest_version) > semver_tuple(current_version):
+                try:
+                    skipped = (
+                        SKIPPED_VERSION_FILE.read_text(encoding="utf-8").strip()
+                        if SKIPPED_VERSION_FILE.exists()
+                        else ""
+                    )
+                except OSError:
+                    skipped = ""
+                if skipped != latest_version:
+                    rows.append(
+                        Text.from_markup(
+                            f"\n[yellow]New version available: {latest_version}. "
+                            f"Please run `{UPGRADE_COMMAND}` to upgrade.[/yellow]"
+                        )
+                    )
 
     console.print(
         Panel(

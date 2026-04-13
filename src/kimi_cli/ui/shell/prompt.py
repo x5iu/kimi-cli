@@ -219,6 +219,7 @@ class CustomPromptSession(
         self._placeholder_manager = prompt_placeholders.PromptPlaceholderManager()
         self._attachment_cache = self._placeholder_manager.attachment_cache
         self._tip_rotation_index = 0
+        self._suppress_auto_completion = False
         clipboard_available = is_clipboard_available()
         self._tips = _build_toolbar_tips(clipboard_available)
 
@@ -444,7 +445,20 @@ class CustomPromptSession(
             if buffer.complete_state is not None:
                 buffer.cancel_completion()
             return
+        if self._suppress_auto_completion:
+            return
         buffer.start_completion()
+
+    def _accept_completion_choice(self, buff: Buffer) -> None:
+        state = buff.complete_state
+        if state is None or not state.completions:
+            return
+        completion = state.current_completion or state.completions[0]
+        self._suppress_auto_completion = True
+        try:
+            buff.apply_completion(completion)
+        finally:
+            self._suppress_auto_completion = False
 
     def _slash_menu_left_padding(self) -> int:
         if self._mode == PromptMode.SHELL:
@@ -591,7 +605,18 @@ class CustomPromptSession(
 
         accept_key_bindings = KeyBindings()
 
-        @accept_key_bindings.add("enter", filter=has_completions, eager=True)
+        def _is_slash_completion_menu() -> bool:
+            buff = text_area.buffer
+            return bool(
+                buff.complete_state
+                and buff.complete_state.completions
+                and SlashCommandCompleter.should_complete(buff.document)
+            )
+
+        _slash_completion_enter = has_completions & Condition(_is_slash_completion_menu)
+        _non_slash_completion_enter = has_completions & ~Condition(_is_slash_completion_menu)
+
+        @accept_key_bindings.add("enter", filter=_slash_completion_enter, eager=True)
         def _(event: KeyPressEvent) -> None:
             buff = event.current_buffer
             if not (buff.complete_state and buff.complete_state.completions):
@@ -599,10 +624,15 @@ class CustomPromptSession(
             if self._current_slash_completer().is_exact_match(buff.document):
                 event.app.exit(result=text_area.buffer.text)
                 return
-            completion = buff.complete_state.current_completion
-            if not completion:
-                completion = buff.complete_state.completions[0]
-            buff.apply_completion(completion)
+            self._accept_completion_choice(buff)
+            event.app.exit(result=text_area.buffer.text)
+
+        @accept_key_bindings.add("enter", filter=_non_slash_completion_enter, eager=True)
+        def _(event: KeyPressEvent) -> None:
+            buff = event.current_buffer
+            if not (buff.complete_state and buff.complete_state.completions):
+                return
+            self._accept_completion_choice(buff)
 
         @accept_key_bindings.add("enter", filter=~has_completions, eager=True)
         def _(event: KeyPressEvent) -> None:

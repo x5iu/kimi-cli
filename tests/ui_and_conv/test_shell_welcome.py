@@ -114,6 +114,7 @@ def test_print_welcome_info_does_not_show_update_banner(
 
     monkeypatch.setattr(shell_module, "console", render_console)
     monkeypatch.setattr(shell_module, "LATEST_VERSION_FILE", latest_version_file, raising=False)
+    monkeypatch.setenv("KIMI_CLI_NO_AUTO_UPDATE", "1")
 
     shell_module._print_welcome_info(
         "Test",
