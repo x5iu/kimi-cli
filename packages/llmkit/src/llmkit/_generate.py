@@ -9,7 +9,7 @@ from llmkit.chat_provider import (
     StreamedMessagePart,
     TokenUsage,
 )
-from llmkit.message import ContentPart, Message, ToolCall
+from llmkit.message import ContentPart, Message, TextPart, ThinkPart, ToolCall
 from llmkit.tooling import Tool
 from llmkit.utils.aio import Callback, callback
 
@@ -73,6 +73,16 @@ async def generate(
 
     if not message.content and not message.tool_calls:
         raise APIEmptyResponseError("The API returned an empty response.")
+
+    has_think = any(isinstance(p, ThinkPart) for p in message.content)
+    has_text = any(isinstance(p, TextPart) and p.text.strip() for p in message.content)
+    if has_think and not has_text and not message.tool_calls:
+        raise APIEmptyResponseError(
+            "The API returned a response containing only thinking content "
+            "without any text or tool calls. This usually indicates the "
+            "stream was interrupted or the output token budget was exhausted "
+            "during reasoning."
+        )
 
     return GenerateResult(
         id=stream.id,

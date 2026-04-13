@@ -2,9 +2,16 @@ import asyncio
 from typing import Any
 
 import httpx
+import openai
 import pytest
 
-from llmkit.chat_provider import APIConnectionError, openai_common
+from llmkit.chat_provider import (
+    APIConnectionError,
+    APITimeoutError,
+    ChatProviderError,
+    openai_common,
+)
+from llmkit.chat_provider.openai_common import convert_error
 from llmkit.contrib.chat_provider.openai_legacy import OpenAILegacy
 
 
@@ -45,3 +52,43 @@ async def test_retry_recovery_does_not_close_shared_http_client() -> None:
     assert provider.client._client is http_client  # type: ignore[reportPrivateUsage]
     assert http_client.is_closed is False
     await http_client.aclose()
+
+
+_DUMMY_REQUEST = httpx.Request("POST", "https://api.test")
+
+
+class TestConvertErrorBaseAPIError:
+    @pytest.mark.parametrize(
+        ("message", "expected_type"),
+        [
+            ("Network connection lost.", APIConnectionError),
+            ("Connection error.", APIConnectionError),
+            ("network error", APIConnectionError),
+            ("disconnected from server", APIConnectionError),
+            ("Request timed out.", APITimeoutError),
+            ("timed out", APITimeoutError),
+            ("connection timed out", APITimeoutError),
+            ("Something completely unrelated", ChatProviderError),
+        ],
+    )
+    def test_base_api_error_mapping(self, message, expected_type):
+        err = openai.APIError(message=message, request=_DUMMY_REQUEST, body=None)
+        result = convert_error(err)
+        assert type(result) is expected_type
+
+    def test_subclass_errors_still_match_first(self):
+        conn_err = openai.APIConnectionError(request=_DUMMY_REQUEST)
+        result = convert_error(conn_err)
+        assert type(result) is APIConnectionError
+        timeout_err = openai.APITimeoutError(request=_DUMMY_REQUEST)
+        result = convert_error(timeout_err)
+        assert type(result) is APITimeoutError
+
+    def test_api_error_with_body_skips_heuristic(self):
+        err = openai.APIError(
+            message="Connection limit exceeded",
+            request=_DUMMY_REQUEST,
+            body={"error": {"message": "Connection limit exceeded"}},
+        )
+        result = convert_error(err)
+        assert type(result) is ChatProviderError

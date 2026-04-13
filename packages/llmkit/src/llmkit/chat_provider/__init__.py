@@ -137,10 +137,12 @@ class APIStatusError(ChatProviderError):
     """The error raised when the API returns a status code of 4xx or 5xx."""
 
     status_code: int
+    request_id: str | None
 
-    def __init__(self, status_code: int, message: str):
+    def __init__(self, status_code: int, message: str, *, request_id: str | None = None):
         super().__init__(message)
         self.status_code = status_code
+        self.request_id = request_id
 
 
 class APIEmptyResponseError(ChatProviderError):

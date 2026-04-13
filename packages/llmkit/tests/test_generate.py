@@ -1,10 +1,12 @@
 import asyncio
 from copy import deepcopy
 
+import pytest
+
 from llmkit import generate
-from llmkit.chat_provider import StreamedMessagePart
+from llmkit.chat_provider import APIEmptyResponseError, StreamedMessagePart
 from llmkit.chat_provider.mock import MockChatProvider
-from llmkit.message import ImageURLPart, TextPart, ToolCall, ToolCallPart
+from llmkit.message import ImageURLPart, TextPart, ThinkPart, ToolCall, ToolCallPart
 
 
 def test_generate():
@@ -82,3 +84,43 @@ def test_generate_with_callbacks():
     ).message
     assert output_parts == input_parts
     assert output_tool_calls == message.tool_calls
+
+
+def test_generate_think_only_raises_error():
+    chat_provider = MockChatProvider(message_parts=[ThinkPart(think="Deep thinking...")])
+    with pytest.raises(APIEmptyResponseError, match="only thinking content"):
+        asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+
+
+def test_generate_think_with_empty_text_raises_error():
+    chat_provider = MockChatProvider(
+        message_parts=[ThinkPart(think="Thinking..."), TextPart(text="  \n  ")]
+    )
+    with pytest.raises(APIEmptyResponseError, match="only thinking content"):
+        asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+
+
+def test_generate_think_with_text_succeeds():
+    chat_provider = MockChatProvider(
+        message_parts=[ThinkPart(think="Let me think..."), TextPart(text="Here is the answer.")]
+    )
+    result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+    assert any(isinstance(p, ThinkPart) for p in result.message.content)
+    assert any(isinstance(p, TextPart) for p in result.message.content)
+
+
+def test_generate_think_with_tool_calls_succeeds():
+    chat_provider = MockChatProvider(
+        message_parts=[
+            ThinkPart(think="I should call a tool..."),
+            ToolCall(
+                id="tool#1",
+                function=ToolCall.FunctionBody(
+                    name="read_file", arguments='{"path": "/tmp"}'
+                ),
+            ),
+        ]
+    )
+    result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+    assert any(isinstance(p, ThinkPart) for p in result.message.content)
+    assert result.message.tool_calls

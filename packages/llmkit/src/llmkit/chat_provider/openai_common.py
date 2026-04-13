@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import re
 from collections.abc import Awaitable, Mapping
 from typing import Any, cast
 
@@ -71,21 +72,44 @@ def close_replaced_openai_client(client: AsyncOpenAI, *, client_kwargs: Mapping[
 
 
 def convert_error(error: OpenAIError | httpx.HTTPError) -> ChatProviderError:
+    if isinstance(error, httpx.TimeoutException):
+        return APITimeoutError(str(error))
+    if isinstance(error, httpx.NetworkError):
+        return APIConnectionError(str(error))
+    if isinstance(error, httpx.HTTPStatusError):
+        req_id = error.response.headers.get("x-request-id")
+        return APIStatusError(error.response.status_code, str(error), request_id=req_id)
+    if isinstance(error, httpx.HTTPError):
+        return ChatProviderError(f"HTTP error: {error}")
     match error:
         case openai.APIStatusError():
-            return APIStatusError(error.status_code, error.message)
-        case openai.APIConnectionError():
-            return APIConnectionError(error.message)
+            resp = getattr(error, "response", None)
+            req_id = (
+                resp.headers.get("x-request-id")
+                if resp is not None and resp.headers is not None
+                else None
+            )
+            return APIStatusError(error.status_code, error.message, request_id=req_id)
         case openai.APITimeoutError():
             return APITimeoutError(error.message)
-        case httpx.TimeoutException():
-            return APITimeoutError(str(error))
-        case httpx.NetworkError():
-            return APIConnectionError(str(error))
-        case httpx.HTTPStatusError():
-            return APIStatusError(error.response.status_code, str(error))
+        case openai.APIConnectionError():
+            return APIConnectionError(error.message)
+        case openai.APIError() if type(error) is openai.APIError and error.body is None:
+            return _classify_base_api_error(error.message)
         case _:
             return ChatProviderError(f"Error: {error}")
+
+
+_NETWORK_RE = re.compile(r"network|connection|connect|disconnect", re.IGNORECASE)
+_TIMEOUT_RE = re.compile(r"timed?\s*out|timeout|deadline", re.IGNORECASE)
+
+
+def _classify_base_api_error(message: str) -> ChatProviderError:
+    if _TIMEOUT_RE.search(message):
+        return APITimeoutError(message)
+    if _NETWORK_RE.search(message):
+        return APIConnectionError(message)
+    return ChatProviderError(f"Error: {message}")
 
 
 def thinking_effort_to_reasoning_effort(effort: ThinkingEffort) -> ReasoningEffort:
