@@ -1364,7 +1364,7 @@ class KimiAgentLoop:
                         except Exception as compact_err:
                             logger.error(
                                 "Context compaction failed at step {step_no}: "
-                                    "{error_type}: {error}",
+                                "{error_type}: {error}",
                                 step_no=step_no,
                                 error_type=type(compact_err).__name__,
                                 error=compact_err,

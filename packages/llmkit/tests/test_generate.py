@@ -115,9 +115,7 @@ def test_generate_think_with_tool_calls_succeeds():
             ThinkPart(think="I should call a tool..."),
             ToolCall(
                 id="tool#1",
-                function=ToolCall.FunctionBody(
-                    name="read_file", arguments='{"path": "/tmp"}'
-                ),
+                function=ToolCall.FunctionBody(name="read_file", arguments='{"path": "/tmp"}'),
             ),
         ]
     )

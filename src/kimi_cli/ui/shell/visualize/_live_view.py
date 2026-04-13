@@ -68,9 +68,7 @@ LIVE_VIEW_REFRESH_INTERVAL = 1.0
 
 def is_significant_for_render(msg: object) -> bool:
     """Whether a wire message should trigger an immediate repaint."""
-    return not isinstance(
-        msg, (ToolCallOutput, StatusUpdate, ApprovalResponse, BtwBegin, BtwEnd)
-    )
+    return not isinstance(msg, (ToolCallOutput, StatusUpdate, ApprovalResponse, BtwBegin, BtwEnd))
 
 
 def _render_prompt_block(

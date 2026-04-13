@@ -1,4 +1,5 @@
 """Tests for convert_mcp_tool_result: truncation + unsupported content handling."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

@@ -273,6 +273,7 @@ class TestReadKeyWindows:
         assert result == "q"
         mock_msvcrt.getwch.assert_called_once()
 
+
 # ---------------------------------------------------------------------------
 # TestPrintWelcomeInfoSkipsVersion
 # ---------------------------------------------------------------------------

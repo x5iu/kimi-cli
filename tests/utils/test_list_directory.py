@@ -1,4 +1,5 @@
 """Tests for list_directory tree format and width caps."""
+
 from __future__ import annotations
 
 import os
