@@ -10,6 +10,7 @@ from kimi_cli.tools.display import DisplayBlock
 from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
+from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_workspace
 from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
@@ -140,6 +141,7 @@ class WriteFile(CallableTool2[Params]):
             )
 
         except Exception as e:
+            logger.warning("WriteFile failed: {path}: {error}", path=params.path, error=e)
             return ToolError(
                 message=f"Failed to write to {params.path}. Error: {e}",
                 brief="Failed to write file",

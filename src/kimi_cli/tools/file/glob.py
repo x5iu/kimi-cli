@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from kaos.path import KaosPath
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.tools.utils import load_desc
+from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_directory, is_within_workspace
 from llmkit.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
@@ -165,6 +166,9 @@ class Glob(CallableTool2[Params]):
             )
 
         except Exception as e:
+            logger.warning(
+                "Glob failed: pattern={pattern}: {error}", pattern=params.pattern, error=e
+            )
             return ToolError(
                 message=f"Failed to search for pattern {params.pattern}. Error: {e}",
                 brief="Glob failed",

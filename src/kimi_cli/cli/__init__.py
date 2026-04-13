@@ -10,6 +10,7 @@ import typer
 
 from kimi_cli.constant import VERSION
 
+from .export import attach_export_command
 from .mcp import cli as mcp_cli
 
 
@@ -515,7 +516,11 @@ def kimi(
 
             log_path = get_share_dir() / "logs" / "kimi.log"
             # In non-debug mode, print a concise error and point users to logs.
-            _emit_fatal_error(f"{exc}\nSee logs: {log_path}")
+            _emit_fatal_error(
+                f"{exc}\n"
+                f"See logs: {log_path}\n"
+                "Run with --debug for full traceback, or run kimi export to share diagnostics."
+            )
         raise typer.Exit(code=1) from exc
 
 
@@ -544,6 +549,8 @@ def background_task_worker(
         )
     )
 
+
+attach_export_command(cli)
 
 cli.add_typer(mcp_cli, name="mcp")
 

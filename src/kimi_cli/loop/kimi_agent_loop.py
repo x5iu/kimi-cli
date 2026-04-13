@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -82,7 +83,7 @@ from kimi_cli.loop.message import (
     tool_result_to_message,
 )
 from kimi_cli.loop.slash import registry as agent_loop_slash_registry
-from kimi_cli.loop.toolset import KimiToolset
+from kimi_cli.loop.toolset import KimiToolset, set_session_id
 from kimi_cli.notifications import (
     NotificationView,
     build_notification_message,
@@ -259,6 +260,8 @@ class KimiAgentLoop:
         self._slash_commands = self._build_slash_commands()
         self._slash_command_map = self._index_slash_commands(self._slash_commands)
 
+        set_session_id(self._runtime.session.id)
+
     @property
     def name(self) -> str:
         return self._agent.name
@@ -411,6 +414,8 @@ class KimiAgentLoop:
         """Drain the steer queue and inject as synthetic tool results.
 
         Returns True if any steers were consumed.
+
+        Note: /btw is handled in the shell UI and does not use the steer queue.
         """
         consumed = False
         active_turn_id = self._active_turn_id
@@ -1356,7 +1361,14 @@ class KimiAgentLoop:
                         try:
                             await self.compact_context()
                             self._last_compaction_turn = self._active_turn_id
-                        except Exception:
+                        except Exception as compact_err:
+                            logger.error(
+                                "Context compaction failed at step {step_no}: "
+                                    "{error_type}: {error}",
+                                step_no=step_no,
+                                error_type=type(compact_err).__name__,
+                                error=compact_err,
+                            )
                             logger.opt(exception=True).warning(
                                 "Auto-compaction failed, continuing without compaction"
                             )
@@ -1364,10 +1376,17 @@ class KimiAgentLoop:
                 logger.debug("Beginning step {step_no}", step_no=step_no)
                 await self._checkpoint()
                 step_outcome = await self._step()
-            except Exception:
-                # any other exception should interrupt the step
+            except Exception as e:
+                req_id = getattr(e, "request_id", None)
+                logger.error(
+                    "Agent step {step_no} failed: {error_type}: {error}"
+                    + (" (request_id={request_id})" if req_id else ""),
+                    step_no=step_no,
+                    error_type=type(e).__name__,
+                    error=e,
+                    request_id=req_id,
+                )
                 bus_send(StepInterrupted())
-                # break the agent loop
                 raise
             finally:
                 approval_task.cancel()  # stop piping approval requests to the bus
@@ -1455,12 +1474,19 @@ class KimiAgentLoop:
                 chat_provider=chat_provider,
             )
 
+        t0 = time.monotonic()
         result = await _llmkit_step_with_retry()
-        logger.debug("Got step result: {result}", result=result)
-        status_update = StatusUpdate(token_usage=result.usage, message_id=result.id)
-        if result.usage is not None:
-            # mark the token count for the context before the step
-            await self._context.update_token_count(result.usage.input)
+        llm_elapsed = time.monotonic() - t0
+        usage = result.usage
+        logger.info(
+            "LLM step completed in {elapsed:.1f}s (input={input_tokens}, output={output_tokens})",
+            elapsed=llm_elapsed,
+            input_tokens=usage.input if usage else "?",
+            output_tokens=usage.output if usage else "?",
+        )
+        status_update = StatusUpdate(token_usage=usage, message_id=result.id)
+        if usage is not None:
+            await self._context.update_token_count(usage.input)
             snap = self.status
             status_update.context_usage = snap.context_usage
             status_update.context_tokens = snap.context_tokens
@@ -1726,6 +1752,11 @@ class KimiAgentLoop:
                 )
                 raise
             if not recovered:
+                logger.warning(
+                    "Chat provider recovery not available for {name} after {error_type}.",
+                    name=name,
+                    error_type=type(error).__name__,
+                )
                 raise
             logger.info(
                 "Recovered chat provider during {name} after {error_type}; retrying once.",
@@ -1735,15 +1766,25 @@ class KimiAgentLoop:
             try:
                 return await operation()
             except (APIConnectionError, APITimeoutError) as second_error:
+                logger.warning(
+                    "Chat provider recovery exhausted for {name}: {error_type}: {error}",
+                    name=name,
+                    error_type=type(second_error).__name__,
+                    error=second_error,
+                )
                 second_error._kimi_recovery_exhausted = True  # type: ignore[attr-defined]
                 raise
 
     @staticmethod
     def _retry_log(name: str, retry_state: RetryCallState):
-        logger.info(
-            "Retrying {name} for the {n} time. Waiting {sleep} seconds.",
+        error = retry_state.outcome.exception() if retry_state.outcome else None
+        logger.warning(
+            "Retrying {name} for the {n} time (last error: {error_type}: {error}). "
+            "Waiting {sleep} seconds.",
             name=name,
             n=retry_state.attempt_number,
+            error_type=type(error).__name__ if error else "unknown",
+            error=error or "unknown",
             sleep=retry_state.next_action.sleep
             if retry_state.next_action is not None
             else "unknown",

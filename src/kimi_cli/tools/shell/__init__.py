@@ -18,6 +18,7 @@ from kimi_cli.tools.display import BackgroundTaskDisplayBlock, ShellDisplayBlock
 from kimi_cli.tools.file.rg_path import find_existing_rg, format_rg_command
 from kimi_cli.tools.utils import ToolRejectedError, ToolResultBuilder, load_desc
 from kimi_cli.utils.environment import Environment
+from kimi_cli.utils.logging import logger
 from kimi_cli.utils.subprocess_env import get_noninteractive_env
 from llmkit.tooling import CallableTool2, ToolReturnValue
 
@@ -166,8 +167,17 @@ class Shell(CallableTool2[Params]):
                     brief=f"Failed with exit code: {exitcode}",
                 )
         except TimeoutError:
-            # Migrate the timed-out foreground command to a background task
             return await self._migrate_to_background(params, builder)
+        except Exception as e:
+            logger.error(
+                "Shell command execution failed: {command}: {error}",
+                command=params.command,
+                error=e,
+            )
+            return builder.error(
+                f"Command execution failed: {e}",
+                brief="Execution failed",
+            )
 
     async def _migrate_to_background(
         self, params: Params, partial_builder: ToolResultBuilder
@@ -263,6 +273,11 @@ class Shell(CallableTool2[Params]):
                 interactive=params.interactive,
             )
         except Exception as exc:
+            logger.error(
+                "Failed to start background shell task: {command}: {error}",
+                command=params.command,
+                error=exc,
+            )
             builder = ToolResultBuilder()
             return builder.error(f"Failed to start background task: {exc}", brief="Start failed")
 

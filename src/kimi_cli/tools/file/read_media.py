@@ -11,6 +11,7 @@ from kimi_cli.loop.agent import Runtime
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, FileType, detect_file_type
 from kimi_cli.tools.utils import load_desc
+from kimi_cli.utils.logging import logger
 from kimi_cli.utils.media_tags import wrap_media_part
 from kimi_cli.utils.path import is_within_workspace
 from llmkit.chat_provider.kimi import Kimi
@@ -209,6 +210,7 @@ class ReadMediaFile(CallableTool2[Params]):
 
             return await self._read_media(p, file_type)
         except Exception as e:
+            logger.warning("ReadMediaFile failed: {path}: {error}", path=params.path, error=e)
             return ToolError(
                 message=f"Failed to read {params.path}. Error: {e}",
                 brief="Failed to read file",

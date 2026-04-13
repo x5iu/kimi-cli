@@ -176,3 +176,10 @@ class Approval:
                 future.set_result(True)
             case "reject":
                 future.set_result(False)
+            case _:
+                logger.warning(
+                    "Unknown approval response for request {request_id}: {response}",
+                    request_id=request_id,
+                    response=response,
+                )
+                future.set_result(False)

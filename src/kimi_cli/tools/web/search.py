@@ -13,6 +13,7 @@ from kimi_cli.loop.toolset import get_current_tool_call_or_none
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.aiohttp import new_client_session
+from kimi_cli.utils.logging import logger
 from llmkit.tooling import CallableTool2, ToolReturnValue
 
 _MAX_RETRIES = 2
@@ -92,6 +93,11 @@ class SearchWeb(CallableTool2[Params]):
                     ) as response,
                 ):
                     if response.status != 200:
+                        logger.warning(
+                            "SearchWeb HTTP error: status={status}, query={query}",
+                            status=response.status,
+                            query=params.query,
+                        )
                         error_body = _format_error_response_body(await response.text())
 
                         # HTTP 403: return immediately with specific guidance
@@ -145,6 +151,11 @@ class SearchWeb(CallableTool2[Params]):
                     try:
                         results = Response(**await response.json()).search_results
                     except ValidationError as e:
+                        logger.warning(
+                            "SearchWeb response parse error: {error}, query={query}",
+                            error=e,
+                            query=params.query,
+                        )
                         return builder.error(
                             (
                                 f"Failed to parse search results. Error: {e}. "
@@ -157,13 +168,21 @@ class SearchWeb(CallableTool2[Params]):
                     # Success — break out of the retry loop
                     break
 
-            except (aiohttp.ClientError, TimeoutError) as e:
+            except TimeoutError:
+                logger.warning("SearchWeb request timed out: query={query}", query=params.query)
                 return builder.error(
-                    (
-                        f"Failed to search due to network error: {str(e)}. "
-                        "This may indicate the search service is unreachable."
-                    ),
-                    brief="Network error",
+                    "Search request timed out. The search service may be slow or unavailable.",
+                    brief="Search request timed out",
+                )
+            except aiohttp.ClientError as e:
+                logger.warning(
+                    "SearchWeb network error: {error}, query={query}",
+                    error=e,
+                    query=params.query,
+                )
+                return builder.error(
+                    f"Search request failed: {e}. The search service may be unavailable.",
+                    brief="Search request failed",
                 )
         else:
             # All retries exhausted (should not reach here, but safety net)

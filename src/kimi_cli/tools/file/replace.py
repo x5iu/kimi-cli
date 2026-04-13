@@ -13,6 +13,7 @@ from kimi_cli.tools.display import DisplayBlock
 from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
+from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_workspace
 from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
@@ -573,6 +574,7 @@ class _BaseStructuredEditTool(CallableTool2[EditParams]):
                 brief="Invalid edit",
             )
         except Exception as e:
+            logger.warning("EditTool failed: {path}: {error}", path=params.path, error=e)
             return ToolError(
                 message=f"Failed to edit. Error: {e}",
                 brief="Failed to edit file",
