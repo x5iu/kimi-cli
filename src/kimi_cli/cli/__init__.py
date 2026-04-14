@@ -519,7 +519,7 @@ def kimi(
             _emit_fatal_error(
                 f"{exc}\n"
                 f"See logs: {log_path}\n"
-                "Run with --debug for full traceback, or run kimi export to share diagnostics."
+                "Run with --debug for full traceback."
             )
         raise typer.Exit(code=1) from exc
 

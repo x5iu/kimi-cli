@@ -404,7 +404,7 @@ async def mcp(app: Shell, args: str):
         color = status_colors.get(info.status, "red")
         server_text = f"[{color}]{name}[/{color}]"
         if info.status == "unauthorized":
-            server_text += " [grey50](unauthorized - run: kimi mcp auth {name})[/grey50]"
+            server_text += " [grey50](unauthorized - run: kimi mcp auth " + name + ")[/grey50]"
         elif info.status != "connected":
             server_text += f" [grey50]({info.status})[/grey50]"
 

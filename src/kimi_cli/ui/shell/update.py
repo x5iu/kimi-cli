@@ -201,7 +201,7 @@ def _run_update_gate(current_version: str, latest_version: str) -> None:
             sys.exit(1)
         console.print()
         if result.returncode == 0:
-            console.print("[green]Upgrade complete! Run kimi-cli to start the new version.[/green]")
+            console.print("[green]Upgrade complete! Run kimi to start the new version.[/green]")
         else:
             console.print("[red]Upgrade failed. Please try running manually:[/red]")
             console.print(f"  {UPGRADE_COMMAND}")

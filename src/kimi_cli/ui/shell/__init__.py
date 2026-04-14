@@ -497,7 +497,7 @@ class Shell:
             if isinstance(e, APIStatusError) and e.status_code == 401:
                 console.print(
                     "[red]Authorization failed. Your session may have expired.[/red]\n"
-                    "[dim]Type [bold]/login[/bold] to re-authenticate.[/dim]\n"
+                    "[dim]Type [bold]/setup[/bold] to re-authenticate.[/dim]\n"
                     f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
@@ -526,12 +526,7 @@ class Shell:
                 )
             else:
                 console.print(f"[red]LLM provider error: {e}[/red]")
-            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403):
-                console.print(
-                    "[dim]If this persists, run [bold]kimi export[/bold] and send the "
-                    "exported data to support for assistance. "
-                    "Please do not share the exported file publicly.[/dim]"
-                )
+
             keep_running = True
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
@@ -547,9 +542,7 @@ class Shell:
         except Exception as e:
             logger.exception("Unexpected error:")
             console.print(
-                f"[red]Unexpected error: {e}[/red]\n"
-                "[dim]Run [bold]kimi export[/bold] and send the exported data to support "
-                "for assistance. Please do not share the exported file publicly.[/dim]"
+                f"[red]Unexpected error: {e}[/red]"
             )
             raise
 
@@ -594,7 +587,7 @@ class Shell:
             if isinstance(e, APIStatusError) and e.status_code == 401:
                 console.print(
                     "[red]Authorization failed. Your session may have expired.[/red]\n"
-                    "[dim]Type [bold]/login[/bold] to re-authenticate.[/dim]\n"
+                    "[dim]Type [bold]/setup[/bold] to re-authenticate.[/dim]\n"
                     f"[dim]Server: {e}[/dim]"
                 )
             elif isinstance(e, APIStatusError) and e.status_code == 402:
@@ -623,12 +616,7 @@ class Shell:
                 )
             else:
                 console.print(f"[red]LLM provider error: {e}[/red]")
-            if not isinstance(e, APIStatusError) or e.status_code not in (401, 402, 403):
-                console.print(
-                    "[dim]If this persists, run [bold]kimi export[/bold] and send the "
-                    "exported data to support for assistance. "
-                    "Please do not share the exported file publicly.[/dim]"
-                )
+
         except MaxStepsReached as e:
             logger.warning("Max steps reached: {n_steps}", n_steps=e.n_steps)
             console.print(
@@ -641,9 +629,7 @@ class Shell:
         except Exception as e:
             logger.exception("Unexpected error:")
             console.print(
-                f"[red]Unexpected error: {e}[/red]\n"
-                "[dim]Run [bold]kimi export[/bold] and send the exported data to support "
-                "for assistance. Please do not share the exported file publicly.[/dim]"
+                f"[red]Unexpected error: {e}[/red]"
             )
             raise
         return False
