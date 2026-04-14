@@ -443,7 +443,7 @@ class Shell:
                             extra = slash_call.args.strip()
                             if extra:
                                 skill_text = f"{skill_text}\n\nUser request:\n{extra}"
-                            self.agent_loop.steer(skill_text, is_skill=True)
+                            self.agent_loop.steer(skill_text, is_skill=True, skill_name=skill_name)
                             live_view.echo_reminder(self._display_user_input(turn_input))
                             return TurnSubmitResult.accept(persist_history=True)
                         except OSError:
@@ -541,9 +541,7 @@ class Shell:
                 console.print("[red]Interrupted by user[/red]")
         except Exception as e:
             logger.exception("Unexpected error:")
-            console.print(
-                f"[red]Unexpected error: {e}[/red]"
-            )
+            console.print(f"[red]Unexpected error: {e}[/red]")
             raise
 
         if queued_input is not None:
@@ -628,9 +626,7 @@ class Shell:
             console.print("[red]Interrupted by user[/red]")
         except Exception as e:
             logger.exception("Unexpected error:")
-            console.print(
-                f"[red]Unexpected error: {e}[/red]"
-            )
+            console.print(f"[red]Unexpected error: {e}[/red]")
             raise
         return False
 

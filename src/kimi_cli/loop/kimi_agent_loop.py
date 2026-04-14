@@ -186,6 +186,7 @@ class _QueuedSteer:
     turn_id: int
     content: str | list[ContentPart]
     is_skill: bool = False
+    skill_name: str | None = None
 
 
 class KimiAgentLoop:
@@ -233,6 +234,7 @@ class KimiAgentLoop:
         self._steer_queue: asyncio.Queue[_QueuedSteer] = asyncio.Queue()
         self._active_turn_id: int | None = None
         self._turn_steer_count: int = 0
+        self._turn_steered_skill_names: set[str] = set()
         self._compaction_generation: int = 0
         self._next_turn_id = 0
         self._attachment_providers: list[AttachmentProvider] = [
@@ -394,21 +396,30 @@ class KimiAgentLoop:
         self._next_turn_id += 1
         self._active_turn_id = self._next_turn_id
         self._turn_steer_count = 0
+        self._turn_steered_skill_names = set()
         return self._next_turn_id
 
     def _end_turn(self, turn_id: int) -> None:
         if self._active_turn_id == turn_id:
             self._active_turn_id = None
 
-    def steer(self, content: str | list[ContentPart], *, is_skill: bool = False) -> None:
+    def steer(
+        self,
+        content: str | list[ContentPart],
+        *,
+        is_skill: bool = False,
+        skill_name: str | None = None,
+    ) -> None:
         """Queue a steer message for injection into the current turn."""
         turn_id = self._active_turn_id
         if turn_id is None:
             logger.debug("Ignoring steer because there is no active turn")
             return
         self._steer_queue.put_nowait(
-            _QueuedSteer(turn_id=turn_id, content=content, is_skill=is_skill)
+            _QueuedSteer(turn_id=turn_id, content=content, is_skill=is_skill, skill_name=skill_name)
         )
+        if is_skill and skill_name:
+            self._turn_steered_skill_names.add(skill_name)
 
     async def _consume_pending_steers(self) -> bool:
         """Drain the steer queue and inject as synthetic tool results.
@@ -856,6 +867,18 @@ class KimiAgentLoop:
             return False
         if recommendation is None or not recommendation.skills:
             return False
+
+        # Suppress skills already activated via steer in this turn.
+        if self._turn_steered_skill_names:
+            remaining = tuple(
+                s
+                for s in recommendation.skills
+                if normalize_skill_name(s.name) not in self._turn_steered_skill_names
+            )
+            if not remaining:
+                logger.debug("Skill reminder suppressed — all skills already activated via steer")
+                return False
+            recommendation = SkillRecommendation(skills=remaining)
 
         await self._context.append_message(self._build_skill_reminder_message(recommendation))
         bus_send(

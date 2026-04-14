@@ -4,6 +4,7 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, cast
 
+from kimi_cli.background.models import is_terminal_status
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
 from kimi_cli.utils.turns import is_real_user_turn_start_message
 from llmkit.message import Message
@@ -83,6 +84,8 @@ class TaskPollEscalationAttachmentProvider(AttachmentProvider):
                 # and automatic completion notifications do not apply.
                 view = agent_loop._runtime.background_tasks.get_task(task_id)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
                 if view is not None and view.spec.interactive:
+                    continue
+                if view is not None and is_terminal_status(view.runtime.status):
                     continue
                 self._fired_task_ids.add(task_id)
                 attachments.append(

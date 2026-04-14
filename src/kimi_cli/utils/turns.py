@@ -77,6 +77,8 @@ def is_real_user_turn_start_message(message: Message) -> bool:
     first_text = _first_text_part_message(message)
     if first_text is not None and is_checkpoint_user_text(first_text):
         return False
+    if first_text is not None and first_text.lstrip().startswith('<notification id="'):
+        return False
     return not is_internal_user_message(message)
 
 
@@ -85,5 +87,7 @@ def is_real_user_turn_start_record(record: Mapping[str, object]) -> bool:
         return False
     first_text = _first_text_part_record(record)
     if first_text is not None and is_checkpoint_user_text(first_text):
+        return False
+    if first_text is not None and first_text.lstrip().startswith('<notification id="'):
         return False
     return not is_internal_user_record(record)
