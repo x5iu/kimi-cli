@@ -455,12 +455,18 @@ class KimiAgentLoop:
     def _skill_steer_instruction_text() -> str:
         return (
             "The user activated a skill during the current turn. "
-            "The skill content below contains instructions, reference material, and/or "
-            "workflow patterns that you MUST read carefully and follow as primary directives "
-            "for the remainder of this turn. "
-            "Treat this skill content as the new primary instruction for this turn, "
-            "superseding the original turn request. "
-            "Proceed directly to follow the skill's instructions."
+            "The skill content below contains workflow patterns, reference material, "
+            "and/or methodological instructions that apply to this turn. "
+            "Read the skill carefully and incorporate its patterns into your approach "
+            "for the remainder of the turn. "
+            "The skill augments HOW you work — it does NOT replace WHAT you are working on. "
+            "Your primary goal remains the user's original turn-opening request. "
+            "If you have already started executing (made tool calls, begun edits, or "
+            "created a plan), continue from where you are; adapt your approach if the "
+            "skill's patterns improve it, but do NOT abandon, restart, or truncate "
+            "in-progress work. "
+            "Do not explicitly acknowledge, quote, or reference the skill activation "
+            "in your response. Keep the response centered on the user's original request."
         )
 
     @classmethod
@@ -861,16 +867,17 @@ class KimiAgentLoop:
         return True
 
     def _build_skill_reminder_message(self, recommendation: SkillRecommendation) -> Message:
-        lines = ["Reminder: the following skill suggestions may be helpful in the current context."]
+        lines = [
+            "Reminder: the following skills may offer useful workflow patterns for the "
+            "current task. They are suggestions only — do not change your current plan "
+            "or goal based on this reminder alone."
+        ]
         for item in recommendation.skills:
             skill = self._runtime.skills[normalize_skill_name(item.name)]
             lines.append(f"- {skill.name} ({skill.type} skill): {skill.description}")
             if item.reason:
                 lines.append(f"  Reason: {item.reason}")
             lines.append(f"  Path: {skill.skill_md_file}")
-            lines.append(
-                "  Consider reading this skill's SKILL.md before continuing if it seems useful."
-            )
         return internal_user_message([system("\n".join(lines))])
 
     # -- Turn-end question detection --------------------------------------------------

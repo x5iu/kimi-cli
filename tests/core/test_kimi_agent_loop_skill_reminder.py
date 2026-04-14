@@ -148,20 +148,21 @@ async def test_turn_injects_skill_reminder_on_next_step(
     reminder_messages = [
         message.extract_text(" ")
         for message in soul.context.history
-        if message.role == "user" and "skill suggestions" in message.extract_text(" ")
+        if message.role == "user" and "workflow patterns" in message.extract_text(" ")
     ]
     assert [
         message.name
         for message in soul.context.history
-        if message.role == "user" and "skill suggestions" in message.extract_text(" ")
+        if message.role == "user" and "workflow patterns" in message.extract_text(" ")
     ] == [INTERNAL_USER_NAME]
     assert reminder_messages == [
         (
-            "<system>Reminder: the following skill suggestions may be helpful in the current "
-            "context.\n- gen-docs (standard skill): Update user documentation.\n"
+            "<system>Reminder: the following skills may offer useful workflow patterns for the "
+            "current task. They are suggestions only \u2014 do not change your current plan "
+            "or goal based on this reminder alone.\n"
+            "- gen-docs (standard skill): Update user documentation.\n"
             "  Reason: The request is about editing documentation.\n"
-            f"  Path: {skill.skill_md_file}\n"
-            "  Consider reading this skill's SKILL.md before continuing if it seems useful.</system>"
+            f"  Path: {skill.skill_md_file}</system>"
         )
     ]
     assert SkillReminderNotice(skills=["/skill:gen-docs"]) in sent_messages
