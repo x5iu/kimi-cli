@@ -31,9 +31,7 @@ class TestInlineDiffTabs:
         assert "new_value" in add_plain
         # Verify the highlight spans cover the actual changed words,
         # not characters shifted by unexpanded-tab offsets.
-        del_hl_spans = [
-            (s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL
-        ]
+        del_hl_spans = [(s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL]
         add_hl_spans = [(s.start, s.end) for s in adds[0].content.spans if s.style == _ADD_HL]
         del_highlighted = "".join(del_plain[s:e] for s, e in del_hl_spans)
         add_highlighted = "".join(add_plain[s:e] for s, e in add_hl_spans)
@@ -52,9 +50,7 @@ class TestInlineDiffTabs:
         assert adds[0].is_inline_paired
         assert deletes[0].content is not None
         assert adds[0].content is not None
-        del_hl_spans = [
-            (s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL
-        ]
+        del_hl_spans = [(s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL]
         add_hl_spans = [(s.start, s.end) for s in adds[0].content.spans if s.style == _ADD_HL]
         assert del_hl_spans, "tab indentation should be highlighted in deleted line"
         assert add_hl_spans, "space indentation should be highlighted in added line"
@@ -71,9 +67,7 @@ class TestInlineDiffTabs:
         assert adds[0].is_inline_paired
         assert deletes[0].content is not None
         assert adds[0].content is not None
-        del_hl_spans = [
-            (s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL
-        ]
+        del_hl_spans = [(s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL]
         add_hl_spans = [(s.start, s.end) for s in adds[0].content.spans if s.style == _ADD_HL]
         assert del_hl_spans, "tab+space region should be highlighted in deleted line"
         assert all(s < e for s, e in del_hl_spans), "highlight spans must have non-zero width"
@@ -93,9 +87,7 @@ class TestInlineDiffTabs:
         assert deletes[0].content is not None
         # Trailing spaces must be preserved in the rendered content
         assert deletes[0].content.plain == "hello   "
-        del_hl_spans = [
-            (s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL
-        ]
+        del_hl_spans = [(s.start, s.end) for s in deletes[0].content.spans if s.style == _DEL_HL]
         del_highlighted = "".join(deletes[0].content.plain[s:e] for s, e in del_hl_spans)
         assert "   " in del_highlighted, (
             f"trailing spaces should be highlighted, got: {del_highlighted!r}"

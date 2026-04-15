@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -463,82 +462,15 @@ class SlashCommandMenuControl(UIControl):
 
 
 class LocalFileMentionCompleter(Completer):
-    """Offer fuzzy `@` path completion by indexing workspace files."""
+    """Offer fuzzy `@` path completion by indexing workspace files.
+
+    File discovery and ignore rules are delegated to
+    :mod:`kimi_cli.utils.file_filter` so that the web backend can reuse
+    them.
+    """
 
     _FRAGMENT_PATTERN = re.compile(r"[^\s@]+")
     _TRIGGER_GUARDS = frozenset((".", "-", "_", "`", "'", '"', ":", "@", "#", "~"))
-    _IGNORED_NAME_GROUPS: dict[str, tuple[str, ...]] = {
-        "vcs_metadata": (".DS_Store", ".bzr", ".git", ".hg", ".svn"),
-        "tooling_caches": (
-            ".build",
-            ".cache",
-            ".coverage",
-            ".fleet",
-            ".gradle",
-            ".idea",
-            ".ipynb_checkpoints",
-            ".pnpm-store",
-            ".pytest_cache",
-            ".pub-cache",
-            ".ruff_cache",
-            ".swiftpm",
-            ".tox",
-            ".venv",
-            ".vs",
-            ".vscode",
-            ".yarn",
-            ".yarn-cache",
-        ),
-        "js_frontend": (
-            ".next",
-            ".nuxt",
-            ".parcel-cache",
-            ".svelte-kit",
-            ".turbo",
-            ".vercel",
-            "node_modules",
-        ),
-        "python_packaging": (
-            "__pycache__",
-            "build",
-            "coverage",
-            "dist",
-            "htmlcov",
-            "pip-wheel-metadata",
-            "venv",
-        ),
-        "java_jvm": (".mvn", "out", "target"),
-        "dotnet_native": ("bin", "cmake-build-debug", "cmake-build-release", "obj"),
-        "bazel_buck": ("bazel-bin", "bazel-out", "bazel-testlogs", "buck-out"),
-        "misc_artifacts": (
-            ".dart_tool",
-            ".serverless",
-            ".stack-work",
-            ".terraform",
-            ".terragrunt-cache",
-            "DerivedData",
-            "Pods",
-            "deps",
-            "tmp",
-            "vendor",
-        ),
-    }
-    _IGNORED_NAMES = frozenset(name for group in _IGNORED_NAME_GROUPS.values() for name in group)
-    _IGNORED_PATTERN_PARTS: tuple[str, ...] = (
-        r".*_cache$",
-        r".*-cache$",
-        r".*\.egg-info$",
-        r".*\.dist-info$",
-        r".*\.py[co]$",
-        r".*\.class$",
-        r".*\.sw[po]$",
-        r".*~$",
-        r".*\.(?:tmp|bak)$",
-    )
-    _IGNORED_PATTERNS = re.compile(
-        "|".join(f"(?:{part})" for part in _IGNORED_PATTERN_PARTS),
-        re.IGNORECASE,
-    )
 
     def __init__(
         self,
@@ -552,10 +484,13 @@ class LocalFileMentionCompleter(Completer):
         self._limit = limit
         self._cache_time: float = 0.0
         self._cached_paths: list[str] = []
-        self._cached_paths_key: str = "."
+        self._cache_scope: str | None = None
         self._top_cache_time: float = 0.0
         self._top_cached_paths: list[str] = []
         self._fragment_hint: str | None = None
+        self._is_git: bool | None = None  # lazily detected
+        self._git_index_path: Path | None = None  # cached .git/index path
+        self._git_index_mtime: float | None = None
 
         self._word_completer = WordCompleter(
             self._get_paths,
@@ -569,21 +504,15 @@ class LocalFileMentionCompleter(Completer):
             pattern=r"^[^\s@]*",
         )
 
-    @classmethod
-    def _is_ignored(cls, name: str) -> bool:
-        if not name:
-            return True
-        if name in cls._IGNORED_NAMES:
-            return True
-        return bool(cls._IGNORED_PATTERNS.fullmatch(name))
-
     def _get_paths(self) -> list[str]:
         fragment = self._fragment_hint or ""
         if "/" not in fragment and len(fragment) < 3:
             return self._get_top_level_paths()
-        return self._get_deep_paths(fragment)
+        return self._get_deep_paths()
 
     def _get_top_level_paths(self) -> list[str]:
+        from kimi_cli.utils.file_filter import is_ignored
+
         now = time.monotonic()
         if now - self._top_cache_time <= self._refresh_interval:
             return self._top_cached_paths
@@ -592,7 +521,7 @@ class LocalFileMentionCompleter(Completer):
         try:
             for entry in sorted(self._root.iterdir(), key=lambda p: p.name):
                 name = entry.name
-                if self._is_ignored(name):
+                if is_ignored(name):
                     continue
                 entries.append(f"{name}/" if entry.is_dir() else name)
                 if len(entries) >= self._limit:
@@ -604,78 +533,89 @@ class LocalFileMentionCompleter(Completer):
         self._top_cache_time = now
         return self._top_cached_paths
 
-    def _resolve_search_root(self, fragment: str) -> tuple[Path, Path]:
-        if "/" not in fragment:
-            return self._root, Path()
+    def _git_index_stat_mtime(self) -> float | None:
+        """Return .git/index mtime without spawning a subprocess."""
+        if self._git_index_path is None:
+            from kimi_cli.utils.file_filter import git_index_mtime
 
-        prefix = fragment.rsplit("/", 1)[0].strip("/")
-        if not prefix:
-            return self._root, Path()
-
-        current = Path(prefix)
-        while current != Path("."):
+            # First call: use the subprocess-based helper to locate the path,
+            # then cache it so subsequent calls are pure stat().
+            mtime = git_index_mtime(self._root)
+            # Derive and cache the index path for future O(1) checks.
             try:
-                candidate = (self._root / current).resolve(strict=False)
-                if candidate.is_dir() and candidate.is_relative_to(self._root):
-                    return candidate, current
-            except OSError:
-                break
-            current = current.parent
+                import subprocess
 
-        return self._root, Path()
-
-    def _get_deep_paths(self, fragment: str) -> list[str]:
-        now = time.monotonic()
-        search_root, relative_prefix = self._resolve_search_root(fragment)
-        cache_key = relative_prefix.as_posix() or "."
-        if now - self._cache_time <= self._refresh_interval and cache_key == self._cached_paths_key:
-            return self._cached_paths
-
-        paths: list[str] = []
-        try:
-            if relative_prefix.parts:
-                paths.append(relative_prefix.as_posix() + "/")
-
-            for current_root, dirs, files in os.walk(search_root):
-                relative_root = Path(current_root).relative_to(search_root)
-                display_root = (
-                    relative_prefix / relative_root if relative_prefix.parts else relative_root
+                res = subprocess.run(
+                    ["git", "rev-parse", "--git-dir"],
+                    cwd=self._root,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
                 )
-
-                dirs[:] = sorted(d for d in dirs if not self._is_ignored(d))
-
-                if relative_root.parts and any(
-                    self._is_ignored(part) for part in relative_root.parts
-                ):
-                    dirs[:] = []
-                    continue
-
-                if display_root.parts and relative_root.parts:
-                    paths.append(display_root.as_posix() + "/")
-                    if len(paths) >= self._limit:
-                        break
-
-                for file_name in sorted(files):
-                    if self._is_ignored(file_name):
-                        continue
-                    relative = (
-                        (relative_prefix / relative_root / file_name)
-                        if relative_prefix.parts
-                        else (relative_root / file_name)
-                    ).as_posix()
-                    if not relative:
-                        continue
-                    paths.append(relative)
-                    if len(paths) >= self._limit:
-                        break
-
-                if len(paths) >= self._limit:
-                    break
+                if res.returncode == 0:
+                    gd = Path(res.stdout.strip())
+                    if not gd.is_absolute():
+                        gd = self._root / gd
+                    self._git_index_path = gd / "index"
+            except Exception:
+                pass
+            return mtime
+        try:
+            return self._git_index_path.stat().st_mtime
         except OSError:
+            return None
+
+    @staticmethod
+    def _resolve_scope(root: Path, fragment: str) -> str | None:
+        """Derive a scope directory from *fragment*, walking up if needed."""
+        if "/" not in fragment:
+            return None
+        scope = fragment.rsplit("/", 1)[0]
+        current = Path(scope)
+        while str(current) not in ("", "."):
+            if (root / current).is_dir():
+                return current.as_posix()
+            current = current.parent
+        return None
+
+    def _get_deep_paths(self) -> list[str]:
+        from kimi_cli.utils.file_filter import (
+            detect_git,
+            list_files_git,
+            list_files_walk,
+        )
+
+        fragment = self._fragment_hint or ""
+        scope = self._resolve_scope(self._root, fragment)
+
+        now = time.monotonic()
+        cache_valid = (
+            now - self._cache_time <= self._refresh_interval and self._cache_scope == scope
+        )
+
+        # Invalidate on .git/index mtime change (O(1) stat after first call).
+        if cache_valid and self._is_git:
+            mtime = self._git_index_stat_mtime()
+            if mtime != self._git_index_mtime:
+                cache_valid = False
+
+        if cache_valid:
             return self._cached_paths
+
+        # Lazily detect git.
+        if self._is_git is None:
+            self._is_git = detect_git(self._root)
+
+        paths: list[str] | None = None
+        if self._is_git:
+            paths = list_files_git(self._root, scope)
+            self._git_index_mtime = self._git_index_stat_mtime()
+
+        if paths is None:
+            paths = list_files_walk(self._root, scope, limit=self._limit)
 
         self._cached_paths = paths
-        self._cached_paths_key = cache_key
+        self._cache_scope = scope
         self._cache_time = now
         return self._cached_paths
 
