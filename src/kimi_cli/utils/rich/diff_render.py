@@ -148,8 +148,44 @@ def _make_highlighter(path: str) -> KimiSyntax:
 
 def _highlight(highlighter: KimiSyntax, code: str) -> Text:
     t = highlighter.highlight(code)
-    t.rstrip()
+    # Pygments appends a trailing newline (ensurenl=True); strip only that,
+    # not trailing whitespace which may be meaningful in diffs.
+    if t.plain.endswith("\n"):
+        t.right_crop(1)
     return t
+
+
+def _build_offset_map(raw: str, rendered: str, tab_size: int) -> list[int]:
+    """Build a mapping from raw-string indices to rendered-string indices.
+
+    The highlighter expands tabs via ``str.expandtabs(tab_size)`` before
+    tokenising.  We replicate the same column-aware expansion that the
+    Python builtin defines.
+
+    Returns a list of length ``len(raw) + 1`` where ``result[i]`` is the
+    rendered offset corresponding to raw position *i*.
+    """
+    if raw == rendered:
+        return list(range(len(raw) + 1))
+    offsets: list[int] = []
+    col = 0
+    for ch in raw:
+        offsets.append(col)
+        if ch == "\t":
+            col += tab_size - (col % tab_size)
+        else:
+            col += 1
+    offsets.append(col)
+    if col != len(rendered):
+        # The highlighter transformed the text in a way we didn't expect.
+        # Return a bounded, monotonic best-effort map so inline stylizing
+        # can proceed without crashing or producing out-of-range offsets.
+        rendered_len = len(rendered)
+        raw_len = len(raw)
+        if raw_len == 0:
+            return [rendered_len]
+        return [(i * rendered_len) // raw_len for i in range(raw_len)] + [rendered_len]
+    return offsets
 
 
 def _apply_inline_diff(
@@ -161,20 +197,27 @@ def _apply_inline_diff(
 
     Modifies DiffLine.content in place for paired lines.
     """
+    tab_size = highlighter.tab_size
     paired = min(len(del_lines), len(add_lines))
     for j in range(paired):
         old_code = del_lines[j].code
         new_code = add_lines[j].code
+        old_text = _highlight(highlighter, old_code)
+        new_text = _highlight(highlighter, new_code)
+        # Store highlighted content even when skipping inline pairing,
+        # so _highlight_hunk's second pass doesn't re-highlight these lines.
+        del_lines[j].content = old_text
+        add_lines[j].content = new_text
         sm = SequenceMatcher(None, old_code, new_code)
         if sm.ratio() < _INLINE_DIFF_MIN_RATIO:
             continue
-        old_text = _highlight(highlighter, old_code)
-        new_text = _highlight(highlighter, new_code)
+        old_map = _build_offset_map(old_code, old_text.plain, tab_size)
+        new_map = _build_offset_map(new_code, new_text.plain, tab_size)
         for op, i1, i2, j1, j2 in sm.get_opcodes():
             if op in ("delete", "replace"):
-                old_text.stylize(_DEL_HL, i1, i2)
+                old_text.stylize(_DEL_HL, old_map[i1], old_map[i2])
             if op in ("insert", "replace"):
-                new_text.stylize(_ADD_HL, j1, j2)
+                new_text.stylize(_ADD_HL, new_map[j1], new_map[j2])
         del_lines[j].content = old_text
         del_lines[j].is_inline_paired = True
         add_lines[j].content = new_text
