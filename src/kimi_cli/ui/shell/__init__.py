@@ -401,6 +401,16 @@ class Shell:
                 cancel_event.set()
                 return TurnSubmitResult.accept()
             slash_call = parse_slash_command_call(text)
+            if slash_call is not None and slash_call.name == "btw":
+                if isinstance(self.agent_loop, KimiAgentLoop) and slash_call.args.strip():
+                    from kimi_cli.loop.btw import run_side_question
+
+                    question = slash_call.args.strip()
+                    self._start_background_task(run_side_question(self.agent_loop, question))
+                    live_view.echo_info(f"btw: {question}")
+                else:
+                    live_view.echo_info("Usage: /btw <question>")
+                return TurnSubmitResult.accept()
             if slash_call is not None and slash_call.name in _TURN_ALLOWED_COMMANDS:
                 cmd = shell_mode_registry.find_command(slash_call.name)
                 if cmd is not None:

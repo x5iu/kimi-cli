@@ -969,8 +969,25 @@ class LiveView:
                 self.request_question(msg)
             case ToolCallRequest():
                 logger.warning("Unexpected ToolCallRequest in shell UI: {msg}", msg=msg)
-            case BtwBegin() | BtwEnd():
+            case BtwBegin():
                 pass
+            case BtwEnd():
+                if msg.error:
+                    panel = Panel(
+                        Text(msg.error, style="red"),
+                        title="btw",
+                        border_style="red",
+                    )
+                    self._append_history_block(panel)
+                elif msg.response:
+                    from kimi_cli.utils.rich.markdown import Markdown
+
+                    panel = Panel(
+                        Markdown(msg.response),
+                        title="btw",
+                        border_style="green",
+                    )
+                    self._append_history_block(panel)
 
     def _try_submit_question(self) -> None:
         """Submit the current question answer; if all done, resolve and advance."""
