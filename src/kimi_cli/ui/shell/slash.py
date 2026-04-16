@@ -29,7 +29,7 @@ Raises:
 registry = SlashCommandRegistry[ShellSlashCmdFunc]()
 shell_mode_registry = SlashCommandRegistry[ShellSlashCmdFunc]()
 
-TURN_ALLOWED_COMMANDS: set[str] = {"task"}
+TURN_ALLOWED_COMMANDS: set[str] = {"task", "btw"}
 """Slash commands allowed during an active turn (sync-only, no pager/side-effects).
 
 Note: ``skill:*`` commands are handled separately via prefix matching and are
@@ -358,6 +358,12 @@ def task(app: Shell, args: str):
     else:
         active = list_task_views(soul.runtime.background_tasks, active_only=True, limit=20)
         console.print(format_task_list(active, active_only=True), markup=False)
+
+
+@registry.command
+def btw(app: Shell, args: str):
+    """Ask a side question while the agent is working."""
+    pass
 
 
 @registry.command
