@@ -19,24 +19,6 @@ def format_relative_time(timestamp: float) -> str:
     return dt.strftime("%m-%d")
 
 
-def format_duration(seconds: int) -> str:
-    """Format a duration in seconds using short units."""
-    delta = timedelta(seconds=seconds)
-    parts: list[str] = []
-    days = delta.days
-    if days:
-        parts.append(f"{days}d")
-    hours, remainder = divmod(delta.seconds, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        parts.append(f"{hours}h")
-    if minutes:
-        parts.append(f"{minutes}m")
-    if secs and not parts:
-        parts.append(f"{secs}s")
-    return " ".join(parts) or "0s"
-
-
 def format_elapsed(seconds: float) -> str:
     if seconds < 1:
         return "<1s"

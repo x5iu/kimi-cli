@@ -21,7 +21,7 @@ class GrepThenTargetedReadNudgeProvider(AttachmentProvider):
     """Nudge the agent to use targeted ReadFile after grep/rg.
 
     After detecting Shell calls containing ``rg `` or ``grep ``,
-    or Grep tool calls within the last few assistant messages,
+    within the last few assistant messages,
     injects a ``<system-hint>`` suggesting the agent read only
     the relevant sections instead of whole files.
 
@@ -101,8 +101,6 @@ def _has_grep_calls(
             continue
         for tc in msg.tool_calls:
             name = tc.function.name
-            if name == "Grep":
-                return True
             if name == "Shell" and _shell_args_contain_grep(
                 tc.function.arguments,
             ):

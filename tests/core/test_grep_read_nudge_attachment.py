@@ -55,14 +55,6 @@ def _shell_call(command: str, *, call_id: str = "c1") -> Message:
     )
 
 
-def _grep_call(*, call_id: str = "c1") -> Message:
-    """Grep tool call."""
-    return _tool_call_msg(
-        "Grep",
-        call_id=call_id,
-        arguments=json.dumps({"pattern": "foo"}),
-    )
-
 
 def _tool_result(call_id: str = "c1", text: str = "ok") -> Message:
     return Message(
@@ -106,12 +98,12 @@ class TestGrepThenTargetedReadNudgeProvider:
         assert len(result) == 1
         assert "ReadFile" in result[0].content
 
-    async def test_injection_after_grep_tool(self) -> None:
+    async def test_injection_after_shell_rg_variant(self) -> None:
         provider = GrepThenTargetedReadNudgeProvider()
         history = [
             _user_msg(),
-            _grep_call(call_id="c1"),
-            _tool_result("c1", "match found"),
+            _shell_call("/opt/homebrew/bin/rg pattern .", call_id="c1"),
+            _tool_result("c1", "file.py:10:match"),
         ]
         result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
@@ -121,7 +113,7 @@ class TestGrepThenTargetedReadNudgeProvider:
         provider = GrepThenTargetedReadNudgeProvider()
         history = [
             _user_msg(),
-            _grep_call(call_id="c1"),
+            _shell_call("rg TODO .", call_id="c1"),
             _tool_result("c1"),
         ]
         result = await provider.get_attachments(history, _make_agent_loop_mock())
@@ -133,15 +125,15 @@ class TestGrepThenTargetedReadNudgeProvider:
         mock = _make_agent_loop_mock()
         history: list[Message] = [
             _user_msg(),
-            _grep_call(call_id="c1"),
+            _shell_call("rg TODO .", call_id="c1"),
             _tool_result("c1"),
         ]
         # First call fires
         r1 = await provider.get_attachments(history, mock)
         assert len(r1) == 1
 
-        # Another grep in same turn — suppressed
-        history.append(_grep_call(call_id="c2"))
+        # Another rg in same turn — suppressed
+        history.append(_shell_call("rg FIXME .", call_id="c2"))
         history.append(_tool_result("c2"))
         r2 = await provider.get_attachments(history, mock)
         assert r2 == []
@@ -151,7 +143,7 @@ class TestGrepThenTargetedReadNudgeProvider:
         mock = _make_agent_loop_mock()
         history: list[Message] = [
             _user_msg("first"),
-            _grep_call(call_id="c1"),
+            _shell_call("rg TODO .", call_id="c1"),
             _tool_result("c1"),
         ]
         r1 = await provider.get_attachments(history, mock)
@@ -161,7 +153,7 @@ class TestGrepThenTargetedReadNudgeProvider:
         mock._active_turn_id = 2
         history.append(_assistant_msg("Done."))
         history.append(_user_msg("second"))
-        history.append(_grep_call(call_id="c2"))
+        history.append(_shell_call("rg FIXME .", call_id="c2"))
         history.append(_tool_result("c2"))
 
         r2 = await provider.get_attachments(history, mock)
@@ -178,13 +170,3 @@ class TestGrepThenTargetedReadNudgeProvider:
         result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
 
-    async def test_grep_tool_triggers(self) -> None:
-        """The Grep tool (not Shell) also triggers."""
-        provider = GrepThenTargetedReadNudgeProvider()
-        history = [
-            _user_msg(),
-            _grep_call(call_id="c1"),
-            _tool_result("c1"),
-        ]
-        result = await provider.get_attachments(history, _make_agent_loop_mock())
-        assert len(result) == 1

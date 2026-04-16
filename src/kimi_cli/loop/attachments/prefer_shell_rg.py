@@ -62,7 +62,7 @@ def _reminder_text(*, rg_path: Path, is_powershell: bool) -> str:
             f"`rg` path: `{rg_path}`.",
             (
                 "When searching file contents, prefer the Shell tool with "
-                f"`{command}` instead of the Grep tool."
+                f"`{command}`."
             ),
         ]
     )

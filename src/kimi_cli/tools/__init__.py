@@ -1,10 +1,9 @@
 import json
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import streamingjson  # pyright: ignore[reportMissingTypeStubs]
 
 from kaos.path import KaosPath
-from kimi_cli.tools.todo_text import todo_label
 from llmkit.utils.typing import JsonType
 
 
@@ -12,19 +11,6 @@ class SkipThisTool(Exception):
     """Raised when a tool decides to skip itself from the loading process."""
 
     pass
-
-
-class _TodoSummaryDict(TypedDict, total=False):
-    title: object
-    status: object
-    executor: object
-
-
-def _todo_label_from_dict(todo: _TodoSummaryDict) -> str | None:  # pyright: ignore[reportUnusedFunction]
-    title = todo.get("title")
-    if not isinstance(title, str) or not title:
-        return None
-    return todo_label(title)
 
 
 def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
@@ -39,7 +25,7 @@ def _summarize_set_todo_list_argument(curr_args: dict[str, Any]) -> str | None:
     for todo in todos:
         if not isinstance(todo, dict):
             continue
-        typed_todo = cast(_TodoSummaryDict, todo)
+        typed_todo = cast(dict[str, Any], todo)
         if typed_todo.get("status") == "in_progress":
             n_in_progress += 1
 
@@ -93,14 +79,6 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
             key_argument = _normalize_path(str(curr_args["path"]))
-        case "Glob":
-            if not isinstance(curr_args, dict) or not curr_args.get("pattern"):
-                return None
-            key_argument = str(curr_args["pattern"])
-        case "Grep":
-            if not isinstance(curr_args, dict) or not curr_args.get("pattern"):
-                return None
-            key_argument = str(curr_args["pattern"])
         case "RecallCompactedContext":
             if not isinstance(curr_args, dict):
                 return None

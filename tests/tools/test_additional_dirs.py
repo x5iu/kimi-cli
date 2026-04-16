@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import platform
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
@@ -12,8 +11,6 @@ import pytest
 from kaos.path import KaosPath
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.loop.approval import Approval
-from kimi_cli.tools.file.glob import Glob
-from kimi_cli.tools.file.glob import Params as GlobParams
 from kimi_cli.tools.file.read import Params as ReadParams
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.write import Params as WriteParams
@@ -34,49 +31,6 @@ def runtime_with_additional_dir(runtime: Runtime, additional_dir: KaosPath) -> R
     """Runtime with an additional directory configured."""
     runtime.additional_dirs.append(additional_dir)
     return runtime
-
-
-# ── Glob tests ──────────────────────────────────────────────────────────────
-
-
-async def test_glob_in_additional_dir(
-    runtime_with_additional_dir: Runtime, additional_dir: KaosPath
-):
-    """Glob should be able to search in an additional directory."""
-    glob_tool = Glob(runtime_with_additional_dir)
-    await (additional_dir / "hello.py").write_text("print('hello')")
-    await (additional_dir / "world.py").write_text("print('world')")
-
-    result = await glob_tool(GlobParams(pattern="*.py", directory=str(additional_dir)))
-    assert not result.is_error
-    assert "hello.py" in result.output
-    assert "world.py" in result.output
-
-
-async def test_glob_in_additional_dir_subdirectory(
-    runtime_with_additional_dir: Runtime, additional_dir: KaosPath
-):
-    """Glob should work in a subdirectory of an additional directory."""
-    glob_tool = Glob(runtime_with_additional_dir)
-    await (additional_dir / "src").mkdir()
-    await (additional_dir / "src" / "main.py").write_text("main")
-
-    sub = str(additional_dir / "src")
-    result = await glob_tool(GlobParams(pattern="*.py", directory=sub))
-    assert not result.is_error
-    assert "main.py" in result.output
-
-
-async def test_glob_outside_all_dirs_rejected(
-    runtime_with_additional_dir: Runtime,
-):
-    """Glob in a directory outside both work_dir and additional dirs should fail."""
-    glob_tool = Glob(runtime_with_additional_dir)
-    outside = "/tmp/evil" if platform.system() != "Windows" else "C:/tmp/evil"
-
-    result = await glob_tool(GlobParams(pattern="*.py", directory=outside))
-    assert result.is_error
-    assert "outside the workspace" in result.message
 
 
 # ── ReadFile tests ──────────────────────────────────────────────────────────
@@ -137,25 +91,3 @@ async def test_write_file_in_additional_dir_uses_edit_action(
 
 
 # ── Dynamic mutation tests ──────────────────────────────────────────────────
-
-
-async def test_add_dir_dynamically_affects_tools(runtime: Runtime, approval: Approval):
-    """Adding a dir to runtime.additional_dirs should immediately affect tool behavior."""
-    glob_tool = Glob(runtime)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        extra = KaosPath.unsafe_from_local_path(Path(tmpdir).resolve())
-        await (extra / "test.py").write_text("pass")
-
-        # Before adding: should be rejected
-        result = await glob_tool(GlobParams(pattern="*.py", directory=str(extra)))
-        assert result.is_error
-        assert "outside the workspace" in result.message
-
-        # Add the directory to runtime (simulating /add-dir)
-        runtime.additional_dirs.append(extra)
-
-        # After adding: should work
-        result = await glob_tool(GlobParams(pattern="*.py", directory=str(extra)))
-        assert not result.is_error
-        assert "test.py" in result.output

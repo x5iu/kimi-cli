@@ -267,7 +267,7 @@ class Runtime:
             ),
             skills=skills_by_name,
             additional_dirs=additional_dirs,
-            # Only expose skills roots outside the workspace for Glob access;
+            # Only expose skills roots outside the workspace for tool access;
             # project-level roots are already within work_dir.
             skills_dirs=[
                 r for r in skills_roots_canonical if not is_within_directory(r, session.work_dir)

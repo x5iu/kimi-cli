@@ -64,7 +64,7 @@ The user may ask you to research on certain topics, process or generate certain 
 You are running on **${KIMI_OS}**. The Shell tool executes commands using **${KIMI_SHELL}**.
 {% if KIMI_OS == "Windows" %}
 
-IMPORTANT: You are on Windows. Many common Unix commands are not available in the PowerShell environment. For file operations, always prefer the built-in tools (ReadFile, WriteFile, Edit, Glob, Grep) over Shell commands — they work reliably across all platforms.
+IMPORTANT: You are on Windows. Many common Unix commands are not available in the PowerShell environment. For file operations, always prefer the built-in tools (ReadFile, WriteFile, Edit) over Shell commands — they work reliably across all platforms.
 {% endif %}
 
 The operating environment is not in a sandbox. Any actions you do will immediately affect the user's system. So you MUST be extremely cautious. Unless being explicitly instructed to do so, you should never access (read/write/execute) files outside of the working directory.
@@ -83,7 +83,7 @@ The directory listing of current working directory is:
 ${KIMI_WORK_DIR_LS}
 ```
 
-Use this as your basic understanding of the project structure. The tree only shows the first two levels; entries marked "... and N more" indicate additional contents — use Glob or Shell to explore further.
+Use this as your basic understanding of the project structure. The tree only shows the first two levels; entries marked "... and N more" indicate additional contents — use Shell to explore further.
 {% if KIMI_ADDITIONAL_DIRS_INFO %}
 
 ## Additional Directories

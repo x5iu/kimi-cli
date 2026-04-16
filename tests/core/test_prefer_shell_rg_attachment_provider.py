@@ -33,7 +33,7 @@ class TestPreferShellRgAttachmentProvider:
         assert result[0].type == "prefer_shell_rg"
         assert _REMINDER_PREFIX in result[0].content
         assert "`/tmp/tools/rg`" in result[0].content
-        assert "instead of the Grep tool" in result[0].content
+        assert "`rg`" in result[0].content
 
     async def test_returns_empty_when_rg_is_unavailable(self, monkeypatch) -> None:
         provider = PreferShellRgAttachmentProvider()

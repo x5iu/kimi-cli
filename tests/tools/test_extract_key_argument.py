@@ -22,9 +22,6 @@ class TestExtractKeyArgument:
         assert result is not None
         assert "foo/bar.py" in result
 
-    def test_grep(self):
-        result = extract_key_argument('{"pattern": "hello"}', "Grep")
-        assert result == "hello"
 
     def test_recall_compacted_context(self):
         result = extract_key_argument('{"query": "foo.py traceback"}', "RecallCompactedContext")

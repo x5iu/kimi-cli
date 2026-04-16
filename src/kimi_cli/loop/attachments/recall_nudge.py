@@ -25,7 +25,7 @@ _COOLDOWN_MESSAGES = 15
 _MAX_FIRES_PER_COMPACTION = 2
 
 # Tool names that indicate "exploration mode"
-_EXPLORATION_TOOLS = frozenset({"Shell", "ReadFile", "Grep"})
+_EXPLORATION_TOOLS = frozenset({"Shell", "ReadFile"})
 
 
 class RecallNudgeAfterCompactionProvider(AttachmentProvider):
@@ -40,7 +40,7 @@ class RecallNudgeAfterCompactionProvider(AttachmentProvider):
     - Agent has made 10+ assistant steps since compaction
       without calling RecallCompactedContext.
     - Recent messages include exploration tools
-      (Shell/ReadFile/Grep).
+      (Shell/ReadFile).
 
     Cooldown: once per 15 assistant messages, max 2 times
     total per compaction event.

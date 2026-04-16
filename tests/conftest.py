@@ -21,15 +21,12 @@ from kimi_cli.eventbus.log import EventLog
 from kimi_cli.llm import ALL_MODEL_CAPABILITIES, LLM
 from kimi_cli.loop.agent import BuiltinSystemPromptArgs, Runtime
 from kimi_cli.loop.approval import Approval
-from kimi_cli.loop.toolset import KimiToolset
 from kimi_cli.metadata import WorkDirMeta
 from kimi_cli.notifications import NotificationManager
 from kimi_cli.session import Session
 from kimi_cli.session_state import SessionState
 from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop, TaskWrite
 from kimi_cli.tools.context import RecallCompactedContext
-from kimi_cli.tools.file.glob import Glob
-from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditTool
@@ -177,11 +174,6 @@ def runtime(
     return rt
 
 
-@pytest.fixture
-def toolset() -> KimiToolset:
-    return KimiToolset()
-
-
 @contextmanager
 def tool_call_context(tool_name: str) -> Generator[None]:
     """Create a tool call context."""
@@ -246,19 +238,6 @@ def recall_compacted_context_tool(runtime: Runtime) -> RecallCompactedContext:
 def read_media_file_tool(runtime: Runtime) -> ReadMediaFile:
     """Create a ReadMediaFile tool instance."""
     return ReadMediaFile(runtime)
-
-
-@pytest.fixture
-def glob_tool(runtime: Runtime) -> Glob:
-    """Create a Glob tool instance."""
-    return Glob(runtime)
-
-
-@pytest.fixture
-def grep_tool(runtime: Runtime) -> Grep:
-    """Create a Grep tool instance."""
-    return Grep(runtime)
-
 
 @pytest.fixture
 def write_file_tool(runtime: Runtime, approval: Approval) -> Generator[WriteFile]:

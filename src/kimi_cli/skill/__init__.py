@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal
 
@@ -275,72 +275,3 @@ def parse_skill_text(content: str, *, dir_path: KaosPath) -> Skill:
         type=skill_type,
         dir=dir_path,
     )
-
-
-def _iter_fenced_codeblocks(content: str) -> Iterator[tuple[str, str]]:  # pyright: ignore[reportUnusedFunction]
-    fence = ""
-    fence_char = ""
-    lang = ""
-    buf: list[str] = []
-    in_block = False
-
-    for line in content.splitlines():
-        stripped = line.lstrip()
-        if not in_block:
-            if match := _parse_fence_open(stripped):
-                fence, fence_char, info = match
-                lang = _normalize_code_lang(info)
-                in_block = True
-                buf = []
-            continue
-
-        if _is_fence_close(stripped, fence_char, len(fence)):
-            yield lang, "\n".join(buf).strip("\n")
-            in_block = False
-            fence = ""
-            fence_char = ""
-            lang = ""
-            buf = []
-            continue
-
-        buf.append(line)
-
-
-def _normalize_code_lang(info: str) -> str:
-    if not info:
-        return ""
-    lang = info.split()[0].strip().lower()
-    if lang.startswith("{") and lang.endswith("}"):
-        lang = lang[1:-1].strip()
-    return lang
-
-
-def _parse_fence_open(line: str) -> tuple[str, str, str] | None:
-    if not line or line[0] not in ("`", "~"):
-        return None
-    fence_char = line[0]
-    count = 0
-    for ch in line:
-        if ch == fence_char:
-            count += 1
-        else:
-            break
-    if count < 3:
-        return None
-    fence = fence_char * count
-    info = line[count:].strip()
-    return fence, fence_char, info
-
-
-def _is_fence_close(line: str, fence_char: str, fence_len: int) -> bool:
-    if not fence_char or not line or line[0] != fence_char:
-        return False
-    count = 0
-    for ch in line:
-        if ch == fence_char:
-            count += 1
-        else:
-            break
-    if count < fence_len:
-        return False
-    return not line[count:].strip()

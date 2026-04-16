@@ -228,17 +228,6 @@ class TestFileToolLogging:
             assert result.is_error
             mock_logger.warning.assert_called_once()
 
-    async def test_glob_exception_logged(self, glob_tool):
-        from kimi_cli.tools.file.glob import Params
-
-        with (
-            patch("kimi_cli.tools.file.glob.logger") as mock_logger,
-            patch("kimi_cli.tools.file.glob.KaosPath") as mock_path,
-        ):
-            mock_path.return_value.expanduser.side_effect = RuntimeError("Unexpected")
-            result = await glob_tool(Params(pattern="*.py", directory="/some/dir"))
-            assert result.is_error
-            mock_logger.warning.assert_called_once()
 
     async def test_replace_file_exception_logged(self, edit_tool):
         from kimi_cli.tools.file.replace import EditParams, ReplaceOp

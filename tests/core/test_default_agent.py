@@ -25,8 +25,6 @@ async def test_default_agent(runtime: Runtime):
         "TaskWrite",
         "ReadFile",
         "ReadMediaFile",
-        "Glob",
-        "Grep",
         "RecallCompactedContext",
         "WriteFile",
         "Edit",

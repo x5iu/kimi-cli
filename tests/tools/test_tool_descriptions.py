@@ -7,8 +7,6 @@ import pytest
 from inline_snapshot import snapshot
 
 from kimi_cli.tools.shell import Shell
-from kimi_cli.tools.file.glob import Glob
-from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.context import RecallCompactedContext
 from kimi_cli.tools.file.read_media import ReadMediaFile
@@ -66,9 +64,9 @@ Read text content from a file.
 - A `<system>` tag will be given before the read file content.
 - The system will notify you when there is anything wrong when reading the file.
 - This tool is a tool that you typically want to use in parallel. Always read multiple files in one response when possible.
-- This tool can only read text files. To read images or videos, use other appropriate tools. To list directories, use the Glob tool or `ls` command via the Shell tool. To read other file types, use appropriate commands via the Shell tool.
+- This tool can only read text files. To read images or videos, use other appropriate tools. To list directories, use `ls` command via the Shell tool. To read other file types, use appropriate commands via the Shell tool.
 - If the file doesn't exist or path is invalid, an error will be returned.
-- If you want to search for a certain content/pattern, prefer Shell with `rg` (or the Grep tool if Shell is unavailable) over ReadFile.
+- If you want to search for a certain content/pattern, prefer Shell with `rg` over ReadFile.
 - Content will be returned with a line number before each line like `cat -n` format.
 - Use `line_offset` and `n_lines` parameters when you only need to read a part of the file.- When context budget is tight, prefer reading ≤200 lines at a time with `line_offset` + `n_lines` rather than loading the whole file.
 - `line_offset` can be negative to count backward from the end of the file. For example, `line_offset=-200` reads the last 200 lines.
@@ -120,7 +118,7 @@ Read media content from a file.
 - A `<system>` tag will be given before the read file content.
 - The system will notify you when there is anything wrong when reading the file.
 - This tool is a tool that you typically want to use in parallel. Always read multiple files in one response when possible.
-- This tool can only read image or video files. To read other types of files, use the ReadFile tool. To list directories, use the Glob tool or `ls` command via the Shell tool.
+- This tool can only read image or video files. To read other types of files, use the ReadFile tool. To list directories, use `ls` command via the Shell tool.
 - If the file doesn't exist or path is invalid, an error will be returned.
 - The maximum size that can be read is 100MB. An error will be returned if the file is larger than this limit.
 - The media content will be returned in a form that you can directly view and understand.
@@ -130,37 +128,6 @@ Read media content from a file.
 """
     )
 
-
-def test_glob_description(glob_tool: Glob):
-    """Test the description of Glob tool."""
-    assert glob_tool.base.description == snapshot(
-        """\
-Find files and directories using glob patterns. This tool supports standard glob syntax like `*`, `?`, and `**` for recursive searches.
-
-**When to use:**
-- Find files matching specific patterns (e.g., all Python files: `*.py`)
-- Search for files recursively in subdirectories (e.g., `src/**/*.js`)
-- Locate configuration files (e.g., `*.config.*`, `*.json`)
-- Find test files (e.g., `test_*.py`, `*_test.go`)
-
-**Example patterns:**
-- `*.py` - All Python files in current directory
-- `src/**/*.js` - All JavaScript files in src directory recursively
-- `test_*.py` - Python test files starting with "test_"
-- `*.config.{js,ts}` - Config files with .js or .ts extension
-
-**Bad example patterns:**
-- `**`, `**/*.py` - Any pattern starting with '**' will be rejected. Because it would recursively search all directories and subdirectories, which is very likely to yield large result that exceeds your context size. Always use more specific patterns like `src/**/*.py` instead.
-- `node_modules/**/*.js` - Although this does not start with '**', it would still highly possible to yield large result because `node_modules` is well-known to contain too many directories and files. Avoid recursively searching in such directories, other examples include `venv`, `.venv`, `__pycache__`, `target`. If you really need to search in a dependency, use more specific patterns like `node_modules/react/src/*` instead.
-"""
-    )
-
-
-def test_grep_description(grep_tool: Grep):
-    """Test the description of Grep tool."""
-    description = grep_tool.base.description
-    assert "ripgrep" in description
-    assert "Shell" in description
 
 
 def test_write_file_description(write_file_tool: WriteFile):
