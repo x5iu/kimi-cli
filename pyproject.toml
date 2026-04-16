@@ -91,7 +91,6 @@ pythonVersion = "3.14"
 include = [
     "src/**/*.py",
     "tests/**/*.py",
-    "tests_ai/scripts/**/*.py",
 ]
 strict = ["src/kimi_cli/**/*.py"]
 # These mixin files use cross-class attribute references that are only valid
@@ -111,7 +110,6 @@ python-version = "3.14"
 include = [
     "src/**/*.py",
     "tests/**/*.py",
-    "tests_ai/scripts/**/*.py",
 ]
 
 [tool.typos.files]

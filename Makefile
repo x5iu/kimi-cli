@@ -108,10 +108,6 @@ build-bin-onedir: ## Build the standalone executable with PyInstaller (one-dir m
 	@uv run pyinstaller kimi.spec
 	@if [ -f dist/kimi/kimi-exe.exe ]; then mv dist/kimi/kimi-exe.exe dist/kimi/kimi.exe; elif [ -f dist/kimi/kimi-exe ]; then mv dist/kimi/kimi-exe dist/kimi/kimi; fi
 	@mkdir -p dist/onedir && mv dist/kimi dist/onedir/
-.PHONY: ai-test
-ai-test: ## Run the test suite with Kimi Code CLI.
-	@echo "==> Running AI test suite"
-	@uv run tests_ai/scripts/run.py tests_ai
 
 .PHONY: gen-changelog gen-docs
 gen-changelog: ## Generate changelog with Kimi Code CLI.

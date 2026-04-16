@@ -6,7 +6,6 @@
 - `make format`
 - `make check`
 - `make test`
-- `make ai-test`
 - `make build` / `make build-bin`
 
 If running tools directly, use `uv run ...`.
