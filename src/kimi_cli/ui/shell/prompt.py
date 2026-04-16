@@ -118,6 +118,7 @@ __all__ = [
     "Application",
     "AttachmentCache",
     "CachedAttachment",
+    "CwdLostError",
     "CustomPromptSession",
     "Document",
     "InputBoxState",
@@ -176,6 +177,10 @@ class _ClearScreenRequest(Exception):
 class _NotificationAutoTrigger(Exception):
     """Raised to interrupt the idle prompt when background task notifications arrive."""
 
+    pass
+
+
+class CwdLostError(OSError):
     pass
 
 

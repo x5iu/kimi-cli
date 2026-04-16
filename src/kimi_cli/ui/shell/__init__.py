@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shlex
 from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ from kimi_cli.skill import normalize_skill_name
 from kimi_cli.ui.shell.console import console
 from kimi_cli.ui.shell.prompt import (
     CustomPromptSession,
+    CwdLostError,
     PromptMode,
     TurnSubmitResult,
     UserInput,
@@ -89,6 +91,37 @@ class Shell:
         """Get all available slash commands, including shell-level and agent-loop-level commands."""
         return self._available_slash_commands
 
+    def _print_cwd_lost_crash(self) -> None:
+        if isinstance(self.agent_loop, KimiAgentLoop):
+            session_id = str(self.agent_loop.runtime.session.id)
+            work_dir = str(self.agent_loop.runtime.session.work_dir)
+        else:
+            session_id = "unknown"
+            work_dir = "unknown"
+        info = Table.grid(padding=(0, 1))
+        info.add_row("Session:", session_id)
+        info.add_row("Working directory:", work_dir)
+        panel = Panel(
+            Group(
+                Text(
+                    "The working directory is no longer accessible "
+                    "(external drive unplugged, directory deleted, or filesystem unmounted).",
+                ),
+                Text(""),
+                info,
+                Text(""),
+                Text(
+                    "Your conversation history has been saved. "
+                    "Restart kimi in a valid directory to continue.",
+                    style="dim",
+                ),
+            ),
+            title="[bold red]Session crashed[/bold red]",
+            border_style="red",
+        )
+        console.print()
+        console.print(panel)
+
     async def run(self, command: str | None = None) -> bool:
         if command is not None:
             # run single command and exit
@@ -143,6 +176,12 @@ class Shell:
             background_autotrigger_armed = False
             try:
                 while True:
+                    try:
+                        os.getcwd()
+                    except OSError:
+                        self._print_cwd_lost_crash()
+                        prompt_session.execute_deferred_erase()
+                        break
                     ensure_tty_sane()
 
                     # Auto-trigger: check for pending LLM notifications from
@@ -195,6 +234,11 @@ class Shell:
                         prompt_session.execute_deferred_erase()
                         console.print("[grey50]Tip: press Ctrl-D or send 'exit' to quit[/grey50]")
                         continue
+                    except CwdLostError:
+                        logger.error("Working directory no longer accessible")
+                        self._print_cwd_lost_crash()
+                        prompt_session.execute_deferred_erase()
+                        break
                     except EOFError:
                         logger.debug("Exiting by EOF")
                         prompt_session.execute_deferred_erase()

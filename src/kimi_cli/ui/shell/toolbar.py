@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import os
 import sys
 from collections import deque
 from typing import Any, Literal, cast
 
-from prompt_toolkit.application.current import get_app_or_none as _ptk_get_app_or_none
+from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.utils import get_cwidth
 
@@ -19,8 +20,8 @@ from .toast import current_toast as _current_toast
 def _get_app_or_none() -> Any:
     prompt_module = sys.modules.get("kimi_cli.ui.shell.prompt")
     if prompt_module is None:
-        return _ptk_get_app_or_none()
-    return getattr(prompt_module, "get_app_or_none", _ptk_get_app_or_none)()
+        return get_app_or_none()
+    return getattr(prompt_module, "get_app_or_none", get_app_or_none)()
 
 
 def _build_toolbar_tips(clipboard_available: bool) -> list[str]:
@@ -341,10 +342,23 @@ class PromptToolbarMixin:
         return PromptToolbarMixin._shorten_middle_display_text(path, width)
 
     def _working_dir_text(self) -> str:
+        from kimi_cli.ui.shell.prompt import CwdLostError
+
+        try:
+            os.getcwd()
+        except OSError:
+            app = get_app_or_none()
+            if app is not None:
+                app.exit(exception=CwdLostError())
+            return ""
+
         provider = getattr(self, "_working_dir_provider", None)
-        if provider is None:
-            return str(KaosPath.cwd())
-        return provider().strip()
+        try:
+            if provider is None:
+                return str(KaosPath.cwd())
+            return provider().strip()
+        except OSError:
+            return ""
 
     def _render_footer_left_text(
         self,
