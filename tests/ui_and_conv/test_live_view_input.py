@@ -694,7 +694,7 @@ def test_live_view_keeps_turn_spinner_as_fallback_until_turn_end() -> None:
     assert "Running..." in view.render_ansi(80)
 
     view.dispatch_wire_message(StepBegin(n=1))
-    assert "Running..." not in view.render_ansi(80)
+    assert "Running..." in view.render_ansi(80)
 
     view.dispatch_wire_message(TurnEnd())
     assert "Running..." not in view.render_ansi(80)
@@ -804,7 +804,7 @@ def test_live_view_reports_activity_indicator_for_running_states() -> None:
     assert view.activity_indicator == ("thinking", "Thinking...")
 
     view.dispatch_wire_message(StepBegin(n=1))
-    assert view.activity_indicator == ("moon", "Running...")
+    assert view.activity_indicator == ("running", "Running...")
 
     view.dispatch_wire_message(TurnEnd())
     assert view.activity_indicator is None

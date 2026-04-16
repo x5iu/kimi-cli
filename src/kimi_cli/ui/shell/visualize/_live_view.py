@@ -160,7 +160,8 @@ class LiveView:
         self._cancel_event = cancel_event
 
         self._turn_spinner: Spinner | None = None
-        self._mooning_spinner: Spinner | None = None
+        self._mooning_spinner = Spinner("moon", "")
+        self._active_turn_depth = 0
         self._compacting_spinner: Spinner | None = None
         self._mcp_loading_spinner: Spinner | None = None
 
@@ -328,6 +329,21 @@ class LiveView:
         self._flushed_blocks.append(_render_skill_reminder_block(skills))
         self.refresh_history()
 
+    def _moon_fallback_background(self, *, ignore_pending_modal: bool) -> bool:
+        if self._active_turn_depth <= 0:
+            return False
+        if self._turn_spinner is not None:
+            return False
+        if self._mcp_loading_spinner is not None:
+            return False
+        if self._compacting_spinner is not None:
+            return False
+        if self._current_content_block is not None:
+            return False
+        if any(not b.finished for b in self._tool_call_blocks.values()):
+            return False
+        return not (not ignore_pending_modal and self.has_pending_input_request)
+
     @property
     def needs_periodic_refresh(self) -> bool:
         if self.has_pending_input_request:
@@ -336,13 +352,13 @@ class LiveView:
             return True
         if self._mcp_loading_spinner is not None:
             return True
-        if self._mooning_spinner is not None:
-            return True
         if self._compacting_spinner is not None:
             return True
         if self._current_content_block is not None:
             return True
-        return any(not block.finished for block in self._tool_call_blocks.values())
+        if any(not block.finished for block in self._tool_call_blocks.values()):
+            return True
+        return self._moon_fallback_background(ignore_pending_modal=False)
 
     def _renderable_to_ansi(self, renderable: RenderableType, width: int) -> str:
         width = max(20, width - RIGHT_PADDING)
@@ -479,10 +495,10 @@ class LiveView:
             return ("question", "Awaiting answer...")
         if self._mcp_loading_spinner is not None:
             return ("mcp", "Connecting to MCP servers...")
-        if self._mooning_spinner is not None:
-            return ("moon", "Running...")
         if self._compacting_spinner is not None:
             return ("compacting", "Compacting...")
+        if self._moon_fallback_background(ignore_pending_modal=False):
+            return ("moon", "Running...")
         if self._current_content_block is not None:
             return (
                 "thinking" if self._current_content_block.is_think else "composing",
@@ -745,23 +761,22 @@ class LiveView:
         has_specific_running_indicator = False
 
         if focus_pending_input_panel:
-            truncated = any(
-                block is not None
-                for block in (
-                    self._mcp_loading_spinner,
-                    self._mooning_spinner,
-                    self._compacting_spinner,
-                    self._current_content_block,
-                    self._turn_spinner,
+            truncated = (
+                any(
+                    block is not None
+                    for block in (
+                        self._mcp_loading_spinner,
+                        self._compacting_spinner,
+                        self._current_content_block,
+                        self._turn_spinner,
+                    )
                 )
-            ) or bool(self._tool_call_blocks)
+                or bool(self._tool_call_blocks)
+                or self._moon_fallback_background(ignore_pending_modal=True)
+            )
         elif self._mcp_loading_spinner is not None:
             if include_running_indicators:
                 blocks.append(self._mcp_loading_spinner)
-                has_specific_running_indicator = True
-        elif self._mooning_spinner is not None:
-            if include_running_indicators:
-                blocks.append(self._mooning_spinner)
                 has_specific_running_indicator = True
         elif self._compacting_spinner is not None:
             if include_running_indicators:
@@ -789,6 +804,7 @@ class LiveView:
                 if not tool_call.finished and include_running_indicators:
                     has_specific_running_indicator = True
 
+        appended_turn_dots = False
         if (
             not focus_pending_input_panel
             and include_running_indicators
@@ -796,6 +812,15 @@ class LiveView:
             and not has_specific_running_indicator
         ):
             blocks.append(self._turn_spinner)
+            appended_turn_dots = True
+            has_specific_running_indicator = True
+        if (
+            not focus_pending_input_panel
+            and include_running_indicators
+            and not appended_turn_dots
+            and self._moon_fallback_background(ignore_pending_modal=False)
+        ):
+            blocks.append(self._mooning_spinner)
         if focus_pending_input_panel and self.is_inline_panel_expanded:
             if self._inline_expanded_panel == "approval" and self._current_approval_request_panel:
                 blocks.append(self._current_approval_request_panel.render_expanded())
@@ -910,22 +935,20 @@ class LiveView:
         if isinstance(msg, StepBegin):
             self.cleanup(is_interrupt=False)
             self._mcp_loading_spinner = None
-            self._mooning_spinner = Spinner("moon", "")
+            if self._active_turn_depth == 0:
+                self._active_turn_depth = 1
             self.refresh_active()
             return
 
-        if self._mooning_spinner is not None:
-            # any message other than StepBegin should end the mooning state
-            self._mooning_spinner = None
-            self.refresh_active()
-
         match msg:
             case TurnBegin():
+                self._active_turn_depth += 1
                 self.flush_content()
                 self._last_flushed_assistant_text = ""
                 self._turn_spinner = Spinner("dots", "Running...")
                 self.refresh_active()
             case TurnEnd():
+                self._active_turn_depth = max(0, self._active_turn_depth - 1)
                 self.finish_turn()
             case FollowUpInput():
                 # Turn-end question answers are already echoed via the Answer panel.
@@ -1152,6 +1175,8 @@ class LiveView:
         self._reset_inline_panel_expansion()
         self.flush_content()
         self._last_flushed_assistant_text = ""
+        if is_interrupt:
+            self._active_turn_depth = 0
 
         for block in self._tool_call_blocks.values():
             if not block.finished:
@@ -1213,15 +1238,16 @@ class LiveView:
     def append_content(self, part: ContentPart) -> None:
         match part:
             case ThinkPart(think=text) | TextPart(text=text):
-                if not text:
-                    return
                 is_think = isinstance(part, ThinkPart)
+                if not text and not is_think:
+                    return
                 if self._current_content_block is None:
                     self._current_content_block = ContentBlock(is_think)
                 elif self._current_content_block.is_think != is_think:
                     self.flush_content()
                     self._current_content_block = ContentBlock(is_think)
-                self._current_content_block.append(text)
+                if text:
+                    self._current_content_block.append(text)
                 self.refresh_active()
             case _:
                 # TODO: support more content part types
