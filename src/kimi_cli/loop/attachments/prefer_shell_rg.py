@@ -60,9 +60,6 @@ def _reminder_text(*, rg_path: Path, is_powershell: bool) -> str:
         [
             _REMINDER_PREFIX,
             f"`rg` path: `{rg_path}`.",
-            (
-                "When searching file contents, prefer the Shell tool with "
-                f"`{command}`."
-            ),
+            (f"When searching file contents, prefer the Shell tool with `{command}`."),
         ]
     )

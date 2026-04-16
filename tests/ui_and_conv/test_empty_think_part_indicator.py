@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pytest
 from rich.spinner import Spinner
 
@@ -18,7 +20,7 @@ from kimi_cli.ui.shell.visualize import LiveView
 from llmkit.tooling import ToolOk
 
 
-def _spinners(blocks: list[object]) -> list[Spinner]:
+def _spinners(blocks: Sequence[object]) -> list[Spinner]:
     return [b for b in blocks if isinstance(b, Spinner)]
 
 
@@ -119,7 +121,9 @@ def test_status_update_does_not_clear_spinner_gap(monkeypatch: pytest.MonkeyPatc
         ToolCall(id="c1", function=ToolCall.FunctionBody(name="Shell", arguments="{}"))
     )
     view.dispatch_wire_message(ToolResult(tool_call_id="c1", return_value=ToolOk(output="ok")))
-    view.dispatch_wire_message(StatusUpdate(context_usage=0.1, context_tokens=1, max_context_tokens=100))
+    view.dispatch_wire_message(
+        StatusUpdate(context_usage=0.1, context_tokens=1, max_context_tokens=100)
+    )
     assert view._active_turn_depth > 0
     blocks, _ = view._active_blocks(include_running_indicators=True)
     assert len(_spinners(blocks)) == 1

@@ -115,6 +115,7 @@ shell UI, print execution mode, and MCP tool loading.
 ## Conventions and quality
 
 - Python >=3.12 (ty config uses 3.14); line length 100.
+- Before you treat a change as ready to merge or ask someone to commit or push, run `make format` and `make check` (or at least `make check-kimi-cli` when you only touched kimi-cli). CI runs the same checks; unformatted Python will fail the formatting step in `check-kimi-cli`.
 - Ruff handles lint + format (rules: E, F, UP, B, SIM, I); pyright + ty for type checks.
 - Tests use pytest + pytest-asyncio; files are `tests/test_*.py`.
 - CLI entry points: `kimi` / `kimi-cli` -> `src/kimi_cli/cli/__init__.py`.

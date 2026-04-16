@@ -55,7 +55,6 @@ def _shell_call(command: str, *, call_id: str = "c1") -> Message:
     )
 
 
-
 def _tool_result(call_id: str = "c1", text: str = "ok") -> Message:
     return Message(
         role="tool",
@@ -169,4 +168,3 @@ class TestGrepThenTargetedReadNudgeProvider:
         ]
         result = await provider.get_attachments(history, _make_agent_loop_mock())
         assert len(result) == 1
-

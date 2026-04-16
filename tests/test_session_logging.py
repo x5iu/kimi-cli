@@ -228,7 +228,6 @@ class TestFileToolLogging:
             assert result.is_error
             mock_logger.warning.assert_called_once()
 
-
     async def test_replace_file_exception_logged(self, edit_tool):
         from kimi_cli.tools.file.replace import EditParams, ReplaceOp
 

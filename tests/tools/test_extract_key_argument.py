@@ -22,7 +22,6 @@ class TestExtractKeyArgument:
         assert result is not None
         assert "foo/bar.py" in result
 
-
     def test_recall_compacted_context(self):
         result = extract_key_argument('{"query": "foo.py traceback"}', "RecallCompactedContext")
         assert result == "foo.py traceback"

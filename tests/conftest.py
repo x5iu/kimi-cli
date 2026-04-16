@@ -239,6 +239,7 @@ def read_media_file_tool(runtime: Runtime) -> ReadMediaFile:
     """Create a ReadMediaFile tool instance."""
     return ReadMediaFile(runtime)
 
+
 @pytest.fixture
 def write_file_tool(runtime: Runtime, approval: Approval) -> Generator[WriteFile]:
     """Create a WriteFile tool instance."""

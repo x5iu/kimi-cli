@@ -39,10 +39,7 @@ def _build_rg_preference_guidance(*, is_powershell: bool) -> str:
         [
             "**Preferred Content Search:**",
             f"- `rg` is available at `{rg_path_str}`.",
-            (
-                "- When you need to search file contents, prefer Shell with "
-                f"`{command}`."
-            ),
+            (f"- When you need to search file contents, prefer Shell with `{command}`."),
             (f"- If you need to verify or rediscover the binary, run `{path_lookup} rg`."),
         ]
     )

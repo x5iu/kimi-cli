@@ -129,7 +129,6 @@ Read media content from a file.
     )
 
 
-
 def test_write_file_description(write_file_tool: WriteFile):
     """Test the description of WriteFile tool."""
     assert write_file_tool.base.description == snapshot(
