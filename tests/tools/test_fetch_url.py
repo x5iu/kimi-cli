@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import socket
 from collections.abc import AsyncIterator
+from functools import lru_cache
 from typing import Protocol
 
 import pytest
@@ -14,6 +16,15 @@ from inline_snapshot import snapshot
 from llmkit.tooling import ToolReturnValue
 
 from kimi_cli.tools.web.fetch import FetchURL, Params
+
+
+@lru_cache(maxsize=None)
+def _host_resolves(host: str) -> bool:
+    try:
+        socket.getaddrinfo(host, None)
+        return True
+    except OSError:
+        return False
 
 
 class MockServerFactory(Protocol):
@@ -75,6 +86,10 @@ async def mock_http_server() -> AsyncIterator[MockServerFactory]:
             await runner.cleanup()
 
 
+@pytest.mark.skipif(
+    not _host_resolves("github.com"),
+    reason="github.com is not resolvable",
+)
 async def test_fetch_url_basic_functionality(fetch_url_tool: FetchURL) -> None:
     """Test basic WebFetch functionality."""
     # Test with a reliable website that has content
@@ -103,6 +118,10 @@ async def test_fetch_url_invalid_url(fetch_url_tool: FetchURL) -> None:
     assert "Could not resolve hostname" in result.message
 
 
+@pytest.mark.skipif(
+    not _host_resolves("github.com"),
+    reason="github.com is not resolvable",
+)
 async def test_fetch_url_404_url(fetch_url_tool: FetchURL) -> None:
     """Test fetching from a URL that returns 404."""
     result = await fetch_url_tool(
@@ -138,6 +157,10 @@ async def test_fetch_url_empty_url(fetch_url_tool: FetchURL) -> None:
     )
 
 
+@pytest.mark.skipif(
+    not _host_resolves("www.moonshot.ai"),
+    reason="www.moonshot.ai is not resolvable",
+)
 async def test_fetch_url_javascript_driven_site(fetch_url_tool: FetchURL) -> None:
     """Test fetching from a JavaScript-driven site that may not work with text extraction."""
     result = await fetch_url_tool(Params(url="https://www.moonshot.ai/"))
