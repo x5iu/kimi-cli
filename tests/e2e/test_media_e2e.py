@@ -50,7 +50,10 @@ def _content_has_text(parts: list[dict[str, object]], text: str) -> bool:
 
 
 def _run_print_mode(
-    config_path: Path, work_dir: Path, messages: list[dict[str, object]]
+    config_path: Path,
+    work_dir: Path,
+    messages: list[dict[str, object]],
+    share_dir: Path,
 ) -> tuple[int, list[str]]:
     cmd = [
         "uv",
@@ -67,6 +70,8 @@ def _run_print_mode(
         "--work-dir",
         str(work_dir),
     ]
+    env = os.environ.copy()
+    env["KIMI_SHARE_DIR"] = str(share_dir)
     process = subprocess.Popen(
         cmd,
         cwd=_repo_root(),
@@ -74,7 +79,7 @@ def _run_print_mode(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        env=os.environ.copy(),
+        env=env,
     )
     assert process.stdin is not None
     for msg in messages:
@@ -144,6 +149,7 @@ def test_scripted_echo_media_e2e(temp_work_dir: KaosPath, tmp_path: Path, mode: 
     config_path.write_text(json.dumps(config_data), encoding="utf-8")
 
     work_dir = temp_work_dir.unsafe_to_local_path()
+    share_dir = tmp_path / "share"
     if mode == "print":
         messages = [
             {
@@ -161,7 +167,7 @@ def test_scripted_echo_media_e2e(temp_work_dir: KaosPath, tmp_path: Path, mode: 
                 ],
             },
         ]
-        return_code, stdout_lines = _run_print_mode(config_path, work_dir, messages)
+        return_code, stdout_lines = _run_print_mode(config_path, work_dir, messages, share_dir)
         assert return_code == 0
         parsed_contents = [_parse_message_content(line) for line in stdout_lines]
         parsed_contents = [parts for parts in parsed_contents if parts]

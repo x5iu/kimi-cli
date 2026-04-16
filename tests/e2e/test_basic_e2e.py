@@ -28,7 +28,9 @@ def _collect_stdout(process: subprocess.Popen[str]) -> list[str]:
     return lines
 
 
-def _run_print_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tuple[int, list[str]]:
+def _run_print_mode(
+    config_path: Path, work_dir: Path, user_prompt: str, share_dir: Path
+) -> tuple[int, list[str]]:
     cmd = [
         "uv",
         "run",
@@ -44,6 +46,8 @@ def _run_print_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tupl
         "--work-dir",
         str(work_dir),
     ]
+    env = os.environ.copy()
+    env["KIMI_SHARE_DIR"] = str(share_dir)
     process = subprocess.Popen(
         cmd,
         cwd=_repo_root(),
@@ -51,7 +55,7 @@ def _run_print_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tupl
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        env=os.environ.copy(),
+        env=env,
     )
     assert process.stdin is not None
     process.stdin.write(user_prompt)
@@ -60,7 +64,9 @@ def _run_print_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tupl
     return process.wait(), stdout_lines
 
 
-def _run_shell_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tuple[int, list[str]]:
+def _run_shell_mode(
+    config_path: Path, work_dir: Path, user_prompt: str, share_dir: Path
+) -> tuple[int, list[str]]:
     cmd = [
         "uv",
         "run",
@@ -73,6 +79,8 @@ def _run_shell_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tupl
         "--work-dir",
         str(work_dir),
     ]
+    env = os.environ.copy()
+    env["KIMI_SHARE_DIR"] = str(share_dir)
     process = subprocess.Popen(
         cmd,
         cwd=_repo_root(),
@@ -80,7 +88,7 @@ def _run_shell_mode(config_path: Path, work_dir: Path, user_prompt: str) -> tupl
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        env=os.environ.copy(),
+        env=env,
     )
     if process.stdin is not None:
         process.stdin.close()
@@ -202,14 +210,15 @@ async def test_scripted_echo_kimi_cli_agent_e2e(
     )
 
     work_dir = temp_work_dir.unsafe_to_local_path()
+    share_dir = tmp_path / "share"
     _print_trace("USER INPUT", json.dumps(user_prompt))
 
     if mode == "print":
-        return_code, stdout_lines = _run_print_mode(config_path, work_dir, user_prompt)
+        return_code, stdout_lines = _run_print_mode(config_path, work_dir, user_prompt, share_dir)
         assert return_code == 0
         assert any("Translation completed successfully." in line for line in stdout_lines)
     elif mode == "shell":
-        return_code, stdout_lines = _run_shell_mode(config_path, work_dir, user_prompt)
+        return_code, stdout_lines = _run_shell_mode(config_path, work_dir, user_prompt, share_dir)
         assert return_code == 0
         assert any("Translation completed successfully." in line for line in stdout_lines)
     else:
