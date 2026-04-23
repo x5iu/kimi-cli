@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
@@ -21,6 +22,11 @@ def get_builtin_skills_dir() -> Path:
     """
     Get the built-in skills directory path.
     """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        # Running in a PyInstaller bundle; use _MEIPASS to locate bundled resources
+        # reliably on all platforms (avoids __file__ path issues in frozen envs on Windows)
+        meipass = cast(str, sys._MEIPASS)  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]
+        return Path(meipass) / "kimi_cli" / "skills"
     return Path(__file__).parent.parent / "skills"
 
 
