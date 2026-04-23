@@ -293,43 +293,34 @@ async def test_anthropic_message_conversion():
                                 "input": {"a": 4, "b": 5},
                             },
                         ],
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": "call_add",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": "<system-reminder>This is a system reminder"
-                                        "</system-reminder>",
-                                    },
-                                    {"type": "text", "text": "5"},
-                                ],
-                            }
-                        ],
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": "call_mul",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": "<system-reminder>This is a system reminder"
-                                        "</system-reminder>",
-                                    },
-                                    {"type": "text", "text": "20"},
-                                ],
-                                "cache_control": {"type": "ephemeral"},
-                            }
-                        ],
-                    },
-                ],
+                    }, {
+    "role": "user",
+    "content": [
+        {
+            "type": "tool_result",
+            "tool_use_id": "call_add",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "<system-reminder>This is a system reminder</system-reminder>",
+                },
+                {"type": "text", "text": "5"},
+            ],
+        },
+        {
+            "type": "tool_result",
+            "tool_use_id": "call_mul",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "<system-reminder>This is a system reminder</system-reminder>",
+                },
+                {"type": "text", "text": "20"},
+            ],
+            "cache_control": {"type": "ephemeral"},
+        },
+    ],
+}],
                 "tools": [
                     {
                         "name": "add",
