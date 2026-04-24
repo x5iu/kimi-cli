@@ -524,7 +524,7 @@ def kimi(
 def background_task_worker(
     task_dir: Annotated[Path, typer.Option("--task-dir")],
     heartbeat_interval_ms: Annotated[int, typer.Option("--heartbeat-interval-ms")] = 5000,
-    control_poll_interval_ms: Annotated[int, typer.Option("--control-poll-interval-ms")] = 500,
+    control_poll_interval_ms: Annotated[int, typer.Option("--control-poll-interval-ms")] = 2000,
     kill_grace_period_ms: Annotated[int, typer.Option("--kill-grace-period-ms")] = 2000,
 ) -> None:
     """Run background task worker subprocess (internal)."""

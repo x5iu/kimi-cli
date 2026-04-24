@@ -448,7 +448,7 @@ class MCPTool[T: ClientTransport](CallableTool):
         self._mcp_tool = mcp_tool
         self._client = client
         self._runtime = runtime
-        self._timeout = timedelta(milliseconds=runtime.config.mcp.client.tool_call_timeout_ms)
+        self._timeout = timedelta(milliseconds=runtime.config.mcp.tool_call_timeout_ms)
         self._action_name = f"mcp:{mcp_tool.name}"
 
     async def __call__(self, *args: Any, **kwargs: Any) -> ToolReturnValue:

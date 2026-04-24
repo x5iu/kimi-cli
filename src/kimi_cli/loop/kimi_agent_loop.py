@@ -1368,11 +1368,7 @@ class KimiAgentLoop:
                 # compact the context if needed
                 if (
                     not self._suppress_auto_compaction
-                    and getattr(
-                        self._loop_control,
-                        "auto_compact_enabled",
-                        True,
-                    )
+                    and self._loop_control.auto_compact_enabled
                     and should_auto_compact(
                         self._context.token_count_with_pending,
                         self._runtime.llm.max_context_size,

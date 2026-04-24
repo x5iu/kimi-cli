@@ -156,7 +156,7 @@ async def model(app: Shell, args: str):
     if not config.is_from_default_location:
         console.print(
             "[yellow]Model switching requires the default config file; "
-            "restart without --config/--config-file.[/yellow]"
+            "restart without --config-file.[/yellow]"
         )
         return
 

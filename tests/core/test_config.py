@@ -33,7 +33,6 @@ def test_default_config_dump():
             "loop_control": {
                 "max_steps_per_turn": 100,
                 "max_retries_per_step": 3,
-                "max_ralph_iterations": 0,
                 "reserved_context_size": 50000,
                 "max_preserved_messages": 2,
                 "auto_compact_enabled": True,
@@ -53,8 +52,7 @@ def test_default_config_dump():
             },
             "notifications": {"claim_stale_after_ms": 15000},
             "services": {"moonshot_search": None, "moonshot_fetch": None},
-            "mcp": {"client": {"tool_call_timeout_ms": 60000}},
-            "merge_all_available_skills": False,
+            "mcp": {"tool_call_timeout_ms": 60000},
             "env": {},
         }
     )
@@ -90,11 +88,6 @@ def test_load_config_text_invalid():
         load_config_from_string("not valid {")
 
 
-def test_load_config_invalid_ralph_iterations():
-    with pytest.raises(ConfigError, match="max_ralph_iterations"):
-        load_config_from_string('{"loop_control": {"max_ralph_iterations": -2}}')
-
-
 def test_load_config_reserved_context_size():
     config = load_config_from_string('{"loop_control": {"reserved_context_size": 30000}}')
     assert config.loop_control.reserved_context_size == 30000
@@ -108,6 +101,25 @@ def test_load_config_max_steps_per_turn():
 def test_load_config_max_steps_per_run():
     config = load_config_from_string('{"loop_control": {"max_steps_per_run": 7}}')
     assert config.loop_control.max_steps_per_turn == 7
+
+
+def test_load_config_mcp_client_legacy_timeout():
+    config = load_config_from_string("[mcp.client]\ntool_call_timeout_ms = 123\n")
+    assert config.mcp.tool_call_timeout_ms == 123
+
+
+def test_load_config_mcp_flat_timeout():
+    config = load_config_from_string("[mcp]\ntool_call_timeout_ms = 999\n")
+    assert config.mcp.tool_call_timeout_ms == 999
+
+
+def test_load_config_mcp_client_malformed_rejected():
+    with pytest.raises(ConfigError, match="mcp.client must be a table"):
+        load_config_from_string('{"mcp": {"client": 123}}')
+    with pytest.raises(ConfigError, match="mcp.client must be a table"):
+        load_config_from_string('{"mcp": {"client": "x"}}')
+    with pytest.raises(ConfigError, match="mcp.client must be a table"):
+        load_config_from_string('{"mcp": {"client": null}}')
 
 
 def test_load_config_reserved_context_size_too_low():

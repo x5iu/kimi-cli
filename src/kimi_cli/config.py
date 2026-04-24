@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Self
+from typing import Any, Self, cast
 
 import tomlkit
 from pydantic import (
@@ -20,6 +20,8 @@ from kimi_cli.exception import ConfigError
 from kimi_cli.llm import ModelCapability, ProviderType
 from kimi_cli.share import get_share_dir
 from kimi_cli.utils.logging import logger
+
+_MCP_CLIENT_KEY_ABSENT = object()
 
 
 class LLMProvider(BaseModel):
@@ -61,12 +63,13 @@ class LoopControl(BaseModel):
         default=100,
         ge=1,
         validation_alias=AliasChoices("max_steps_per_turn", "max_steps_per_run"),
+        description=(
+            "Maximum number of steps in one turn. Legacy alias max_steps_per_run is "
+            "accepted for backward compatibility."
+        ),
     )
-    """Maximum number of steps in one turn"""
     max_retries_per_step: int = Field(default=3, ge=1)
     """Maximum number of retries in one step"""
-    max_ralph_iterations: int = Field(default=0, ge=-1)
-    """Extra iterations after the first turn in Ralph mode. Use -1 for unlimited."""
     reserved_context_size: int = Field(default=50_000, ge=1000)
     """Reserved token count for LLM response generation. Auto-compaction triggers when
     either context_tokens + reserved_context_size >= max_context_size or
@@ -111,34 +114,22 @@ class NotificationConfig(BaseModel):
     claim_stale_after_ms: int = Field(default=15_000, ge=1000)
 
 
-class MoonshotSearchConfig(BaseModel):
+class _MoonshotServiceConfigBase(BaseModel):
+    base_url: str
+    api_key: SecretStr
+    custom_headers: dict[str, str] | None = None
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
+class MoonshotSearchConfig(_MoonshotServiceConfigBase):
     """Moonshot Search configuration."""
 
-    base_url: str
-    """Base URL for Moonshot Search service."""
-    api_key: SecretStr
-    """API key for Moonshot Search service."""
-    custom_headers: dict[str, str] | None = None
-    """Custom headers to include in API requests."""
 
-    @field_serializer("api_key", when_used="json")
-    def dump_secret(self, v: SecretStr):
-        return v.get_secret_value()
-
-
-class MoonshotFetchConfig(BaseModel):
+class MoonshotFetchConfig(_MoonshotServiceConfigBase):
     """Moonshot Fetch configuration."""
-
-    base_url: str
-    """Base URL for Moonshot Fetch service."""
-    api_key: SecretStr
-    """API key for Moonshot Fetch service."""
-    custom_headers: dict[str, str] | None = None
-    """Custom headers to include in API requests."""
-
-    @field_serializer("api_key", when_used="json")
-    def dump_secret(self, v: SecretStr):
-        return v.get_secret_value()
 
 
 class Services(BaseModel):
@@ -150,19 +141,28 @@ class Services(BaseModel):
     """Moonshot Fetch configuration."""
 
 
-class MCPClientConfig(BaseModel):
-    """MCP client configuration."""
-
-    tool_call_timeout_ms: int = 60000
-    """Timeout for tool calls in milliseconds."""
-
-
 class MCPConfig(BaseModel):
     """MCP configuration."""
 
-    client: MCPClientConfig = Field(
-        default_factory=MCPClientConfig, description="MCP client configuration"
+    tool_call_timeout_ms: int = Field(
+        default=60000, description="Timeout for tool calls in milliseconds."
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_client_section(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out: dict[str, Any] = dict(cast(dict[str, Any], data))
+        client = out.pop("client", _MCP_CLIENT_KEY_ABSENT)
+        if client is _MCP_CLIENT_KEY_ABSENT:
+            return out
+        if not isinstance(client, dict):
+            raise ValueError("mcp.client must be a table/object")
+        client_data: dict[str, Any] = dict(cast(dict[str, Any], client))
+        if "tool_call_timeout_ms" in client_data and "tool_call_timeout_ms" not in out:
+            out["tool_call_timeout_ms"] = client_data["tool_call_timeout_ms"]
+        return out
 
 
 class Config(BaseModel):
@@ -198,13 +198,6 @@ class Config(BaseModel):
     )
     services: Services = Field(default_factory=Services, description="Services configuration")
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
-    merge_all_available_skills: bool = Field(
-        default=False,
-        description=(
-            "Merge skills from all existing brand directories (kimi/claude/codex) "
-            "instead of using only the first one found"
-        ),
-    )
     env: dict[str, str] = Field(default_factory=dict, description="Environment variables")
 
     @model_validator(mode="after")
@@ -224,12 +217,7 @@ def get_config_file() -> Path:
 
 def get_default_config() -> Config:
     """Get the default configuration."""
-    return Config(
-        default_model="",
-        models={},
-        providers={},
-        services=Services(),
-    )
+    return Config()
 
 
 def load_config(config_file: Path | None = None) -> Config:
