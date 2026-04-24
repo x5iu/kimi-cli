@@ -24,6 +24,8 @@ from prompt_toolkit.utils import get_cwidth
 
 from kimi_cli.utils.slashcmd import SlashCommand
 
+type MentionPathSortKey = tuple[int, int, int, int, str]
+
 
 class SlashCommandCompleter(Completer):
     """
@@ -462,14 +464,13 @@ class SlashCommandMenuControl(UIControl):
 
 
 class LocalFileMentionCompleter(Completer):
-    """Offer fuzzy `@` path completion by indexing workspace files.
+    """Offer path-aware `@` file completion by indexing workspace files.
 
     File discovery and ignore rules are delegated to
     :mod:`kimi_cli.utils.file_filter` so that the web backend can reuse
     them.
     """
 
-    _FRAGMENT_PATTERN = re.compile(r"[^\s@]+")
     _TRIGGER_GUARDS = frozenset((".", "-", "_", "`", "'", '"', ":", "@", "#", "~"))
 
     def __init__(
@@ -492,17 +493,83 @@ class LocalFileMentionCompleter(Completer):
         self._git_index_path: Path | None = None  # cached .git/index path
         self._git_index_mtime: float | None = None
 
-        self._word_completer = WordCompleter(
-            self._get_paths,
-            WORD=False,
-            pattern=self._FRAGMENT_PATTERN,
-        )
+    @staticmethod
+    def _basename_subsequence_compact(basename: str, frag: str) -> bool:
+        fb = basename.casefold()
+        fl = frag.casefold()
+        if not fl:
+            return True
+        i = 0
+        first: int | None = None
+        last: int | None = None
+        for idx, ch in enumerate(fb):
+            if ch == fl[i]:
+                if first is None:
+                    first = idx
+                last = idx
+                i += 1
+                if i == len(fl):
+                    break
+        if i < len(fl):
+            return False
+        if first is None or last is None:
+            return False
+        span = last - first + 1
+        return span <= len(fl) + 2
 
-        self._fuzzy = FuzzyCompleter(
-            self._word_completer,
-            WORD=False,
-            pattern=r"^[^\s@]*",
-        )
+    @staticmethod
+    def _mention_path_sort_key(rel: str, fragment: str) -> MentionPathSortKey | None:
+        frag_trim = fragment.rstrip("/")
+        if not frag_trim:
+            return None
+        frag_l = frag_trim.casefold()
+        rel_n = rel.rstrip("/")
+        if not rel_n:
+            return None
+        rel_l = rel_n.casefold()
+        segments = rel_n.split("/")
+        base = segments[-1]
+        bl = base.casefold()
+        depth = max(0, len(segments) - 1)
+        stem = Path(base).stem.casefold()
+
+        cand: list[tuple[int, tuple[int, ...]]] = []
+
+        if rel_n == frag_trim or rel_l == frag_l:
+            cand.append((1, (0,)))
+        if bl == frag_l:
+            cand.append((2, (0,)))
+        if stem == frag_l and bl != frag_l:
+            cand.append((3, (0,)))
+        if rel_l.startswith(frag_l):
+            cand.append((4, (0,)))
+        if bl.startswith(frag_l) and bl != frag_l:
+            cand.append((5, (0,)))
+
+        seg_idx: int | None = None
+        for i, seg in enumerate(segments[:-1]):
+            if seg.casefold().startswith(frag_l):
+                seg_idx = i if seg_idx is None else min(seg_idx, i)
+        if seg_idx is not None:
+            cand.append((6, (seg_idx,)))
+
+        pos7 = bl.find(frag_l)
+        if pos7 >= 0:
+            cand.append((7, (pos7,)))
+
+        pos8 = rel_l.find(frag_l)
+        if pos8 >= 0:
+            cand.append((8, (pos8,)))
+
+        if LocalFileMentionCompleter._basename_subsequence_compact(base, frag_trim):
+            cand.append((9, (0,)))
+
+        if not cand:
+            return None
+
+        best_tier, best_tie = min(cand, key=lambda x: (x[0], x[1]))
+        tie0 = int(best_tie[0]) if best_tie else 0
+        return (best_tier, tie0, len(base), depth, rel.casefold())
 
     def _get_paths(self) -> list[str]:
         fragment = self._fragment_hint or ""
@@ -643,47 +710,43 @@ class LocalFileMentionCompleter(Completer):
     def should_complete(cls, document: Document) -> bool:
         return cls._extract_fragment(document.text_before_cursor) is not None
 
-    def _is_completed_file(self, fragment: str) -> bool:
-        candidate = fragment.rstrip("/")
-        if not candidate:
-            return False
-        try:
-            return (self._root / candidate).is_file()
-        except OSError:
-            return False
-
     @override
     def get_completions(
         self, document: Document, complete_event: CompleteEvent
     ) -> Iterable[Completion]:
+        _ = complete_event
         fragment = self._extract_fragment(document.text_before_cursor)
         if fragment is None:
             return
-        if self._is_completed_file(fragment):
-            return
 
-        mention_doc = Document(text=fragment, cursor_position=len(fragment))
         self._fragment_hint = fragment
         try:
-            candidates = list(self._fuzzy.get_completions(mention_doc, complete_event))
-
-            frag_lower = fragment.lower()
-
-            def _rank(c: Completion) -> tuple[int, ...]:
-                path = c.text
-                base = path.rstrip("/").split("/")[-1].lower()
-                if base.startswith(frag_lower):
-                    cat = 0
-                elif frag_lower in base:
-                    cat = 1
-                else:
-                    cat = 2
-                return (cat,)
-
-            candidates.sort(key=_rank)
-            yield from candidates
+            paths = self._get_paths()
         finally:
             self._fragment_hint = None
+
+        if fragment == "":
+            for rel in sorted(paths)[: self._limit]:
+                yield Completion(text=rel, start_position=0)
+            return
+
+        ranked: list[tuple[MentionPathSortKey, str]] = []
+        for rel in paths:
+            key = self._mention_path_sort_key(rel, fragment)
+            if key is None:
+                continue
+            ranked.append((key, rel))
+
+        ranked.sort(key=lambda item: item[0])
+        seen: set[str] = set()
+        start_pos = -len(fragment)
+        for _, rel in ranked:
+            if rel in seen:
+                continue
+            seen.add(rel)
+            yield Completion(text=rel, start_position=start_pos)
+            if len(seen) >= self._limit:
+                break
 
 
 wrap_to_width = _wrap_to_width

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from inline_snapshot import snapshot
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
 
@@ -67,8 +66,7 @@ def test_directory_completion_scans_only_matching_subtree(
     assert all("docs" not in t for t in texts)
 
 
-def test_completed_file_short_circuits_completions(tmp_path: Path):
-    """Stop offering fuzzy matches once the fragment resolves to an existing file."""
+def test_completed_exact_file_remains_visible(tmp_path: Path):
     agents = tmp_path / "AGENTS.md"
     agents.write_text("# Agents\n")
 
@@ -80,7 +78,20 @@ def test_completed_file_short_circuits_completions(tmp_path: Path):
 
     texts = _completion_texts(completer, "@AGENTS.md")
 
-    assert not texts
+    assert "AGENTS.md" in texts
+
+
+def test_completed_nested_path_remains_visible(tmp_path: Path):
+    nested = tmp_path / "src" / "kimi_cli" / "tools" / "web"
+    nested.mkdir(parents=True)
+    target = nested / "fetch.py"
+    target.write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    rel = "src/kimi_cli/tools/web/fetch.py"
+    texts = _completion_texts(completer, f"@{rel}")
+
+    assert rel in texts
 
 
 def test_limit_is_enforced(tmp_path: Path):
@@ -128,10 +139,32 @@ def test_basename_prefix_is_ranked_first(tmp_path: Path):
 
     texts = _completion_texts(completer, "@fetch")
 
-    # Snapshot the full candidate list to keep order/content deterministic
-    assert texts == snapshot(
-        [
-            "src/kimi_cli/tools/web/fetch.py",
-            "src/kimi_cli/tools/file/patch.py",
-        ]
-    )
+    assert texts == ["src/kimi_cli/tools/web/fetch.py"]
+
+
+def test_fetch_subsequence_basename_still_matches(tmp_path: Path):
+    (tmp_path / "src" / "kimi_cli" / "tools" / "web").mkdir(parents=True)
+    (tmp_path / "src" / "kimi_cli" / "tools" / "file").mkdir(parents=True)
+    (tmp_path / "src" / "kimi_cli" / "tools" / "web" / "fetch.py").write_text("x\n")
+    (tmp_path / "src" / "kimi_cli" / "tools" / "file" / "patch.py").write_text("y\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@fch")
+
+    assert "src/kimi_cli/tools/web/fetch.py" in texts
+    assert "src/kimi_cli/tools/file/patch.py" not in texts
+
+
+def test_patch_query_skips_chat_provider_false_substring(tmp_path: Path):
+    (tmp_path / "packages" / "llm").mkdir(parents=True)
+    (tmp_path / "packages" / "llm" / "chat_provider.py").write_text("x\n")
+    (tmp_path / "src" / "kimi_cli" / "loop").mkdir(parents=True)
+    (tmp_path / "src" / "kimi_cli" / "loop" / "compaction_archive.py").write_text("x\n")
+    (tmp_path / "patch_tool.py").write_text("y\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@patch")
+
+    assert "patch_tool.py" in texts
+    assert "packages/llm/chat_provider.py" not in texts
+    assert "src/kimi_cli/loop/compaction_archive.py" not in texts
