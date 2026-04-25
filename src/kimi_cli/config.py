@@ -89,6 +89,13 @@ class LoopControl(BaseModel):
     whether the assistant's response asks the user to choose between options. If a
     question is detected, a structured QuestionRequest is sent to the UI so the user
     can answer interactively, and the answer starts a new turn."""
+    compaction_dedupe_tool_payloads: bool = Field(
+        default=False,
+        description=(
+            "When enabled, identical consecutive assistant tool-call sections within "
+            "the same user turn may be omitted from compaction input (first and last kept)."
+        ),
+    )
 
 
 class BackgroundConfig(BaseModel):

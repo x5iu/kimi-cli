@@ -64,6 +64,42 @@ class Context:
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
         return True
 
+    async def reload_from_disk(self) -> bool:
+        self._history.clear()
+        self._token_count = 0
+        self._pending_token_estimate = 0
+        self._next_checkpoint_id = 0
+        self._last_turn_checkpoint_id = None
+        if not self._file_backend.exists():
+            return False
+        if self._file_backend.stat().st_size == 0:
+            return False
+
+        messages_after_last_usage: list[Message] = []
+        async with aiofiles.open(self._file_backend, encoding="utf-8", errors="replace") as f:
+            line_no = 0
+            async for line in f:
+                line_no += 1
+                if not line.strip():
+                    continue
+                line_json = self._parse_context_line(
+                    line,
+                    file_backend=self._file_backend,
+                    line_no=line_no,
+                )
+                if line_json is None:
+                    continue
+                self._apply_context_record(
+                    line_json,
+                    history=self._history,
+                    messages_after_last_usage=messages_after_last_usage,
+                    file_backend=self._file_backend,
+                    line_no=line_no,
+                )
+
+        self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage)
+        return True
+
     @property
     def history(self) -> Sequence[Message]:
         return self._history

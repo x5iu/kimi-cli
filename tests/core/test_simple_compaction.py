@@ -7,7 +7,7 @@ from kimi_cli.eventbus.types import TextPart, ThinkPart
 from kimi_cli.loop.compaction import CompactionResult, SimpleCompaction, should_auto_compact
 from kimi_cli.loop.message import internal_user_message, system
 from llmkit.chat_provider import TokenUsage
-from llmkit.message import Message
+from llmkit.message import Message, ToolCall
 
 
 def test_prepare_returns_original_when_not_enough_messages():
@@ -390,3 +390,37 @@ def test_prepare_does_not_count_internal_user_as_preserved_turn():
     assert "Oldest question" not in preserved_texts
     assert "Old question" in preserved_texts
     assert "Latest question" in preserved_texts
+
+
+def _shell_same() -> Message:
+    return Message(
+        role="assistant",
+        content=[],
+        tool_calls=[
+            ToolCall(
+                id="s1",
+                function=ToolCall.FunctionBody(name="Shell", arguments='{"command": "ls"}'),
+            )
+        ],
+    )
+
+
+def test_prepare_dedupe_tool_payloads_omits_middle_identical_shell() -> None:
+    u0 = Message(role="user", content=[TextPart(text="start")])
+    tr = Message(role="tool", content=[TextPart(text="ok")], tool_call_id="s1")
+    u1 = Message(role="user", content=[TextPart(text="latest")])
+    messages = [
+        u0,
+        _shell_same(),
+        tr,
+        _shell_same(),
+        tr,
+        _shell_same(),
+        tr,
+        u1,
+        Message(role="assistant", content=[TextPart(text="done")]),
+    ]
+    prep = SimpleCompaction(max_preserved_messages=1, dedupe_tool_payloads=True).prepare(messages)
+    assert prep.compact_message is not None
+    blob = "".join(p.text for p in prep.compact_message.content if isinstance(p, TextPart))
+    assert blob.count("Tool calls:") == 2

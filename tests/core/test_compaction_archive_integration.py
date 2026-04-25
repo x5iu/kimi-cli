@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from kimi_cli.eventbus.types import TextPart
 from kimi_cli.loop.agent import Agent, Runtime
 from kimi_cli.loop.compaction import CompactionResult
@@ -87,6 +89,92 @@ async def test_compaction_registers_archive_and_injects_recall_notice(
     recall_result = await recall_tool(Params(query="alpha"))
     assert not recall_result.is_error
     assert "Old alpha traceback" in recall_result.output
+
+
+async def test_finalize_failure_restores_context_and_does_not_increment_generation(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    recall_tool = RecallCompactedContext(runtime)
+    toolset = KimiToolset()
+    toolset.add(recall_tool)
+    agent = Agent(
+        name="Test Agent",
+        system_prompt="Test system prompt.",
+        toolset=toolset,
+        runtime=runtime,
+    )
+    context = Context(file_backend=tmp_path / "history.jsonl")
+    original = [
+        Message(role="user", content=[TextPart(text="Old alpha traceback")]),
+        Message(role="assistant", content=[TextPart(text="Old alpha analysis")]),
+        Message(role="user", content=[TextPart(text="Latest question")]),
+        Message(role="assistant", content=[TextPart(text="Latest answer")]),
+    ]
+    await context.append_message(original)
+
+    soul = KimiAgentLoop(agent, context=context)
+    soul._compaction = FakeCompaction()
+    monkeypatch.setattr("kimi_cli.loop.kimi_agent_loop.bus_send", lambda _msg: None)
+
+    def _boom(*_a: object, **_k: object) -> None:
+        raise OSError("finalize failed")
+
+    monkeypatch.setattr(
+        "kimi_cli.loop.kimi_agent_loop.finalize_compaction_archive_registration",
+        _boom,
+    )
+
+    gen_before = soul._compaction_generation
+    with pytest.raises(OSError, match="finalize failed"):
+        await soul.compact_context()
+
+    assert soul._compaction_generation == gen_before
+    assert len(context.history) == len(original)
+    assert context.history[0].content[0].text == "Old alpha traceback"  # type: ignore[union-attr]
+    assert load_compaction_archives(context.file_backend) == []
+
+
+async def test_begin_archive_registration_failure_restores_context_and_does_not_increment_generation(
+    runtime: Runtime, tmp_path: Path, monkeypatch
+) -> None:
+    recall_tool = RecallCompactedContext(runtime)
+    toolset = KimiToolset()
+    toolset.add(recall_tool)
+    agent = Agent(
+        name="Test Agent",
+        system_prompt="Test system prompt.",
+        toolset=toolset,
+        runtime=runtime,
+    )
+    context = Context(file_backend=tmp_path / "history.jsonl")
+    original = [
+        Message(role="user", content=[TextPart(text="Old alpha traceback")]),
+        Message(role="assistant", content=[TextPart(text="Old alpha analysis")]),
+        Message(role="user", content=[TextPart(text="Latest question")]),
+        Message(role="assistant", content=[TextPart(text="Latest answer")]),
+    ]
+    await context.append_message(original)
+
+    soul = KimiAgentLoop(agent, context=context)
+    soul._compaction = FakeCompaction()
+    monkeypatch.setattr("kimi_cli.loop.kimi_agent_loop.bus_send", lambda _msg: None)
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise OSError("begin registration failed")
+
+    monkeypatch.setattr(
+        "kimi_cli.loop.kimi_agent_loop.begin_compaction_archive_registration",
+        _boom,
+    )
+
+    gen_before = soul._compaction_generation
+    with pytest.raises(OSError, match="begin registration failed"):
+        await soul.compact_context()
+
+    assert soul._compaction_generation == gen_before
+    assert len(context.history) == len(original)
+    assert context.history[0].content[0].text == "Old alpha traceback"  # type: ignore[union-attr]
+    assert load_compaction_archives(context.file_backend) == []
 
 
 async def test_recall_tool_is_visible_immediately_when_archives_already_exist(

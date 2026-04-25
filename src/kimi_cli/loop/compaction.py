@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+import unicodedata
+from collections import defaultdict
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
 
@@ -17,10 +20,37 @@ from kimi_cli.llm import LLM
 from kimi_cli.loop.compaction_archive import stringify_tool_calls
 from kimi_cli.loop.message import internal_user_message, system
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.metrics import emit_metric
 from kimi_cli.utils.turns import is_real_user_turn_start_message
 from llmkit.chat_provider import ChatProviderError, TokenUsage
 from llmkit.message import Message
 from llmkit.tooling.empty import EmptyToolset
+
+
+def _estimate_text_fragment_tokens(text: str) -> int:
+    wide = 0
+    for c in text:
+        if unicodedata.east_asian_width(c) in ("F", "W", "A"):
+            wide += 1
+    non_wide = len(text) - wide
+    return math.ceil(max(non_wide, 0) / 4) + wide
+
+
+def estimate_text_tokens(messages: Sequence[Message]) -> int:
+    total = 0
+    for msg in messages:
+        total += 4
+        for part in msg.content:
+            if isinstance(part, TextPart):
+                total += _estimate_text_fragment_tokens(part.text)
+            elif isinstance(part, ImageURLPart):
+                total += 85
+            elif isinstance(part, (AudioURLPart, VideoURLPart)):
+                total += 200
+        if msg.tool_calls:
+            tc_text = stringify_tool_calls(msg.tool_calls)
+            total += _estimate_text_fragment_tokens(tc_text)
+    return total
 
 
 class CompactionResult(NamedTuple):
@@ -29,45 +59,12 @@ class CompactionResult(NamedTuple):
 
     @property
     def estimated_token_count(self) -> int:
-        """Estimate the token count of the compacted messages.
-
-        When LLM usage is available, ``usage.output`` gives the exact token count
-        of the generated summary (the first message).  Preserved messages (all
-        subsequent messages) are estimated from their text length.
-
-        When usage is not available (no compaction LLM call was made), all
-        messages are estimated from text length.
-
-        The estimate is intentionally conservative — it will be replaced by the
-        real value on the next LLM call.
-        """
         if self.usage is not None and len(self.messages) > 0:
             summary_tokens = self.usage.output
             preserved_tokens = estimate_text_tokens(self.messages[1:])
             return summary_tokens + preserved_tokens
 
         return estimate_text_tokens(self.messages)
-
-
-def estimate_text_tokens(messages: Sequence[Message]) -> int:
-    """Estimate tokens from message content using heuristics.
-
-    - Text: ~4 chars per token (conservative for English; underestimates CJK)
-    - Per-message overhead: +4 tokens (role, structural tokens)
-    - Image parts: +85 tokens each (typical for low-detail)
-    - Audio/Video parts: +200 tokens each (rough estimate)
-    """
-    total = 0
-    for msg in messages:
-        total += 4  # per-message overhead
-        for part in msg.content:
-            if isinstance(part, TextPart):
-                total += len(part.text) // 4
-            elif isinstance(part, ImageURLPart):
-                total += 85
-            elif isinstance(part, (AudioURLPart, VideoURLPart)):
-                total += 200
-    return total
 
 
 def should_auto_compact(
@@ -77,12 +74,6 @@ def should_auto_compact(
     trigger_ratio: float,
     reserved_context_size: int,
 ) -> bool:
-    """Determine whether auto-compaction should be triggered.
-
-    Returns True when either condition is met (whichever fires first):
-    - Ratio-based: token_count >= max_context_size * trigger_ratio
-    - Reserved-based: token_count + reserved_context_size >= max_context_size
-    """
     return (
         token_count >= max_context_size * trigger_ratio
         or token_count + reserved_context_size >= max_context_size
@@ -93,22 +84,7 @@ def should_auto_compact(
 class Compaction(Protocol):
     async def compact(
         self, messages: Sequence[Message], llm: LLM, *, custom_instruction: str = ""
-    ) -> CompactionResult:
-        """
-        Compact a sequence of messages into a new sequence of messages.
-
-        Args:
-            messages (Sequence[Message]): The messages to compact.
-            llm (LLM): The LLM to use for compaction.
-            custom_instruction: Optional user instruction to guide compaction focus.
-
-        Returns:
-            CompactionResult: The compacted messages and token usage from the compaction LLM call.
-
-        Raises:
-            ChatProviderError: When the chat provider returns an error.
-        """
-        ...
+    ) -> CompactionResult: ...
 
 
 if TYPE_CHECKING:
@@ -117,9 +93,43 @@ if TYPE_CHECKING:
         _: Compaction = simple
 
 
+def _skip_duplicate_assistant_tool_indices(messages: Sequence[Message]) -> set[int]:
+    turn_ids: list[int] = []
+    tid = 0
+    for msg in messages:
+        if is_real_user_turn_start_message(msg):
+            tid += 1
+        turn_ids.append(tid)
+    by_turn: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    for i, msg in enumerate(messages):
+        if msg.role != "assistant" or not msg.tool_calls:
+            continue
+        by_turn[turn_ids[i]].append((i, stringify_tool_calls(msg.tool_calls)))
+    skip: set[int] = set()
+    for pairs in by_turn.values():
+        j = 0
+        while j < len(pairs):
+            sig = pairs[j][1]
+            k = j + 1
+            while k < len(pairs) and pairs[k][1] == sig:
+                k += 1
+            run = pairs[j:k]
+            if len(run) >= 3:
+                for idx in range(1, len(run) - 1):
+                    skip.add(run[idx][0])
+            j = k
+    return skip
+
+
 class SimpleCompaction:
-    def __init__(self, max_preserved_messages: int = 2) -> None:
+    def __init__(
+        self,
+        max_preserved_messages: int = 2,
+        *,
+        dedupe_tool_payloads: bool = False,
+    ) -> None:
         self.max_preserved_messages = max_preserved_messages
+        self.dedupe_tool_payloads = dedupe_tool_payloads
 
     async def compact(
         self, messages: Sequence[Message], llm: LLM, *, custom_instruction: str = ""
@@ -128,14 +138,11 @@ class SimpleCompaction:
         if compact_message is None:
             return CompactionResult(messages=to_preserve, usage=None)
 
-        # Call llmkit.step to get the compacted context
-        # Cap summary length to prevent overly long/short summaries
         max_output_tokens = max(4000, llm.max_context_size // 5)
         logger.debug(
             "Compacting context (max_output_tokens={max_output})",
             max_output=max_output_tokens,
         )
-        # NOTE: llmkit.step does not yet support max_tokens; log for now.
         result = await llmkit.step(
             chat_provider=llm.chat_provider,
             system_prompt=(
@@ -160,10 +167,8 @@ class SimpleCompaction:
         ]
         compacted_msg = result.message
 
-        # drop thinking parts if any
         content.extend(part for part in compacted_msg.content if not isinstance(part, ThinkPart))
 
-        # Guard: ensure the LLM produced meaningful content (skip our system prefix)
         if not any(
             isinstance(p, TextPart) and p.text.strip()  # pyright: ignore[reportUnnecessaryIsInstance]
             for p in compacted_msg.content
@@ -187,8 +192,6 @@ class SimpleCompaction:
 
         preserve_start_index = len(messages)
 
-        # Walk backward counting user messages to find preserve boundary.
-        # A "turn" is: user → assistant → trailing tool messages.
         n_user = 0
         for index in range(len(messages) - 1, -1, -1):
             if is_real_user_turn_start_message(messages[index]):
@@ -200,9 +203,6 @@ class SimpleCompaction:
         if n_user < self.max_preserved_messages:
             return self.PrepareResult(compact_message=None, to_preserve=messages)
 
-        # Walk preserve_start_index backward to include any preceding
-        # assistant message whose tool_calls have results in the preserved
-        # region, so we don't orphan tool calls from their results.
         while preserve_start_index > 0:
             prev = messages[preserve_start_index - 1]
             if prev.role == "assistant" and prev.tool_calls:
@@ -214,10 +214,14 @@ class SimpleCompaction:
         to_preserve = messages[preserve_start_index:]
 
         if not to_compact:
-            # Let's hope this won't exceed the context size limit
             return self.PrepareResult(compact_message=None, to_preserve=to_preserve)
 
-        # Create input message for compaction
+        skip_tool: set[int] = set()
+        if self.dedupe_tool_payloads:
+            skip_tool = _skip_duplicate_assistant_tool_indices(to_compact)
+            if skip_tool:
+                emit_metric("compact.dedupe", skipped_indices=len(skip_tool))
+
         compact_message = Message(role="user", content=[])
         for i, msg in enumerate(to_compact):
             role_label = msg.role
@@ -229,7 +233,7 @@ class SimpleCompaction:
             compact_message.content.extend(
                 part for part in msg.content if not isinstance(part, ThinkPart)
             )
-            if msg.tool_calls:
+            if msg.tool_calls and i not in skip_tool:
                 compact_message.content.append(
                     TextPart(text=f"Tool calls: {stringify_tool_calls(msg.tool_calls)}")
                 )

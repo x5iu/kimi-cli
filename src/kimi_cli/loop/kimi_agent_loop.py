@@ -71,9 +71,10 @@ from kimi_cli.loop.compaction import (
 )
 from kimi_cli.loop.compaction_archive import (
     backfill_archive_keywords,
+    begin_compaction_archive_registration,
     build_compaction_summary,
+    finalize_compaction_archive_registration,
     load_compaction_archives,
-    register_compaction_archive,
 )
 from kimi_cli.loop.context import Context
 from kimi_cli.loop.message import (
@@ -93,6 +94,7 @@ from kimi_cli.skill import Skill, normalize_skill_name, read_skill_text
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.message import content_parts_stringify
+from kimi_cli.utils.metrics import emit_metric
 from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
 from kimi_cli.utils.turns import is_real_user_turn_start_message
 from llmkit import StepResult
@@ -211,7 +213,10 @@ class KimiAgentLoop:
         self._context = context
         self._loop_control = agent.runtime.config.loop_control
         self._compaction: Compaction = SimpleCompaction(
-            max_preserved_messages=getattr(self._loop_control, "max_preserved_messages", 2)
+            max_preserved_messages=getattr(self._loop_control, "max_preserved_messages", 2),
+            dedupe_tool_payloads=getattr(
+                self._loop_control, "compaction_dedupe_tool_payloads", False
+            ),
         )
         # TODO: maybe configurable and composable
         self._last_compaction_turn: int | None = None
@@ -1601,111 +1606,156 @@ class KimiAgentLoop:
 
         bus_send(CompactionBegin())
         try:
+            emit_metric(
+                "compaction.cadence",
+                history_len=len(self._context.history),
+                token_count=self._context.token_count,
+                token_with_pending=self._context.token_count_with_pending,
+            )
             original_message_count = len(self._context.history)
             compaction_result = await _compact_with_retry()
             pre_compaction_messages = list(self._context.history)
             rotated_path = await self._context.clear()
 
-            final_messages = list(compaction_result.messages)
-            if compaction_result.usage is not None:
-                registration = register_compaction_archive(
-                    self._context.file_backend,
-                    rotated_path,
-                    messages=pre_compaction_messages,
-                    message_count=original_message_count,
-                    summary=build_compaction_summary(compaction_result.messages),
-                )
-                keywords_info = ""
-                if registration.record.keywords:
-                    keywords_info = f" Key topics: {', '.join(registration.record.keywords[:8])}."
+            context_restored = False
 
-                # Build an overview of ALL archives (not just the latest).
-                all_archives = load_compaction_archives(self._context.file_backend)
-                archive_overview_lines: list[str] = []
-                newest_id = registration.record.id
-                recent_archives = all_archives[-5:]
-                older_count = len(all_archives) - len(recent_archives)
-                if older_count > 0:
-                    archive_overview_lines.append(
-                        f"  ({older_count} older archive(s) not shown"
-                        " — use RecallCompactedContext to search them)"
-                    )
-                for ar in recent_archives:
-                    summary_preview = (
-                        ar.summary[:80] + "..." if len(ar.summary) > 80 else ar.summary
-                    )
-                    tag = " [NEW]" if ar.id == newest_id else ""
-                    archive_overview_lines.append(
-                        f"- {ar.id} ({ar.message_count} msgs): {summary_preview}{tag}"
-                    )
-                archive_overview = ""
-                if archive_overview_lines:
-                    archive_overview = "\n\nArchive overview:\n" + "\n".join(archive_overview_lines)
+            async def _restore_rotated_context(rotated: Path) -> None:
+                nonlocal context_restored
+                if context_restored:
+                    return
+                try:
+                    rotated.replace(self._context.file_backend)
+                except Exception:
+                    logger.opt(exception=True).warning("Failed to restore rotated context file")
+                    raise
+                await self._context.reload_from_disk()
+                context_restored = True
 
-                final_messages.append(
-                    internal_user_message(
-                        [
-                            system(
-                                "Compacted context archives are available via "
-                                "the RecallCompactedContext tool for this "
-                                "conversation trajectory. "
-                                f"Archive `{registration.record.id}` contains "
-                                "the pre-compaction history. "
-                                f"There are now "
-                                f"{registration.total_archives} compacted "
-                                "archive(s) available."
-                                f"{keywords_info} "
-                                "Use RecallCompactedContext with targeted "
-                                "keywords when you need specific details "
-                                "from earlier context — exact error messages, "
-                                "file paths, code snippets, function names, "
-                                "or design decisions. Prefer this tool over "
-                                "guessing or asking the user to repeat "
-                                "themselves."
-                                f"{archive_overview}"
-                            )
-                        ]
+            try:
+                final_messages = list(compaction_result.messages)
+                pending_registration = None
+                if compaction_result.usage is not None:
+                    pending_registration = begin_compaction_archive_registration(
+                        self._context.file_backend,
+                        rotated_path,
+                        messages=pre_compaction_messages,
+                        message_count=original_message_count,
+                        summary=build_compaction_summary(compaction_result.messages),
                     )
-                )
+                    registration = pending_registration
+                    keywords_info = ""
+                    if registration.record.keywords:
+                        kw = ", ".join(registration.record.keywords[:8])
+                        keywords_info = f" Key topics: {kw}."
 
-            # Inject current todo state so the agent retains awareness after compaction.
-            todos = self._runtime.session.state.todos
-            if todos:
-                todo_lines = [f"- [{t.status}] {t.title}" for t in todos]
-                final_messages.append(
-                    internal_user_message(
-                        [
-                            system(
-                                "Your current todo list survived compaction. "
-                                "Review it before creating a new one.\n" + "\n".join(todo_lines)
-                            )
-                        ]
+                    all_archives = load_compaction_archives(self._context.file_backend)
+                    merged_archives = list(all_archives) + [registration.record]
+                    archive_overview_lines: list[str] = []
+                    recent_archives = merged_archives[-5:]
+                    older_count = len(merged_archives) - len(recent_archives)
+                    if older_count > 0:
+                        archive_overview_lines.append(
+                            f"  ({older_count} older archive(s) not shown"
+                            " — use RecallCompactedContext to search them)"
+                        )
+                    for ar in recent_archives:
+                        summary_preview = (
+                            ar.summary[:80] + "..." if len(ar.summary) > 80 else ar.summary
+                        )
+                        archive_overview_lines.append(
+                            f"- {ar.id} ({ar.message_count} msgs): {summary_preview}"
+                        )
+                    archive_overview = ""
+                    if archive_overview_lines:
+                        archive_overview = "\n\nArchive overview:\n" + "\n".join(
+                            archive_overview_lines
+                        )
+
+                    final_messages.append(
+                        internal_user_message(
+                            [
+                                system(
+                                    "Compacted context archives are available via "
+                                    "the RecallCompactedContext tool for this "
+                                    "conversation trajectory. "
+                                    f"Archive `{registration.record.id}` contains "
+                                    "the pre-compaction history. "
+                                    f"There are now "
+                                    f"{registration.total_archives} compacted "
+                                    "archive(s) available."
+                                    f"{keywords_info} "
+                                    "Use RecallCompactedContext with targeted "
+                                    "keywords when you need specific details "
+                                    "from earlier context — exact error messages, "
+                                    "file paths, code snippets, function names, "
+                                    "or design decisions. Prefer this tool over "
+                                    "guessing or asking the user to repeat "
+                                    "themselves."
+                                    f"{archive_overview}"
+                                )
+                            ]
+                        )
                     )
-                )
 
-            self._sync_context_recall_tool_visibility()
+                todos = self._runtime.session.state.todos
+                if todos:
+                    todo_lines = [f"- [{t.status}] {t.title}" for t in todos]
+                    final_messages.append(
+                        internal_user_message(
+                            [
+                                system(
+                                    "Your current todo list survived compaction. "
+                                    "Review it before creating a new one.\n" + "\n".join(todo_lines)
+                                )
+                            ]
+                        )
+                    )
+
+                try:
+                    await self._checkpoint()
+                    await self._context.append_message(final_messages)
+                except Exception:
+                    logger.opt(exception=True).warning(
+                        "Failed to append compacted messages; restoring pre-compaction context"
+                    )
+                    await _restore_rotated_context(rotated_path)
+                    raise
+
+                if pending_registration is not None:
+                    try:
+                        finalize_compaction_archive_registration(
+                            self._context.file_backend,
+                            pending_registration.record,
+                        )
+                    except Exception:
+                        logger.opt(exception=True).warning(
+                            "Failed to finalize compaction archive manifest registration; "
+                            "restoring pre-compaction context"
+                        )
+                        await _restore_rotated_context(rotated_path)
+                        raise
+
+                try:
+                    await asyncio.to_thread(backfill_archive_keywords, self._context.file_backend)
+                except Exception:
+                    logger.opt(exception=True).debug("Failed to backfill archive keywords")
+
+                self._sync_context_recall_tool_visibility()
+            except Exception:
+                await _restore_rotated_context(rotated_path)
+                raise
+
             self._compaction_generation += 1
             self._turn_steer_count = 0
 
-            # Backfill keywords for any older archives that were created before
-            # keyword extraction was implemented.
-            try:
-                await asyncio.to_thread(backfill_archive_keywords, self._context.file_backend)
-            except Exception:
-                logger.opt(exception=True).debug("Failed to backfill archive keywords")
-
-            try:
-                await self._checkpoint()
-                await self._context.append_message(final_messages)
-            except Exception:
-                logger.opt(exception=True).warning(
-                    "Failed to append compacted messages; restoring pre-compaction context"
-                )
-                try:
-                    rotated_path.replace(self._context.file_backend)
-                except Exception:
-                    logger.opt(exception=True).warning("Failed to restore rotated context file")
-                raise
+            emit_metric(
+                "compaction.done",
+                had_usage=compaction_result.usage is not None,
+                archive_id=(
+                    pending_registration.record.id if pending_registration is not None else None
+                ),
+                pre_compaction_messages=original_message_count,
+            )
 
             estimated_token_count = CompactionResult(
                 messages=final_messages, usage=compaction_result.usage

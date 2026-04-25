@@ -18,6 +18,7 @@ from kimi_cli.loop.compaction_archive import (
 )
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.metrics import emit_metric
 from llmkit.message import Message
 from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
@@ -73,6 +74,11 @@ class RecallCompactedContext(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         context_file = self._context_file_getter()
+        emit_metric(
+            "recall.tool_called",
+            has_query=bool(params.query and params.query.strip()),
+            archive_id=params.archive_id,
+        )
         records = load_compaction_archives(context_file)
         output_max = params.max_results * EXCERPT_MAX_CHARS + 2000
         builder = ToolResultBuilder(max_chars=output_max)
@@ -113,6 +119,7 @@ class RecallCompactedContext(CallableTool2[Params]):
             return builder.ok(message="No compacted-context matches found", brief="No matches")
 
         limited_hits = hits[: params.max_results]
+        emit_metric("recall.tool_hit", hit_count=len(limited_hits), query_len=len(query))
         # Ensure archive messages are available (usually pre-cached during search)
         for hit in limited_hits:
             if hit.record.id not in messages_cache:

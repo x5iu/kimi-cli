@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from kimi_cli.loop.attachment import Attachment, AttachmentProvider
+from kimi_cli.loop.compaction_archive import load_compaction_archives
+from kimi_cli.utils.metrics import emit_metric
+from kimi_cli.utils.turns import is_real_user_turn_start_message
 from llmkit.message import Message
 
 if TYPE_CHECKING:
@@ -13,42 +17,32 @@ _RECALL_NUDGE_TYPE = "recall_nudge_after_compaction"
 
 _COMPACTION_PREFIX = "<system>Previous context has been compacted"
 
-# Agent must have done at least this many steps since
-# compaction before we fire the first nudge.
-_MIN_STEPS_AFTER_COMPACTION = 10
+_MIN_STEPS_AFTER_COMPACTION = 5
 
-# After firing, wait this many assistant messages before
-# firing again.
 _COOLDOWN_MESSAGES = 15
 
-# Maximum number of nudges per compaction event.
-_MAX_FIRES_PER_COMPACTION = 2
+_MAX_FIRES_PER_COMPACTION = 3
 
-# Tool names that indicate "exploration mode"
-_EXPLORATION_TOOLS = frozenset({"Shell", "ReadFile"})
+_EXPLORATION_TOOLS = frozenset(
+    {
+        "Shell",
+        "ReadFile",
+        "SearchWeb",
+        "FetchURL",
+        "WriteFile",
+        "Edit",
+    }
+)
+
+_REFERENTIAL_RE = re.compile(
+    r"(之前|上次|刚才|刚刚|那个文件|那个错误|讨论过|较早|先前|"
+    r"earlier|previous|before|as we discussed|like before|what did|what was|"
+    r"the file we|that error)",
+    re.I,
+)
 
 
 class RecallNudgeAfterCompactionProvider(AttachmentProvider):
-    """Remind the agent to use RecallCompactedContext.
-
-    After compaction, periodically nudges the agent when it
-    appears to be searching/exploring and has not used
-    ``RecallCompactedContext``.
-
-    Detection criteria (all must be true):
-    - History starts with a compaction summary.
-    - Agent has made 10+ assistant steps since compaction
-      without calling RecallCompactedContext.
-    - Recent messages include exploration tools
-      (Shell/ReadFile).
-
-    Cooldown: once per 15 assistant messages, max 2 times
-    total per compaction event.
-
-    Uses ``_compaction_generation`` to detect new compaction
-    events and reset counters.
-    """
-
     def __init__(
         self,
         *,
@@ -74,35 +68,25 @@ class RecallNudgeAfterCompactionProvider(AttachmentProvider):
 
         gen = agent_loop._compaction_generation  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
-        # New compaction event → reset counters
         if gen != self._last_seen_generation:
             self._last_seen_generation = gen
             self._fire_count = 0
             self._last_fired_at_step = 0
 
-        # Must be in a compacted state (gen > 0) and
-        # first message must be a compaction summary.
         if gen == 0:
             return []
         if not _is_compaction_summary(history[0]):
             return []
 
-        # Max fires per compaction event
         if self._fire_count >= self._max_fires:
             return []
 
-        # Count assistant steps since compaction start and
-        # check for RecallCompactedContext usage.
-        # NOTE: Only check RecallCompactedContext in messages AFTER
-        # the compaction summary to avoid preserved pre-compaction
-        # calls suppressing nudges for the new generation.
         assistant_step_count = 0
         has_recall = False
         has_exploration = False
         past_summary = False
 
         for msg in history:
-            # Skip the compaction summary itself
             if not past_summary:
                 if _is_compaction_summary(msg):
                     past_summary = True
@@ -119,20 +103,16 @@ class RecallNudgeAfterCompactionProvider(AttachmentProvider):
                     if name in _EXPLORATION_TOOLS:
                         has_exploration = True
 
-        # Suppress if RecallCompactedContext was already used
         if has_recall:
             return []
 
-        # Need enough steps
         if assistant_step_count < self._min_steps:
             return []
 
-        # Must be in exploration mode
-        if not has_exploration:
+        referential = _recent_user_referential(history)
+        if not has_exploration and not referential:
             return []
 
-        # Cooldown: first fire at min_steps, then every
-        # cooldown messages after that.
         if (
             self._last_fired_at_step > 0
             and assistant_step_count < self._last_fired_at_step + self._cooldown
@@ -141,23 +121,56 @@ class RecallNudgeAfterCompactionProvider(AttachmentProvider):
 
         self._fire_count += 1
         self._last_fired_at_step = assistant_step_count
+        reason = "referential" if referential and not has_exploration else "exploration"
+        emit_metric("recall.nudge_fired", reason=reason, step=assistant_step_count)
+
+        kw_hint = _archive_keyword_hint(agent_loop)
+        base = (
+            "You have compacted archives available. "
+            "If you're looking for information "
+            "discussed earlier in this session, use "
+            "RecallCompactedContext with targeted "
+            "keywords instead of re-searching."
+        )
+        if kw_hint:
+            base += f" Try keywords related to: {kw_hint}."
         return [
             Attachment(
                 type=_RECALL_NUDGE_TYPE,
-                content=(
-                    "You have compacted archives available. "
-                    "If you're looking for information "
-                    "discussed earlier in this session, use "
-                    "RecallCompactedContext with targeted "
-                    "keywords instead of re-searching."
-                ),
+                content=base,
                 is_hint=True,
             )
         ]
 
 
+def _recent_user_referential(history: Sequence[Message]) -> bool:
+    seen = False
+    user_chunks: list[str] = []
+    for msg in history:
+        if not seen:
+            if _is_compaction_summary(msg):
+                seen = True
+            continue
+        if msg.role == "user" and is_real_user_turn_start_message(msg):
+            user_chunks.append(msg.extract_text(" "))
+    tail = "\n".join(user_chunks[-4:])
+    return bool(_REFERENTIAL_RE.search(tail))
+
+
+def _archive_keyword_hint(agent_loop: KimiAgentLoop) -> str:
+    try:
+        ctx_path = agent_loop._context.file_backend  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        recs = load_compaction_archives(ctx_path)
+        acc: list[str] = []
+        for r in recs[-2:]:
+            acc.extend(r.keywords[:4])
+        uniq = list(dict.fromkeys(acc))[:12]
+        return ", ".join(uniq)
+    except Exception:
+        return ""
+
+
 def _is_compaction_summary(msg: Message) -> bool:
-    """Check if a message is a compaction summary."""
     if msg.role not in ("user", "assistant"):
         return False
     text = msg.extract_text(" ").strip()

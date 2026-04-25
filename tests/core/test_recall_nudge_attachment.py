@@ -222,3 +222,31 @@ class TestRecallNudgeAfterCompactionProvider:
             history, _make_agent_loop_mock(compaction_generation=1)
         )
         assert result == []
+
+
+class TestRecallNudgeReferentialTriggers:
+    async def test_referential_phrase_triggers_without_exploration_tools(
+        self,
+    ) -> None:
+        provider = RecallNudgeAfterCompactionProvider()
+        history: list[Message] = [_compaction_summary_msg()]
+        for _ in range(5):
+            history.append(_assistant_msg("step"))
+        history.append(_user_msg("what was that error earlier"))
+        result = await provider.get_attachments(
+            history, _make_agent_loop_mock(compaction_generation=1)
+        )
+        assert len(result) == 1
+
+    async def test_cjk_referential_phrase_triggers(
+        self,
+    ) -> None:
+        provider = RecallNudgeAfterCompactionProvider()
+        history: list[Message] = [_compaction_summary_msg()]
+        for _ in range(5):
+            history.append(_assistant_msg("步骤"))
+        history.append(_user_msg("那个文件我们刚才讨论过"))
+        result = await provider.get_attachments(
+            history, _make_agent_loop_mock(compaction_generation=1)
+        )
+        assert len(result) == 1

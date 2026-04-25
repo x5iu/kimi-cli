@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from kimi_cli.eventbus.types import (
@@ -15,8 +16,10 @@ from kimi_cli.loop.compaction_archive import (
     CompactionArchiveRecord,
     archive_role_label,
     backfill_archive_keywords,
+    begin_compaction_archive_registration,
     build_compaction_summary,
     extract_archive_keywords,
+    finalize_compaction_archive_registration,
     is_checkpoint_message,
     load_archive_messages,
     load_compaction_archives,
@@ -732,3 +735,95 @@ def test_load_compaction_archives_deduplicates_by_id(
     assert records[0].id == "c001"
     assert records[1].id == "c002"
     assert records[0].keywords == ["compaction", "archive"]
+
+
+def test_begin_finalize_pending_manifest(tmp_path: Path) -> None:
+    ctx = tmp_path / "context.jsonl"
+    ctx.touch()
+    arch = tmp_path / "context_1.jsonl"
+    arch.touch()
+    begun = begin_compaction_archive_registration(ctx, arch, message_count=1, summary="s1")
+    assert load_compaction_archives(ctx) == []
+    finalize_compaction_archive_registration(ctx, begun.record)
+    loaded = load_compaction_archives(ctx)
+    assert len(loaded) == 1
+    assert loaded[0].id == begun.record.id
+    assert loaded[0].pending is False
+
+
+def test_register_concurrent_unique_ids(tmp_path: Path) -> None:
+    ctx = tmp_path / "context.jsonl"
+    ctx.touch()
+    errors: list[Exception] = []
+
+    def worker(i: int) -> None:
+        try:
+            arch = tmp_path / f"context_{i}.jsonl"
+            arch.touch()
+            register_compaction_archive(ctx, arch, message_count=1, summary=str(i))
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(16)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    recs = load_compaction_archives(ctx)
+    assert len(recs) == 16
+    assert len({r.id for r in recs}) == 16
+
+
+def test_load_manifest_skips_malformed_lines(tmp_path: Path) -> None:
+    ctx = tmp_path / "context.jsonl"
+    ctx.touch()
+    manifest = manifest_path_for_context(ctx)
+    good = CompactionArchiveRecord(
+        id="c001",
+        archive_file="a.jsonl",
+        created_at="2026-01-01T00:00:00+00:00",
+        message_count=1,
+        summary="ok",
+    )
+    manifest.write_text(
+        good.model_dump_json() + "\n" + '{"broken": true' + "\n" + "not-json-at-all\n",
+        encoding="utf-8",
+    )
+    recs = load_compaction_archives(ctx)
+    assert len(recs) == 1
+    assert recs[0].id == "c001"
+
+
+def test_scrub_preserves_legitimate_json_type_pascalcase() -> None:
+    from kimi_cli.loop.compaction_archive import scrub_text_for_archive_keywords
+
+    a = scrub_text_for_archive_keywords('{"type":"PaymentIntent","status":"requires_action"}')
+    assert "paymentintent" in a.lower()
+    b = scrub_text_for_archive_keywords('{"type":"CustomerCreated","id":"evt_1"}')
+    assert "customercreated" in b.lower()
+
+
+def test_scrub_still_redacts_stream_envelope_type_values() -> None:
+    from kimi_cli.loop.compaction_archive import scrub_text_for_archive_keywords
+
+    s = scrub_text_for_archive_keywords('log {"type":"message"} after')
+    assert '{"type":"message"}' not in s
+    assert "log" in s and "after" in s
+    t = scrub_text_for_archive_keywords('{"subtype":"thinking","delta":"noise"}')
+    assert "subtype" not in t.lower()
+    assert "delta" not in t.lower()
+
+
+def test_extract_keywords_suppresses_stream_noise_preserves_path_and_cjk() -> None:
+    text = (
+        '{"subtype":"thinking","delta":"x"} \\ninternal '
+        "/Users/proj/src/kimi_cli/loop/server.py 讨论压缩归档"
+    )
+    msgs = [Message(role="assistant", content=[TextPart(text=text)])]
+    kws = extract_archive_keywords(msgs)
+    lowered = [k.lower() if k.isascii() else k for k in kws]
+    assert "subtype" not in lowered
+    assert "ninternal" not in "".join(lowered)
+    assert any("server.py" in k for k in kws) or any("kimi_cli" in k for k in kws)
+    assert any("\u4e00" <= c <= "\u9fff" for k in kws for c in k)
