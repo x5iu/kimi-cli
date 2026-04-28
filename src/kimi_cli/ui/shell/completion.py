@@ -494,28 +494,93 @@ class LocalFileMentionCompleter(Completer):
         self._git_index_mtime: float | None = None
 
     @staticmethod
-    def _basename_subsequence_compact(basename: str, frag: str) -> bool:
+    def _basename_subsequence_anchored(basename: str, frag: str) -> bool:
+        if not frag:
+            return True
         fb = basename.casefold()
         fl = frag.casefold()
-        if not fl:
+        if not fb:
+            return False
+        if fb[0] != fl[0]:
+            return False
+        fi = 1
+        bi = 1
+        while fi < len(fl) and bi < len(fb):
+            if fl[fi] == fb[bi]:
+                fi += 1
+            bi += 1
+        return fi == len(fl)
+
+    @staticmethod
+    def _segment_compact_subsequence(cand_seg: str, frag: str) -> bool:
+        if not frag:
             return True
+        c = cand_seg.casefold()
+        f = frag.casefold()
+        if len(f) < 2:
+            return False
         i = 0
         first: int | None = None
         last: int | None = None
-        for idx, ch in enumerate(fb):
-            if ch == fl[i]:
+        for idx, ch in enumerate(c):
+            if ch == f[i]:
                 if first is None:
                     first = idx
                 last = idx
                 i += 1
-                if i == len(fl):
+                if i == len(f):
                     break
-        if i < len(fl):
+        if i < len(f):
             return False
         if first is None or last is None:
             return False
         span = last - first + 1
-        return span <= len(fl) + 2
+        return span <= len(f) + 2
+
+    @staticmethod
+    def _segment_matches(frag: str, cand_seg: str) -> bool:
+        if not frag:
+            return True
+        f = frag.casefold()
+        c = cand_seg.casefold()
+        if c == f:
+            return True
+        if c.startswith(f):
+            return True
+        if len(f) >= 2 and f in c:
+            return True
+        stem = Path(cand_seg).stem.casefold()
+        if stem == f or stem.startswith(f) or (len(f) >= 2 and f in stem):
+            return True
+        return LocalFileMentionCompleter._segment_compact_subsequence(cand_seg, frag)
+
+    @staticmethod
+    def _segment_path_match_tie(rel_n: str, frag_trim: str) -> tuple[int, int] | None:
+        frag_parts = [p for p in frag_trim.split("/") if p]
+        if not frag_parts:
+            return None
+        cand_parts = rel_n.split("/")
+        j = 0
+        first_idx: int | None = None
+        last_idx: int | None = None
+        for fp in frag_parts:
+            while j < len(cand_parts):
+                if LocalFileMentionCompleter._segment_matches(fp, cand_parts[j]):
+                    if first_idx is None:
+                        first_idx = j
+                    last_idx = j
+                    j += 1
+                    break
+                j += 1
+            else:
+                return None
+        assert first_idx is not None and last_idx is not None
+        extra = (last_idx - first_idx + 1) - len(frag_parts)
+        return (extra, first_idx)
+
+    @staticmethod
+    def _ascii_alnum_char(ch: str) -> bool:
+        return len(ch) == 1 and ch.isascii() and ch.isalnum()
 
     @staticmethod
     def _mention_path_sort_key(rel: str, fragment: str) -> MentionPathSortKey | None:
@@ -561,19 +626,30 @@ class LocalFileMentionCompleter(Completer):
         if pos8 >= 0:
             cand.append((8, (pos8,)))
 
-        if LocalFileMentionCompleter._basename_subsequence_compact(base, frag_trim):
-            cand.append((9, (0,)))
+        if "/" in frag_trim:
+            seg_tie = LocalFileMentionCompleter._segment_path_match_tie(rel_n, frag_trim)
+            if seg_tie is not None:
+                ex, fidx = seg_tie
+                cand.append((9, (ex, fidx)))
+
+        if "/" not in frag_trim and LocalFileMentionCompleter._basename_subsequence_anchored(
+            base, frag_trim
+        ):
+            cand.append((10, (0,)))
 
         if not cand:
             return None
 
         best_tier, best_tie = min(cand, key=lambda x: (x[0], x[1]))
-        tie0 = int(best_tie[0]) if best_tie else 0
+        if best_tie and len(best_tie) >= 2:
+            tie0 = int(best_tie[0] * 1024 + best_tie[1])
+        else:
+            tie0 = int(best_tie[0]) if best_tie else 0
         return (best_tier, tie0, len(base), depth, rel.casefold())
 
     def _get_paths(self) -> list[str]:
         fragment = self._fragment_hint or ""
-        if "/" not in fragment and len(fragment) < 3:
+        if fragment == "":
             return self._get_top_level_paths()
         return self._get_deep_paths()
 
@@ -694,7 +770,10 @@ class LocalFileMentionCompleter(Completer):
 
         if index > 0:
             prev = text[index - 1]
-            if prev.isalnum() or prev in LocalFileMentionCompleter._TRIGGER_GUARDS:
+            if (
+                LocalFileMentionCompleter._ascii_alnum_char(prev)
+                or prev in LocalFileMentionCompleter._TRIGGER_GUARDS
+            ):
                 return None
 
         fragment = text[index + 1 :]

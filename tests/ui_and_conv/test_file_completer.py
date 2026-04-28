@@ -168,3 +168,89 @@ def test_patch_query_skips_chat_provider_false_substring(tmp_path: Path):
     assert "patch_tool.py" in texts
     assert "packages/llm/chat_provider.py" not in texts
     assert "src/kimi_cli/loop/compaction_archive.py" not in texts
+
+
+def test_two_char_fragment_matches_nested_completion_paths(tmp_path: Path):
+    (tmp_path / "alpha" / "nested").mkdir(parents=True)
+    (tmp_path / "beta" / "nested").mkdir(parents=True)
+    (tmp_path / "alpha" / "nested" / "completion.py").write_text("x\n")
+    (tmp_path / "beta" / "nested" / "compaction_helper.py").write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@co")
+
+    assert "alpha/nested/completion.py" in texts
+    assert "beta/nested/compaction_helper.py" in texts
+
+
+def test_two_char_fragment_matches_nested_directory_names(tmp_path: Path):
+    (tmp_path / "src" / "kimi_cli" / "ui" / "shell").mkdir(parents=True)
+    (tmp_path / "src" / "kimi_cli" / "ui" / "shell" / "block.py").write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts_sh = _completion_texts(completer, "@sh")
+    texts_ui = _completion_texts(completer, "@ui")
+
+    assert "src/kimi_cli/ui/shell/" in texts_sh
+    assert "src/kimi_cli/ui/" in texts_ui
+
+
+def test_segment_query_matches_with_skipped_middle_directory(tmp_path: Path):
+    nested = tmp_path / "src" / "kimi_cli" / "ui" / "shell"
+    nested.mkdir(parents=True)
+    (nested / "completion.py").write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@src/ui")
+
+    assert "src/kimi_cli/ui/shell/completion.py" in texts
+
+
+def test_segment_query_kimi_main_matches_nested_main_py(tmp_path: Path):
+    (tmp_path / "src" / "kimi_cli").mkdir(parents=True)
+    (tmp_path / "src" / "kimi_cli" / "main.py").write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@kimi/main")
+
+    assert "src/kimi_cli/main.py" in texts
+
+
+def test_segment_query_matches_deep_utils_file_filter_path(tmp_path: Path):
+    utils_dir = tmp_path / "src" / "kimi_cli" / "utils"
+    utils_dir.mkdir(parents=True)
+    (utils_dir / "file_filter.py").write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@src/utils/file_filter.py")
+
+    assert "src/kimi_cli/utils/file_filter.py" in texts
+
+
+def test_cjk_character_before_at_still_triggers_file_completion(tmp_path: Path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.py").write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "请看@src/main")
+
+    assert "src/main.py" in texts
+
+
+def test_ascii_email_fragment_suppressed(tmp_path: Path):
+    (tmp_path / "example.py").write_text("")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "user@host.com")
+
+    assert not texts
+
+
+def test_anchored_subsequence_matches_completion_abbreviation(tmp_path: Path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "completion.py").write_text("x\n")
+
+    completer = LocalFileMentionCompleter(tmp_path)
+    texts = _completion_texts(completer, "@cmpltn")
+
+    assert texts == ["pkg/completion.py"]
