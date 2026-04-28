@@ -1,18 +1,37 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from prompt_toolkit.data_structures import Point
+from rich.console import RenderableType
 from rich.style import Style
 from rich.text import Text
 
 from kimi_cli.eventbus.types import DiffDisplayBlock, QuestionItem, QuestionOption, QuestionRequest
 from kimi_cli.ui.shell.panels import QuestionRequestPanel
-from kimi_cli.ui.shell.rich_ptk import _RichRenderableControl, _StackedRichRenderableControl
+from kimi_cli.ui.shell.rich_ptk import (
+    _BlockListControl,
+    _RichRenderableControl,
+    _StackedRichRenderableControl,
+)
 from kimi_cli.utils.rich.diff import render_diff_block
 from kimi_cli.utils.rich.markdown import Markdown
 
 
 def _section(text: str) -> _RichRenderableControl:
     return _RichRenderableControl(lambda: Text(text))
+
+
+class _CountingBlockListControl(_BlockListControl):
+    def __init__(self, get_blocks: Callable[[], list[RenderableType]]) -> None:
+        super().__init__(get_blocks)
+        self.render_single_block_calls = 0
+
+    def _render_single_block(
+        self, block: RenderableType, width: int
+    ) -> tuple[tuple[tuple[str, str], ...], ...]:
+        self.render_single_block_calls += 1
+        return super()._render_single_block(block, width)
 
 
 def _content_lines(content) -> list[str]:
@@ -210,3 +229,41 @@ def test_question_body_markdown_code_block_uses_shared_fix() -> None:
     assert any("make format" in fragment[1] and fragment[0] == "" for fragment in lines[0])
     assert any("make check" in fragment[1] and fragment[0] == "" for fragment in lines[1])
     assert not any(fragment[0] == "fg:#000000" for line in lines for fragment in line)
+
+
+def test_block_list_control_reuses_cache_when_appending_block() -> None:
+    blocks: list[RenderableType] = [Text("a"), Text("b")]
+    control = _CountingBlockListControl(lambda: blocks)
+    width = 80
+    control.line_count(width)
+    assert control.render_single_block_calls == 2
+    blocks.append(Text("c"))
+    control.line_count(width)
+    assert control.render_single_block_calls == 3
+
+
+def test_block_list_control_reuses_cache_on_repeated_line_count_and_create_content() -> None:
+    blocks: list[RenderableType] = [Text("x"), Text("y")]
+    control = _CountingBlockListControl(lambda: blocks)
+    width = 80
+    control.line_count(width)
+    assert control.render_single_block_calls == 2
+    control.line_count(width)
+    control.line_count(width)
+    assert control.render_single_block_calls == 2
+    control.create_content(width, None)
+    control.create_content(width, None)
+    assert control.render_single_block_calls == 2
+
+
+def test_block_list_control_invalidate_width_cache_forces_rerender() -> None:
+    blocks: list[RenderableType] = [Text("p"), Text("q")]
+    control = _CountingBlockListControl(lambda: blocks)
+    width = 80
+    control.line_count(width)
+    assert control.render_single_block_calls == 2
+    control.line_count(width)
+    assert control.render_single_block_calls == 2
+    control.invalidate_width_cache()
+    control.line_count(width)
+    assert control.render_single_block_calls == 4
