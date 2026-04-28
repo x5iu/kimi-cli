@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+from hashlib import md5
 from types import SimpleNamespace
 from typing import cast
 
@@ -10,6 +11,7 @@ from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout.containers import FloatContainer
 from prompt_toolkit.utils import get_cwidth
 
+from kaos.path import KaosPath
 from kimi_cli.eventbus.types import StatusUpdate, TextPart, ThinkPart, ToolCallPart
 from kimi_cli.loop import StatusSnapshot
 from kimi_cli.ui.shell import prompt as shell_prompt
@@ -1200,6 +1202,72 @@ def test_append_history_entry_updates_in_memory_history(tmp_path) -> None:
     assert list(prompt_session._history.get_strings()) == ["hello"]
     assert prompt_session._last_history_content == "hello"
     assert prompt_session._history_file.read_text(encoding="utf-8").count("hello") == 1
+
+
+def test_session_init_loads_only_newest_cap_into_in_memory_history(
+    temp_work_dir,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    cap = 3
+    monkeypatch.setenv("KIMI_SHARE_DIR", str(tmp_path / "share"))
+    monkeypatch.setattr(
+        "kimi_cli.ui.shell.prompt_types.MAX_IN_MEMORY_HISTORY_ENTRIES",
+        cap,
+    )
+    user_history = tmp_path / "share" / "user-history"
+    user_history.mkdir(parents=True, exist_ok=True)
+    work_dir_id = md5(str(KaosPath.cwd()).encode(encoding="utf-8")).hexdigest()
+    history_file = (user_history / work_dir_id).with_suffix(".jsonl")
+    total = 5
+    history_file.write_text(
+        "\n".join(f'{{"content":"entry{i}"}}' for i in range(total)) + "\n",
+        encoding="utf-8",
+    )
+
+    prompt_session = CustomPromptSession(
+        status_provider=lambda: StatusSnapshot(context_usage=0.0),
+        model_capabilities=set(),
+        model_name=None,
+        thinking=False,
+        agent_mode_slash_commands=[],
+        shell_mode_slash_commands=[],
+    )
+
+    assert list(prompt_session._history.get_strings()) == [
+        f"entry{total - cap + i}" for i in range(cap)
+    ]
+    assert prompt_session._last_history_content == f"entry{total - 1}"
+
+
+def test_append_history_beyond_cap_trims_memory_keeps_full_disk(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    cap = 3
+    monkeypatch.setattr(
+        "kimi_cli.ui.shell.prompt_types.MAX_IN_MEMORY_HISTORY_ENTRIES",
+        cap,
+    )
+
+    prompt_session = object.__new__(CustomPromptSession)
+    prompt_session._history_file = tmp_path / "history.jsonl"
+    prompt_session._history = shell_prompt.InMemoryHistory()
+    prompt_session._last_history_content = None
+
+    total = 5
+    for i in range(total):
+        prompt_session._append_history_entry(f"msg{i}")
+
+    assert list(prompt_session._history.get_strings()) == [
+        f"msg{i}" for i in range(total - cap, total)
+    ]
+    lines = [
+        line
+        for line in prompt_session._history_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(lines) == total
 
 
 def test_bottom_toolbar_no_overflow_when_tip_would_exactly_fill_old_available(monkeypatch) -> None:

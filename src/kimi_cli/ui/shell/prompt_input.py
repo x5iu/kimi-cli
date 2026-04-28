@@ -14,7 +14,7 @@ from kimi_cli.utils.clipboard import grab_media_from_clipboard as _grab_media_fr
 from kimi_cli.utils.logging import logger
 
 from .placeholders import PromptPlaceholderManager, normalize_pasted_text
-from .prompt_types import PromptMode, UserInput, _HistoryEntry
+from .prompt_types import PromptMode, UserInput, _HistoryEntry, _trim_in_memory_history
 from .toast import toast as _toast
 
 
@@ -166,6 +166,7 @@ class PromptInputMixin:
             with self._history_file.open("a", encoding="utf-8") as f:
                 f.write(entry.model_dump_json(ensure_ascii=False) + "\n")
             self._history.append_string(entry.content)
+            _trim_in_memory_history(self._history)
             self._last_history_content = entry.content
         except OSError as exc:
             logger.warning(

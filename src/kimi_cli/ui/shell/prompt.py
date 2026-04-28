@@ -35,6 +35,7 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import Frame, TextArea
 from rich.style import Style as _RichStyle
 
+import kimi_cli.ui.shell.prompt_types as _prompt_types
 from kaos.path import KaosPath
 from kimi_cli.llm import ModelCapability
 from kimi_cli.loop import StatusSnapshot
@@ -105,6 +106,8 @@ from kimi_cli.ui.shell.visualize import (
 from kimi_cli.utils.clipboard import grab_media_from_clipboard, is_clipboard_available
 from kimi_cli.utils.slashcmd import SlashCommand
 
+MAX_IN_MEMORY_HISTORY_ENTRIES = _prompt_types.MAX_IN_MEMORY_HISTORY_ENTRIES
+
 AttachmentCache = prompt_placeholders.AttachmentCache
 CachedAttachment = prompt_placeholders.CachedAttachment
 _parse_attachment_kind = prompt_placeholders.parse_attachment_kind
@@ -127,6 +130,7 @@ __all__ = [
     "MAX_ACTIVE_TURN_CONTENT_CHARS",
     "MAX_ACTIVE_TURN_FLUSHED_BLOCKS",
     "MAX_ACTIVE_TURN_PENDING_INPUT_BLOCKS",
+    "MAX_IN_MEMORY_HISTORY_ENTRIES",
     "PROMPT_SYMBOL",
     "PROMPT_SYMBOL_SHELL",
     "PROMPT_SYMBOL_THINKING",
@@ -230,7 +234,10 @@ class CustomPromptSession(
 
         history_entries = _load_history_entries(self._history_file)
         history = InMemoryHistory()
-        for entry in history_entries:
+        memory_entries = history_entries
+        if len(history_entries) > _prompt_types.MAX_IN_MEMORY_HISTORY_ENTRIES:
+            memory_entries = history_entries[-_prompt_types.MAX_IN_MEMORY_HISTORY_ENTRIES :]
+        for entry in memory_entries:
             history.append_string(entry.content)
         self._history = history
 

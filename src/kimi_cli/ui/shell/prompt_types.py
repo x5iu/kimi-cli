@@ -7,10 +7,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
+from prompt_toolkit.history import InMemoryHistory
 from pydantic import BaseModel, ValidationError
 
 from kimi_cli.eventbus.types import ContentPart
 from kimi_cli.utils.logging import logger
+
+MAX_IN_MEMORY_HISTORY_ENTRIES = 500
 
 
 class _HistoryEntry(BaseModel):
@@ -53,6 +56,16 @@ def _load_history_entries(history_file: Path) -> list[_HistoryEntry]:
         )
 
     return entries
+
+
+def _trim_in_memory_history(history: InMemoryHistory, max_entries: int | None = None) -> None:
+    cap = MAX_IN_MEMORY_HISTORY_ENTRIES if max_entries is None else max_entries
+    strings = history.get_strings()
+    if len(strings) <= cap:
+        return
+    kept = strings[-cap:]
+    history._storage[:] = kept
+    history._loaded_strings[:] = kept[::-1]
 
 
 class PromptMode(Enum):
