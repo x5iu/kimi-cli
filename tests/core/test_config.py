@@ -38,6 +38,7 @@ def test_default_config_dump():
                 "auto_compact_enabled": True,
                 "compaction_trigger_ratio": 0.85,
                 "turn_end_question_detection": True,
+                "compaction_dedupe_tool_payloads": False,
             },
             "background": {
                 "max_running_tasks": 4,
