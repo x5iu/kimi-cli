@@ -93,6 +93,83 @@ if TYPE_CHECKING:
         _: Compaction = simple
 
 
+REDACTABLE_TOOL_NAMES: frozenset[str] = frozenset({"TaskOutput"})
+
+_TASK_OUTPUT_KEEP_KEYS: frozenset[str] = frozenset(
+    {
+        "retrieval_status",
+        "task_id",
+        "kind",
+        "status",
+        "description",
+        "terminal_reason",
+        "exit_code",
+        "output_path",
+        "output_preview_start_line",
+        "output_preview_end_line",
+        "output_next_offset",
+        "full_output_available",
+        "render_mode",
+        "output_format",
+    }
+)
+
+
+def _task_output_call_ids(messages: Sequence[Message]) -> set[str]:
+    """Collect tool_call ids from assistant messages whose tool name is redactable."""
+    call_ids: set[str] = set()
+    for msg in messages:
+        if msg.role != "assistant" or not msg.tool_calls:
+            continue
+        for tc in msg.tool_calls:
+            name = getattr(getattr(tc, "function", None), "name", None)
+            if name in REDACTABLE_TOOL_NAMES and tc.id:
+                call_ids.add(tc.id)
+    return call_ids
+
+
+def _redact_task_output_text(text: str, *, tool_call_id: str) -> str:
+    """Strip the `[output]` payload from a TaskOutput tool result, keeping
+    whitelisted metadata header lines and appending a re-fetch marker."""
+    output_path = ""
+    task_id = ""
+    kept_lines: list[str] = []
+
+    if text:
+        # Split off everything from the first `[output]` marker.
+        head = text.split("\n[output]", 1)[0]
+        for raw in head.splitlines():
+            line = raw.rstrip()
+            if not line:
+                continue
+            key, sep, value = line.partition(":")
+            if not sep:
+                continue
+            key_stripped = key.strip()
+            if key_stripped in _TASK_OUTPUT_KEEP_KEYS:
+                kept_lines.append(f"{key_stripped}: {value.strip()}")
+                if key_stripped == "output_path":
+                    output_path = value.strip()
+                elif key_stripped == "task_id":
+                    task_id = value.strip()
+
+    refetch_hint_parts: list[str] = []
+    if task_id:
+        refetch_hint_parts.append(f'TaskOutput(task_id="{task_id}")')
+    if output_path:
+        refetch_hint_parts.append(f'ReadFile(path="{output_path}")')
+    if refetch_hint_parts:
+        refetch = " or ".join(refetch_hint_parts)
+        marker = f"[TaskOutput payload redacted during compaction. Re-fetch via {refetch}.]"
+    else:
+        marker = "[TaskOutput payload redacted during compaction. Re-fetch via TaskOutput.]"
+
+    header = f"[redacted TaskOutput tool result for call_id={tool_call_id}]"
+    if kept_lines:
+        return "\n".join([header, *kept_lines, "", marker])
+    return f"{header}\n{marker}"
+
+
 def _skip_duplicate_assistant_tool_indices(messages: Sequence[Message]) -> set[int]:
     turn_ids: list[int] = []
     tid = 0
@@ -127,9 +204,11 @@ class SimpleCompaction:
         max_preserved_messages: int = 2,
         *,
         dedupe_tool_payloads: bool = False,
+        redact_task_output_results: bool = True,
     ) -> None:
         self.max_preserved_messages = max_preserved_messages
         self.dedupe_tool_payloads = dedupe_tool_payloads
+        self.redact_task_output_results = redact_task_output_results
 
     async def compact(
         self, messages: Sequence[Message], llm: LLM, *, custom_instruction: str = ""
@@ -222,6 +301,11 @@ class SimpleCompaction:
             if skip_tool:
                 emit_metric("compact.dedupe", skipped_indices=len(skip_tool))
 
+        redact_call_ids: set[str] = set()
+        if self.redact_task_output_results:
+            redact_call_ids = _task_output_call_ids(to_compact)
+        redacted_count = 0
+
         compact_message = Message(role="user", content=[])
         for i, msg in enumerate(to_compact):
             role_label = msg.role
@@ -230,13 +314,33 @@ class SimpleCompaction:
             compact_message.content.append(
                 TextPart(text=f"## Message {i + 1}\nRole: {role_label}\nContent:\n")
             )
-            compact_message.content.extend(
-                part for part in msg.content if not isinstance(part, ThinkPart)
+            is_redacted_tool_result = (
+                self.redact_task_output_results
+                and msg.role == "tool"
+                and msg.tool_call_id is not None
+                and msg.tool_call_id in redact_call_ids
             )
+            if is_redacted_tool_result:
+                original_text = "".join(
+                    part.text for part in msg.content if isinstance(part, TextPart)
+                )
+                redacted = _redact_task_output_text(
+                    original_text, tool_call_id=msg.tool_call_id or ""
+                )
+                compact_message.content.append(TextPart(text=redacted))
+                redacted_count += 1
+            else:
+                compact_message.content.extend(
+                    part for part in msg.content if not isinstance(part, ThinkPart)
+                )
             if msg.tool_calls and i not in skip_tool:
                 compact_message.content.append(
                     TextPart(text=f"Tool calls: {stringify_tool_calls(msg.tool_calls)}")
                 )
+
+        if redacted_count:
+            emit_metric("compact.redact_task_output", redacted_results=redacted_count)
+
         prompt_text = "\n" + prompts.COMPACT
         if custom_instruction:
             prompt_text += (

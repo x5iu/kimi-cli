@@ -2,6 +2,7 @@ import json
 import os
 import time
 import uuid
+from enum import Enum
 from pathlib import Path
 from typing import Any, cast, override
 
@@ -19,12 +20,37 @@ from kimi_cli.background import (
 from kimi_cli.background.worker import STDIN_QUEUE_DIR
 from kimi_cli.loop.agent import Runtime
 from kimi_cli.loop.approval import Approval
+from kimi_cli.tools.background.projection import (
+    OutputFormat,
+    detect_format,
+    project,
+    render_projection,
+)
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from llmkit.tooling import CallableTool2, ToolError, ToolReturnValue
 
 TASK_OUTPUT_PREVIEW_BYTES = 32 << 10
 TASK_OUTPUT_READ_HINT_LINES = 300
+
+# Default cap for the model-facing rendered payload (``[output]`` block).
+TASK_OUTPUT_DEFAULT_MAX_BYTES = 4096
+
+
+class TaskOutputMode(str, Enum):
+    """Controls how the ``[output]`` block is rendered to the model.
+
+    * ``auto``: project structured logs (Claude/Codex/Kimi) into a concise
+      summary; fall back to bounded raw for plain-text output.
+    * ``summary``: always project (plain text becomes a tail digest).
+    * ``raw``: emit the raw line window unchanged (legacy behavior).
+    * ``none``: omit the ``[output]`` block entirely; metadata only.
+    """
+
+    AUTO = "auto"
+    SUMMARY = "summary"
+    RAW = "raw"
+    NONE = "none"
 
 
 def _is_interactive_turn_complete(text: str) -> bool:
@@ -78,6 +104,10 @@ def _format_task_output(
     retrieval_status: str,
     chunk: TaskOutputLineChunk,
     full_output_available: bool,
+    mode: TaskOutputMode = TaskOutputMode.AUTO,
+    max_bytes: int = TASK_OUTPUT_DEFAULT_MAX_BYTES,
+    max_lines: int | None = None,
+    tail_lines: int | None = None,
 ) -> str:
     terminal_reason = "timed_out" if view.runtime.timed_out else view.runtime.status
     lines = [
@@ -136,6 +166,26 @@ def _format_task_output(
             full_output_hint,
         ]
     )
+
+    # Decide render mode and detected format for transparency.
+    detected_format = (
+        detect_format(chunk.text, kind=view.spec.kind) if chunk.text else OutputFormat.PLAIN_TEXT
+    )
+
+    if mode is TaskOutputMode.AUTO:
+        if detected_format is OutputFormat.PLAIN_TEXT:
+            effective_mode = TaskOutputMode.RAW
+        else:
+            effective_mode = TaskOutputMode.SUMMARY
+    else:
+        effective_mode = mode
+
+    lines.append(f"render_mode: {effective_mode.value}")
+    lines.append(f"output_format: {detected_format.value}")
+
+    if effective_mode is TaskOutputMode.NONE:
+        return "\n".join(lines)
+
     if chunk.line_too_large:
         rendered_output = (
             f"[Line too large — line {chunk.start_line} exceeds the "
@@ -144,15 +194,23 @@ def _format_task_output(
         )
     elif not chunk.text:
         rendered_output = "[no output available]"
-    elif output_truncated:
-        n_lines = chunk.end_line - chunk.start_line
-        last_line = chunk.end_line - 1
-        rendered_output = (
-            f"[Truncated — showing {n_lines} lines ({chunk.start_line}–{last_line})"
-            f". Full output: {chunk.output_path}]\n\n{chunk.text}"
+    elif effective_mode is TaskOutputMode.RAW:
+        rendered_output = _render_raw_output(
+            chunk,
+            output_truncated=output_truncated,
+            max_bytes=max_bytes,
+            tail_lines=tail_lines,
         )
-    else:
-        rendered_output = chunk.text
+    else:  # SUMMARY
+        rendered_output = _render_summary_output(
+            chunk,
+            view=view,
+            detected_format=detected_format,
+            max_bytes=max_bytes,
+            max_lines=max_lines,
+            tail_lines=tail_lines,
+        )
+
     return "\n".join(
         lines
         + [
@@ -161,6 +219,150 @@ def _format_task_output(
             rendered_output,
         ]
     )
+
+
+def _enforce_byte_cap(text: str, max_bytes: int) -> str:
+    """Hard cap a string to *max_bytes* UTF-8 bytes, decoding cleanly."""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _render_summary_output(
+    chunk: TaskOutputLineChunk,
+    *,
+    view: TaskView,
+    detected_format: OutputFormat,
+    max_bytes: int,
+    max_lines: int | None,
+    tail_lines: int | None,
+) -> str:
+    """Render the summary payload with *max_bytes* covering header + body.
+
+    For structured formats with no projectable events, emits a concise
+    marker (no raw fallback). Plain-text summary falls back to a bounded
+    raw tail digest covered by the same byte cap.
+    """
+    header = "[Summary — projected from {raw_lines} raw line(s); format={fmt}. Full log: {path}]"
+    # Reserve room in budget for header + blank separator line.
+    # Compute body budget against a worst-case header string so we don't
+    # exceed max_bytes once header is prepended. Rendered raw_lines_seen
+    # may shift the header size by a few bytes; the final cap below
+    # reconciles any drift.
+    placeholder_header = header.format(
+        raw_lines=chunk.end_line - chunk.start_line,
+        fmt=detected_format.value,
+        path=chunk.output_path,
+    )
+    header_with_sep = placeholder_header + "\n\n"
+    header_size = len(header_with_sep.encode("utf-8"))
+    body_budget = max(0, max_bytes - header_size)
+
+    projection = project(
+        chunk.text,
+        format=detected_format,
+        kind=view.spec.kind,
+        max_events=max_lines or 80,
+        max_bytes=body_budget,
+    )
+    rendered = render_projection(projection, max_bytes=body_budget)
+
+    if not rendered:
+        # No projectable events:
+        #  * Plain-text summary: fall back to bounded raw tail digest.
+        #  * Structured formats: emit a concise marker (NO raw payload).
+        if detected_format is OutputFormat.PLAIN_TEXT:
+            return _render_raw_output(
+                chunk,
+                output_truncated=chunk.has_before or chunk.has_after,
+                max_bytes=max_bytes,
+                tail_lines=tail_lines,
+            )
+        marker = (
+            f"[Summary — no projectable events in this raw range "
+            f"(format={detected_format.value}). Full log: {chunk.output_path}]"
+        )
+        return _enforce_byte_cap(marker, max_bytes)
+
+    # Rebuild header with the actual raw_lines_seen reported by projection.
+    real_header = header.format(
+        raw_lines=projection.raw_lines_seen,
+        fmt=detected_format.value,
+        path=chunk.output_path,
+    )
+    payload = real_header + "\n\n" + rendered
+    return _enforce_byte_cap(payload, max_bytes)
+
+
+def _render_raw_output(
+    chunk: TaskOutputLineChunk,
+    *,
+    output_truncated: bool,
+    max_bytes: int | None = None,
+    tail_lines: int | None = None,
+) -> str:
+    """Render the raw line window, bounded by *max_bytes* if provided.
+
+    The truncation header always reports the *displayed* sub-window (after
+    ``tail_lines`` and any byte-trim), while ``output_next_offset`` and
+    ``output_preview_*`` metadata on the parent block keep referencing
+    raw line numbers so forward pagination remains correct.
+    """
+    text = chunk.text
+    raw_lines = text.splitlines()
+    has_trailing_newline = chunk.text.endswith("\n")
+
+    sub_start = chunk.start_line
+    sub_end = chunk.end_line  # exclusive
+
+    if tail_lines is not None and len(raw_lines) > tail_lines:
+        raw_lines = raw_lines[-tail_lines:]
+        sub_start = chunk.end_line - len(raw_lines)
+        text = "\n".join(raw_lines)
+        if has_trailing_newline:
+            text += "\n"
+        output_truncated = True
+
+    # Optional byte cap (best-effort; we keep header accurate even when
+    # the body has been further byte-trimmed below the line-window).
+    body_byte_truncated = False
+    if max_bytes is not None:
+        # Build the truncation header against the current sub-window so
+        # we can size the body budget correctly.
+        n_lines = max(0, sub_end - sub_start)
+        last_line = sub_end - 1 if n_lines else sub_start
+        header_text = (
+            f"[Truncated — showing {n_lines} lines ({sub_start}–{last_line})"
+            f". Full output: {chunk.output_path}]\n\n"
+        )
+        # Decide whether we need a header at all under the cap.
+        full_no_header = text
+        full_with_header = header_text + text
+        will_truncate = output_truncated or body_byte_truncated
+        candidate = full_with_header if will_truncate else full_no_header
+        if len(candidate.encode("utf-8")) > max_bytes:
+            # We must emit the header (truncated state) and trim body.
+            header_size = len(header_text.encode("utf-8"))
+            budget = max(0, max_bytes - header_size)
+            encoded = text.encode("utf-8")[-budget:]
+            text = encoded.decode("utf-8", errors="ignore")
+            output_truncated = True
+            body_byte_truncated = True
+
+    if output_truncated:
+        n_lines = max(0, sub_end - sub_start)
+        last_line = sub_end - 1 if n_lines else sub_start
+        result = (
+            f"[Truncated — showing {n_lines} lines ({sub_start}–{last_line})"
+            f". Full output: {chunk.output_path}]\n\n{text}"
+        )
+        if max_bytes is not None:
+            result = _enforce_byte_cap(result, max_bytes)
+        return result
+    if max_bytes is not None:
+        return _enforce_byte_cap(text, max_bytes)
+    return text
 
 
 class TaskOutputParams(BaseModel):
@@ -182,6 +384,42 @@ class TaskOutputParams(BaseModel):
             "Line offset (0-based) to start reading output from. "
             "If not set, reads the last lines that fit within ~32 KiB (tail). "
             "Set to 0 to read from the beginning."
+        ),
+    )
+    mode: TaskOutputMode = Field(
+        default=TaskOutputMode.AUTO,
+        description=(
+            "How to render the [output] block. `auto` (default) summarizes "
+            "structured logs (Claude/Codex/Kimi) and emits bounded raw for "
+            "plain text. `summary` always summarizes. `raw` returns the raw "
+            "line window bounded by `max_bytes` (raise it for larger reads). "
+            "`none` omits the [output] block. `output_path` and "
+            "`output_next_offset` always reference raw line numbers."
+        ),
+    )
+    max_bytes: int = Field(
+        default=TASK_OUTPUT_DEFAULT_MAX_BYTES,
+        ge=512,
+        le=131072,
+        description=(
+            "Cap on the rendered model-facing [output] payload size in bytes "
+            "(includes summary/truncation headers). Applies to all modes "
+            "that emit content (auto/summary/raw)."
+        ),
+    )
+    max_lines: int | None = Field(
+        default=None,
+        ge=1,
+        le=10000,
+        description=("Maximum number of summarized events to keep in summary/auto modes."),
+    )
+    tail_lines: int | None = Field(
+        default=None,
+        ge=1,
+        le=10000,
+        description=(
+            "When set, keep only the last N raw lines of the chunk in raw mode. "
+            "Does not affect output_next_offset."
         ),
     )
 
@@ -384,6 +622,10 @@ class TaskOutput(CallableTool2[TaskOutputParams]):
                 retrieval_status=retrieval_status,
                 chunk=chunk,
                 full_output_available=full_output_available,
+                mode=params.mode,
+                max_bytes=params.max_bytes,
+                max_lines=params.max_lines,
+                tail_lines=params.tail_lines,
             ),
             message="Task output retrieved.",
             display=[_task_display(self._runtime, params.task_id)],

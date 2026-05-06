@@ -128,6 +128,44 @@ def test_task_output_params_schema(task_output_tool: TaskOutput):
                     "default": None,
                     "description": "Line offset (0-based) to start reading output from. If not set, reads the last lines that fit within ~32 KiB (tail). Set to 0 to read from the beginning.",
                 },
+                "mode": {
+                    "default": "auto",
+                    "description": """\
+Controls how the ``[output]`` block is rendered to the model.
+
+* ``auto``: project structured logs (Claude/Codex/Kimi) into a concise
+  summary; fall back to bounded raw for plain-text output.
+* ``summary``: always project (plain text becomes a tail digest).
+* ``raw``: emit the raw line window unchanged (legacy behavior).
+* ``none``: omit the ``[output]`` block entirely; metadata only.\
+""",
+                    "enum": ["auto", "summary", "raw", "none"],
+                    "title": "TaskOutputMode",
+                    "type": "string",
+                },
+                "max_bytes": {
+                    "default": 4096,
+                    "description": "Cap on the rendered model-facing [output] payload size in bytes (includes summary/truncation headers). Applies to all modes that emit content (auto/summary/raw).",
+                    "maximum": 131072,
+                    "minimum": 512,
+                    "type": "integer",
+                },
+                "max_lines": {
+                    "anyOf": [
+                        {"maximum": 10000, "minimum": 1, "type": "integer"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "Maximum number of summarized events to keep in summary/auto modes.",
+                },
+                "tail_lines": {
+                    "anyOf": [
+                        {"maximum": 10000, "minimum": 1, "type": "integer"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "When set, keep only the last N raw lines of the chunk in raw mode. Does not affect output_next_offset.",
+                },
             },
             "required": ["task_id"],
             "type": "object",
