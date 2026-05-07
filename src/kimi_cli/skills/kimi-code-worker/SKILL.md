@@ -48,6 +48,13 @@ available — interactive stdin session (preferred) and headless one-shot.
    `interactive=true` so you can keep sending `TaskWrite` messages.
    Only use headless one-shot (Mode 2) when the task is a clear, self-
    contained instruction that needs no back-and-forth.
+8. **NEVER wait for a task-completion notification in Mode 1.** Interactive Kimi
+   stays **resident in the background** across turns; it does not exit when a
+   turn finishes. Automatic completion notification is **not** a substitute for
+   turn polling — do not idle your turn waiting for "task done" instead of
+   `TaskOutput`. After each `TaskWrite`, call
+   `TaskOutput(task_id=..., block=true, timeout=300, offset=<next>)` until
+   **`retrieval_status` is `success`**. See Mode 1 Step 3.
 
 ## Preflight check
 
@@ -157,39 +164,55 @@ TaskWrite(task_id="<id>", input={"role": "user", "content": "Fix the bug"})
 
 ### Step 3: Monitor progress
 
+After every `TaskWrite`, poll with:
+
 ```
-TaskOutput(task_id="<id>", block=false)
+TaskOutput(task_id="<id>", block=true, timeout=300, offset=<output_next_offset>)
 ```
+
+When **`retrieval_status` is `success`**, the current Kimi **turn** has
+finished (for `interactive=true`, this waits for the turn — not for the
+background task to exit). If not success yet, call `TaskOutput` again with
+the new `output_next_offset` as `offset` until it succeeds.
+
+**`block=false`** is only for a **quick peek** (e.g. `status: running` right
+after spawn). It is **not** the main strategy for waiting out a turn — use
+`block=true, timeout=300` (or higher) with advancing `offset` after each
+`TaskWrite`.
+
+Default `TaskOutput` uses **`mode=auto`**: `[output]` is a **concise bounded
+projection/summary** (default `max_bytes` is 4096). **`output_path`**,
+**`offset`**, and **`output_next_offset`** still refer to the **raw
+line-oriented** log on disk. For exact raw NDJSON (e.g. to inspect the last
+`assistant` line without `tool_calls` yourself), use `mode="raw"` and raise
+`max_bytes` up to the tool hard limit if needed, and/or `tail_lines`, or read
+`output_path` with `ReadFile`. Do **not** assume the last raw JSON line appears
+in default summarized `[output]` — use **`retrieval_status: success`** as the
+primary turn-complete signal.
 
 **Important `TaskOutput` defaults:** `block` defaults to `true` and `timeout`
-defaults to 30s. For interactive sessions, always pass `block=false` for
-non-blocking polling, or `block=true, timeout=120` (or higher) when you want
-to wait for Kimi to finish a turn.
+defaults to 30s. Interactive turn-wait should always pass an explicit long
+`timeout` with `block=true` as above.
 
-The response is a **Kimi structured output** containing metadata fields
-(`retrieval_status`, `output_path`, `output_next_offset`, etc.) with the
-Kimi NDJSON output embedded in the `[output]` section. The output consists
-of per-step `Message` JSON objects (flushed after each step completes, not
-token-by-token):
+The response metadata includes `retrieval_status`, `output_path`,
+`output_next_offset`, etc. In the **raw** JSONL stream (via `mode="raw"` or
+`ReadFile(output_path)`), lines are per-step `Message` objects (flushed after
+each step completes):
 
 | Message `role` | Meaning |
 |---|---|
 | `assistant` (with `tool_calls`) | Model invoked tools (step complete) |
 | `tool` | Tool result returned to Kimi |
-| `assistant` (without `tool_calls`) | **Turn complete.** Final assistant response for this turn |
+| `assistant` (without `tool_calls`) | Final assistant line for that turn in the raw stream |
 
-**A turn is complete when the last output line is an `assistant` message
-without `tool_calls`.** After that, the worker blocks on stdin waiting for
-the next message.
-
-**Note:** `TaskOutput` defaults to a **tail** preview (~32 KiB). Use
-`offset=0` to read from the beginning, or pass the `output_next_offset`
-from a previous call to page forward. `output_next_offset` is only present
-when there is more output beyond the current preview.
+**Primary rule: a turn is complete when `retrieval_status` is `success`.**
+Optional/debug: in the raw stream, the last line being an `assistant` message
+without `tool_calls` matches the historical pattern — that requires `mode="raw"`
+or reading `output_path`, not default `[output]` scanning.
 
 ### Step 4: Send follow-up messages
 
-After the turn completes, send the next user message:
+After **`retrieval_status: success`**, send the next user message:
 
 ```
 TaskWrite(
@@ -198,12 +221,9 @@ TaskWrite(
 )
 ```
 
-Then repeat Step 3 to monitor. Use the `output_next_offset` value from the
-previous `TaskOutput` response as `offset` to read only new lines:
-
-```
-TaskOutput(task_id="<id>", block=false, offset=<output_next_offset from previous call>)
-```
+Then repeat Step 3:
+`TaskOutput(task_id="<id>", block=true, timeout=300, offset=<output_next_offset from previous call>)`
+until `retrieval_status` is `success` again.
 
 `offset` is a 0-based **line number**, not a byte offset.
 
@@ -341,22 +361,20 @@ TaskOutput(task_id="bash-abc123", block=true, timeout=10)
 # 3. Send initial task
 TaskWrite(task_id="bash-abc123", input='{"role":"user","content":"Fix the TypeError in src/auth/token.ts. The error is: Cannot read property expiry of undefined."}')
 
-# 4. Poll output (use output_next_offset from each response for the next call)
-TaskOutput(task_id="bash-abc123", block=false)
-# → check [output] section for assistant message without tool_calls to know turn is done
-# → note output_next_offset for next read
+# 4. Poll until retrieval_status success (block=true, timeout=300, advancing offset)
+TaskOutput(task_id="bash-abc123", block=true, timeout=300, offset=0)
 
-# 5. After seeing turn complete, send follow-up
+# 5. After turn complete, send follow-up
 TaskWrite(task_id="bash-abc123", input='{"role":"user","content":"Now write unit tests for the fix you just made."}')
 
-# 6. Check new output only (pass offset from step 4)
-TaskOutput(task_id="bash-abc123", block=false, offset=<output_next_offset>)
+# 6. Poll again until retrieval_status success
+TaskOutput(task_id="bash-abc123", block=true, timeout=300, offset=<output_next_offset>)
 
 # 7. Provide feedback on results
 TaskWrite(task_id="bash-abc123", input='{"role":"user","content":"The test for expired tokens is missing an edge case: what if expiry is 0? Add that."}')
 
-# 8. Final check
-TaskOutput(task_id="bash-abc123", block=false, offset=<output_next_offset>)
+# 8. Final poll until retrieval_status success
+TaskOutput(task_id="bash-abc123", block=true, timeout=300, offset=<output_next_offset>)
 
 # 9. Done — stop the session (requires user approval)
 TaskStop(task_id="bash-abc123", reason="Task complete")
@@ -414,9 +432,12 @@ Shell(
 Then check progress / collect results:
 
 ```
-TaskOutput(task_id=<id>, block=false)   # non-blocking peek
-TaskOutput(task_id=<id>, block=true)    # wait for completion
+TaskOutput(task_id=<id>, block=false)
+TaskOutput(task_id=<id>, block=true)
 ```
+
+Default `mode=auto` summarizes `[output]`; use `mode="raw"` with a larger
+bounded `max_bytes` or `ReadFile(output_path)` when you need exact JSONL lines.
 
 ### When to use
 
@@ -511,26 +532,27 @@ text parts are joined with `\n`. EOF closes the session gracefully.
 {"role":"tool","content":"...","tool_call_id":"..."}
 ```
 
-**Turn complete (assistant response without tool calls):**
+**Turn complete in the raw stream** (optional: inspect via `mode="raw"` or
+`ReadFile(output_path)`; default `[output]` may summarize):
 ```json
 {"role":"assistant","content":"I've fixed the TypeError by adding a null check..."}
 ```
 
 ### Turn detection pattern
 
-After each `TaskWrite`, poll `TaskOutput` and scan for the last JSON line.
-When the last line is an `assistant` message **without** `tool_calls`, the
-turn is complete and you can:
-- Send the next `TaskWrite` for follow-up
-- Or `TaskStop` to end the session
+After each `TaskWrite`, poll
+`TaskOutput(task_id=..., block=true, timeout=300, offset=<next>)` until
+`retrieval_status` is `success`. Optional/debug: with `mode="raw"` or
+`ReadFile(output_path)`, the last line being an `assistant` message **without**
+`tool_calls` matches the raw-stream pattern — do not rely on default `[output]`
+for that. Then send the next `TaskWrite` or `TaskStop`.
 
-**Edge cases:** This detection works on the happy path. If the turn is
-interrupted (e.g. SIGINT, max steps reached, or an LLM error), the final
-assistant message may be absent or truncated. Also note that
-`--final-message-only` changes the output shape (only the last assistant
-text is emitted), so the detection pattern above assumes the default
-`--output-format stream-json` without `--final-message-only`.
-
+**Edge cases (raw-stream inspection):** If the turn is interrupted (e.g.
+SIGINT, max steps reached, or an LLM error), the final assistant message may be
+absent or truncated. `--final-message-only` changes the output shape (only the
+last assistant text is emitted), so last-line parsing assumes default
+`--output-format stream-json` without `--final-message-only`. Prefer
+`retrieval_status` from `TaskOutput` for orchestration.
 
 ## Caveats and limitations
 
@@ -543,6 +565,11 @@ text is emitted), so the detection pattern above assumes the default
 - **stdin_ready race**: After `Shell` returns the task ID, the worker process
   needs a moment to initialize. Always confirm `status: running` via
   `TaskOutput` before the first `TaskWrite`.
+- **No automatic completion notification in interactive mode (CRITICAL)**:
+  Mode 1 keeps the worker process alive across turns. Do **not** idle waiting
+  for a one-shot "task completed" notification instead of polling `TaskOutput`
+  after each `TaskWrite`; use `block=true, timeout=300` with advancing `offset`
+  until `retrieval_status` is `success`. See Mode 1 Step 3 and mandatory rule 8.
 - **`--quiet` is incompatible with NDJSON monitoring**: `--quiet` forces
   `--output-format text --final-message-only`, so you lose structured
   progress tracking. Do not use it with the workflows described here.
