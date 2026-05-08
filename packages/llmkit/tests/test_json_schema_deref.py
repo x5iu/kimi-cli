@@ -5,7 +5,7 @@ from typing import Literal
 from inline_snapshot import snapshot
 from pydantic import BaseModel, Field
 
-from llmkit.utils.jsonschema import deref_json_schema
+from llmkit.utils.jsonschema import deref_json_schema, ensure_property_types
 from llmkit.utils.typing import JsonType
 
 JsonSchema = dict[str, JsonType]
@@ -144,5 +144,249 @@ def test_nested_ref():
             "required": ["users"],
             "title": "Params",
             "type": "object",
+        }
+    )
+
+
+def test_ensure_property_types_fills_missing_type_on_enum():
+    """Regression for Moonshot 400: an MCP tool property with only `enum` and
+    no `type` (as emitted by some JetBrains MCP tools, e.g. `truncateMode`)
+    must have `type` filled in so the schema passes Moonshot validation."""
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "truncateMode": {
+                "description": "How to truncate long outputs.",
+                "enum": ["smart", "full", "none"],
+            }
+        },
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "truncateMode": {
+                    "description": "How to truncate long outputs.",
+                    "enum": ["smart", "full", "none"],
+                    "type": "string",
+                }
+            },
+        }
+    )
+
+
+def test_ensure_property_types_does_not_mutate_input():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {"x": {"enum": ["a", "b"]}},
+    }
+    ensure_property_types(schema)
+    assert schema == {
+        "type": "object",
+        "properties": {"x": {"enum": ["a", "b"]}},
+    }
+
+
+def test_ensure_property_types_infers_from_enum_values():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "as_string": {"enum": ["a", "b"]},
+            "as_integer": {"enum": [1, 2, 3]},
+            "int_and_float_as_number": {"enum": [1.0, 2]},
+            "as_boolean": {"enum": [True, False]},
+            "as_null": {"enum": [None]},
+            "bool_and_int_fallback": {"enum": [True, 1]},
+            "string_and_int_fallback": {"enum": ["a", 1]},
+        },
+    }
+    resolved = ensure_property_types(schema)
+    assert resolved == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "as_string": {"enum": ["a", "b"], "type": "string"},
+                "as_integer": {"enum": [1, 2, 3], "type": "integer"},
+                "int_and_float_as_number": {"enum": [1.0, 2], "type": "number"},
+                "as_boolean": {"enum": [True, False], "type": "boolean"},
+                "as_null": {"enum": [None], "type": "null"},
+                "bool_and_int_fallback": {"enum": [True, 1], "type": "string"},
+                "string_and_int_fallback": {"enum": ["a", 1], "type": "string"},
+            },
+        }
+    )
+
+
+def test_ensure_property_types_handles_const():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {"kind": {"const": "event"}},
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {"kind": {"const": "event", "type": "string"}},
+        }
+    )
+
+
+def test_ensure_property_types_defaults_to_string_when_no_hint():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {"opaque": {"description": "Some value."}},
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {"opaque": {"description": "Some value.", "type": "string"}},
+        }
+    )
+
+
+def test_ensure_property_types_infers_structural_type_before_string_fallback():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "nested_object": {
+                "properties": {"host": {"type": "string"}},
+                "required": ["host"],
+            },
+            "free_form_map": {"additionalProperties": {"type": "string"}},
+            "list_of_ints": {"items": {"type": "integer"}},
+            "bounded_list": {"minItems": 1, "maxItems": 10},
+            "email": {"format": "email"},
+            "slug": {"pattern": "^[a-z0-9-]+$"},
+            "bounded_number": {"minimum": 0, "maximum": 100},
+            "opaque": {"description": "something"},
+        },
+    }
+    resolved = ensure_property_types(schema)
+    assert resolved == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "nested_object": {
+                    "properties": {"host": {"type": "string"}},
+                    "required": ["host"],
+                    "type": "object",
+                },
+                "free_form_map": {
+                    "additionalProperties": {"type": "string"},
+                    "type": "object",
+                },
+                "list_of_ints": {"items": {"type": "integer"}, "type": "array"},
+                "bounded_list": {"minItems": 1, "maxItems": 10, "type": "array"},
+                "email": {"format": "email", "type": "string"},
+                "slug": {"pattern": "^[a-z0-9-]+$", "type": "string"},
+                "bounded_number": {"minimum": 0, "maximum": 100, "type": "number"},
+                "opaque": {"description": "something", "type": "string"},
+            },
+        }
+    )
+
+
+def test_ensure_property_types_leaves_combinators_alone():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "either": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"enum": [1, 2]},
+                ]
+            },
+            "ref_prop": {"$ref": "#/$defs/Something"},
+            "negated": {"not": {"type": "number"}},
+            "conditional": {
+                "if": {"properties": {"kind": {"const": "a"}}},
+                "then": {"required": ["a_only"]},
+                "else": {"required": ["b_only"]},
+            },
+        },
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "either": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"enum": [1, 2], "type": "integer"},
+                    ]
+                },
+                "ref_prop": {"$ref": "#/$defs/Something"},
+                "negated": {"not": {"type": "number"}},
+                "conditional": {
+                    "if": {"properties": {"kind": {"const": "a"}}},
+                    "then": {"required": ["a_only"]},
+                    "else": {"required": ["b_only"]},
+                },
+            },
+        }
+    )
+
+
+def test_ensure_property_types_infers_object_and_array_from_container_enum_values():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "object_enum": {"enum": [{"a": 1}, {"a": 2}]},
+            "array_enum": {"enum": [[1, 2], [3]]},
+            "object_const": {"const": {"kind": "default"}},
+            "array_const": {"const": []},
+        },
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "object_enum": {"enum": [{"a": 1}, {"a": 2}], "type": "object"},
+                "array_enum": {"enum": [[1, 2], [3]], "type": "array"},
+                "object_const": {"const": {"kind": "default"}, "type": "object"},
+                "array_const": {"const": [], "type": "array"},
+            },
+        }
+    )
+
+
+def test_ensure_property_types_recurses_into_nested_objects_and_arrays():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "nested": {
+                "type": "object",
+                "properties": {
+                    "choice": {"enum": ["a", "b"]},
+                },
+            },
+            "items_list": {
+                "type": "array",
+                "items": {"enum": [1, 2, 3]},
+            },
+            "free_map": {
+                "type": "object",
+                "additionalProperties": {"enum": ["x", "y"]},
+            },
+        },
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "nested": {
+                    "type": "object",
+                    "properties": {
+                        "choice": {"enum": ["a", "b"], "type": "string"},
+                    },
+                },
+                "items_list": {
+                    "type": "array",
+                    "items": {"enum": [1, 2, 3], "type": "integer"},
+                },
+                "free_map": {
+                    "type": "object",
+                    "additionalProperties": {"enum": ["x", "y"], "type": "string"},
+                },
+            },
         }
     )
