@@ -176,6 +176,44 @@ def test_create_llm_openai_legacy_custom_reasoning_key():
     assert llm.chat_provider._reasoning_key == "reasoning"
 
 
+def test_create_llm_thinking_true_kimi_max_effort():
+    provider = LLMProvider(
+        type="kimi",
+        base_url="https://api.test/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="kimi",
+        model="kimi-for-coding",
+        max_context_size=128000,
+    )
+
+    llm = create_llm(provider, model, thinking=True)
+    assert llm is not None
+    assert llm.chat_provider.thinking_effort == "max"
+
+
+def test_create_llm_thinking_true_clamped_for_openai_legacy():
+    from llmkit.contrib.chat_provider.openai_legacy import OpenAILegacy
+
+    provider = LLMProvider(
+        type="openai_legacy",
+        base_url="https://api.deepseek.com/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="openai_legacy",
+        model="deepseek-reasoner",
+        max_context_size=128000,
+        capabilities={"thinking"},
+    )
+
+    llm = create_llm(provider, model, thinking=True)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAILegacy)
+    assert llm.chat_provider.thinking_effort == "high"
+
+
 def test_create_llm_openai_legacy_disabled_reasoning_key():
     from llmkit.contrib.chat_provider.openai_legacy import OpenAILegacy
 
