@@ -282,7 +282,7 @@ class Anthropic:
                     thinking_config = {"type": "enabled", "budget_tokens": 1024}
                 case "medium":
                     thinking_config = {"type": "enabled", "budget_tokens": 4096}
-                case "high":
+                case "high" | "max":
                     thinking_config = {"type": "enabled", "budget_tokens": 32_000}
             return self.with_generation_kwargs(thinking=thinking_config)
 

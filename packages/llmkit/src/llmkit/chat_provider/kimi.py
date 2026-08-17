@@ -142,6 +142,8 @@ class Kimi:
                 return "medium"
             case "high":
                 return "high"
+            case "max":
+                return "max"
             case _:
                 return "off"
 
@@ -195,6 +197,8 @@ class Kimi:
                 reasoning_effort = "medium"
             case "high":
                 reasoning_effort = "high"
+            case "max":
+                reasoning_effort = "max"
         return self.with_generation_kwargs(reasoning_effort=reasoning_effort).with_extra_body(
             {
                 "thinking": {

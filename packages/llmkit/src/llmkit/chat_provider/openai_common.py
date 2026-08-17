@@ -122,6 +122,8 @@ def thinking_effort_to_reasoning_effort(effort: ThinkingEffort) -> ReasoningEffo
             return "medium"
         case "high":
             return "high"
+        case "max":
+            return "high"
 
 
 def reasoning_effort_to_thinking_effort(effort: ReasoningEffort) -> ThinkingEffort:

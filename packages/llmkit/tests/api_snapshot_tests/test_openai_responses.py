@@ -401,3 +401,19 @@ async def test_openai_responses_with_thinking():
             pass
         body = json.loads(mock.calls.last.request.content.decode())
         assert body["reasoning"] == snapshot({"effort": "xhigh", "summary": "auto"})
+
+
+async def test_openai_responses_with_thinking_max():
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/responses").mock(return_value=Response(200, json=make_response()))
+        provider = OpenAIResponses(
+            model="gpt-4.1",
+            api_key="test-key",
+            base_url="https://api.openai.com",
+            stream=False,
+        ).with_thinking("max")
+        stream = await provider.generate("", [], [Message(role="user", content="Think")])
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert body["reasoning"] == snapshot({"effort": "xhigh", "summary": "auto"})

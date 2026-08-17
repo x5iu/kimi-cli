@@ -114,7 +114,7 @@ class TokenUsage(BaseModel):
         return self.input_other + self.input_cache_read + self.input_cache_creation
 
 
-type ThinkingEffort = Literal["off", "low", "medium", "high"]
+type ThinkingEffort = Literal["off", "low", "medium", "high", "max"]
 """The effort level for thinking."""
 
 

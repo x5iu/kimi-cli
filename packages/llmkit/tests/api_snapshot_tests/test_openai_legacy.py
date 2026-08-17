@@ -275,3 +275,9 @@ async def test_openai_legacy_with_thinking():
     provider = OpenAILegacy(model="gpt-4.1", api_key="test-key", stream=False).with_thinking("high")
     body = await capture_request(None, provider, "", [], [Message(role="user", content="Think")])
     assert body["reasoning_effort"] == snapshot("high")
+
+
+async def test_openai_legacy_with_thinking_max():
+    provider = OpenAILegacy(model="gpt-4.1", api_key="test-key", stream=False).with_thinking("max")
+    body = await capture_request(None, provider, "", [], [Message(role="user", content="Think")])
+    assert body["reasoning_effort"] == snapshot("high")

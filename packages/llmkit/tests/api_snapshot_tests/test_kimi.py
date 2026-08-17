@@ -384,3 +384,18 @@ async def test_kimi_with_thinking():
             pass
         body = json.loads(mock.calls.last.request.content.decode())
         assert body["reasoning_effort"] == snapshot("high")
+
+
+async def test_kimi_with_thinking_max():
+    with respx.mock(base_url="https://api.moonshot.ai") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(200, json=make_chat_completion_response())
+        )
+        provider = Kimi(
+            model="kimi-k2-turbo-preview", api_key="test-key", stream=False
+        ).with_thinking("max")
+        stream = await provider.generate("", [], [Message(role="user", content="Think")])
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert body["reasoning_effort"] == snapshot("max")

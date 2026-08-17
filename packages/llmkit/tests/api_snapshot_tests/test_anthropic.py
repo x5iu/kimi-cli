@@ -482,6 +482,17 @@ async def test_anthropic_with_thinking():
     assert body["thinking"] == snapshot({"type": "enabled", "budget_tokens": 32000})
 
 
+async def test_anthropic_with_thinking_max():
+    provider = Anthropic(
+        model="claude-sonnet-4-20250514",
+        api_key="test-key",
+        default_max_tokens=1024,
+        stream=False,
+    ).with_thinking("max")
+    body = await capture_request(None, provider, "", [], [Message(role="user", content="Think")])
+    assert body["thinking"] == snapshot({"type": "enabled", "budget_tokens": 32000})
+
+
 async def test_anthropic_opus_46_adaptive_thinking():
     """Opus 4.6 models should use adaptive thinking instead of budget-based thinking."""
     provider = Anthropic(

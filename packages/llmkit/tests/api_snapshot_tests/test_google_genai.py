@@ -566,3 +566,20 @@ async def test_google_genai_with_thinking():
         assert body.get("generationConfig", {}).get("thinkingConfig") == snapshot(
             {"include_thoughts": True, "thinking_budget": 32000}
         )
+
+
+async def test_google_genai_with_thinking_max():
+    with respx.mock(base_url="https://generativelanguage.googleapis.com") as mock:
+        mock.route(method="POST", path__regex=r"/v1beta/models/.+:generateContent").mock(
+            return_value=Response(200, json=make_response())
+        )
+        provider = GoogleGenAI(
+            model="gemini-2.5-flash", api_key="test-key", stream=False
+        ).with_thinking("max")
+        stream = await provider.generate("", [], [Message(role="user", content="Think")])
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert body.get("generationConfig", {}).get("thinkingConfig") == snapshot(
+            {"include_thoughts": True, "thinking_budget": 32000}
+        )
